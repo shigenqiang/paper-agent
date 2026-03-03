@@ -6,13 +6,12 @@ load_dotenv(override=True)
 
 OPEN_API_KEY = os.getenv('OPEN_API_KEY')
 
-MILVUS_URI = 'https://in03-169d749fd79c27c.serverless.aws-eu-central-1.cloud.zilliz.com'
+MILVUS_URI = os.getenv('MILVUS_URI')
+COLLECTION_NAME =os.getenv('COLLECTION_NAME')
 
-COLLECTION_NAME = 'paper_Data'
+password=os.getenv('password')
 
-password="Ul9-wTe~Xo7vF]Q3"
-
-user="db_169d749fd79c27c"
+user=os.getenv('user')
 
 LANGCHAIN_TRACING_V2 =os.getenv('LANGCHAIN_TRACING_V2')
 LANGCHAIN_API_KEY=os.getenv('LANGCHAIN_API_KEY')
