@@ -3,7 +3,7 @@ from src.core.model import llm
 from langchain_core.messages import SystemMessage
 
 from src.core.prompt import writing_agent_prompt
-from src.agent.writing_subagent.WritingState import WritingState,SectionState
+from src.agents.writing.writing_state import WritingState,SectionState
 from typing import Dict, Any
 
 

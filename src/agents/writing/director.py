@@ -3,7 +3,7 @@ from src.core.model import llm
 from langchain_core.messages import SystemMessage
 
 from src.core.prompt import writing_director_agent_prompt
-from src.agent.writing_subagent import WritingState
+from src.agents.writing.writing_state import WritingState
 from typing import Dict, Any, List
 writing_director_agent = create_react_agent(model=llm,tools=[],prompt=SystemMessage(writing_director_agent_prompt))
 

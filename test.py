@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, END, START
-from src.agent.paper_search_agent import paper_search_node
+from src.agents.search.search_agent import search_node
 from typing import TypedDict
 from langgraph.checkpoint.memory import MemorySaver
 from src.core.state_model import paperagentstate
@@ -16,11 +16,10 @@ from typing import TypedDict, Annotated, Sequence
 from langgraph.graph import StateGraph, END, START
 from langgraph.graph.message import add_messages
 # from src.core.state_model import PaperAgentState, ExecutionState, NodeError,State
-from src.agent.paper_search_agent import  search_node
-from src.agent.reading.reading_agent import reading_node
-from src.agent.analyse_agent import analyse_node
-from src.agent.writing_agent import writing_node
-from src.agent.reprot_agent import report_node
+from src.agents.reading.reading_agent import reading_node
+from src.agents.analysis.analysis_agent import analyse_node
+from src.agents.writing.writing_agent import writing_node
+from src.agents.report.report_agent import report_node
 from typing import Dict, Any
 
 from src.core.state_model import State, ConfigSchema
@@ -37,7 +36,7 @@ builder.add_node("writing_node", writing_node)
 builder.add_node("report_node", report_node)
 # builder.add_node("handle_error_node", self.handle_error_node)
 
-builder.set_entry_point("search_node")
+builder.set_entry_point(START, "search_node")
 
 # 定义工作流路径
 builder.add_edge(START, "search_node")

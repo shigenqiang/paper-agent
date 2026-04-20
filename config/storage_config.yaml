@@ -1,0 +1,32 @@
+# 存储配置文件
+
+# Neo4j图数据库配置
+neo4j:
+  uri: "bolt://localhost:7687"
+  username: "neo4j"
+  password: "${NEO4J_PASSWORD}"
+  database: "neo4j"
+  max_connection_lifetime: 3600
+  max_connection_pool_size: 50
+
+# Milvus向量数据库配置
+milvus:
+  uri: "${MILVUS_URI}"
+  token: "${MILVUS_TOKEN}"
+  collection_name: "${COLLECTION_NAME}"
+  dimension: 4096
+  index_type: "HNSW"
+  metric_type: "IP"
+
+# 文件存储配置
+file_storage:
+  raw_data_dir: "data/raw"
+  processed_data_dir: "data/processed"
+  graphs_dir: "data/graphs"
+  cache_dir: "data/cache"
+  output_dir: "output"
+
+# LightRAG存储配置
+lightrag:
+  working_dir: "data/lightrag"
+  default_storage: "Neo4J"

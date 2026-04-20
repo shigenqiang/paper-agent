@@ -4,7 +4,7 @@ import os
 import json
 from typing import Dict, Any, List
 from src.core.prompt import global_analyse_agent_prompt
-from src.agent.sub_analyse_agent.deep_analyse_subagent import DeepAnalyseResult
+from src.agents.analysis.deep.deep_analysis_agent import DeepAnalyseResult
 from langgraph.prebuilt import create_react_agent
 from src.core.model import llm
 from langchain_core.messages import SystemMessage

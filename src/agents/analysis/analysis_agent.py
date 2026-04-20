@@ -2,15 +2,15 @@ import asyncio
 import json
 from typing import List, Dict, Any
 from src.core.state_model import State
-from src.agent.sub_analyse_agent.analyse_cluster_subagent import (
+from src.agents.analysis.cluster.cluster_agent import (
     PaerCluster,
     Cluster_data,
 )
-from src.agent.sub_analyse_agent.deep_analyse_subagent import (
+from src.agents.analysis.deep.deep_analysis_agent import (
     DeepAnalyseAgent,
     DeepAnalyseResult,
 )
-from src.agent.sub_analyse_agent.global_analyse_subagent import (
+from src.agents.analysis.global.global_analysis_agent import (
     GlobalanalyseAgent,
 )
 

@@ -9,7 +9,7 @@ from typing import Dict, Any,List
 from langchain_core.tools import tool
 
 from src.services.retriveal_tools import retrieval_tool
-from src.agent.writing_subagent.WritingState import SectionState,WritingState
+from src.agents.writing.writing_state import SectionState,WritingState
 import asyncio
 
 

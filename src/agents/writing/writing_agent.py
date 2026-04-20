@@ -7,12 +7,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 from typing import Dict, Any
 from langgraph.graph import StateGraph
 from sqlalchemy.sql.functions import current_date
-from src.agent.writing_subagent.WritingState import SectionState,WritingState
+from src.agents.writing.writing_state import SectionState,WritingState
 from src.core.state_model import State
 
-from src.agent.writing_subagent.director_agent import writing_director_node
-from src.agent.writing_subagent.wtire_agent import section_writing_node
-from src.agent.writing_subagent.retrieved_agent import retrieval_node
+from src.agents.writing.director import writing_director_node
+from src.agents.writing.writer import section_writing_node
+from src.agents.writing.retriever import retrieval_node
 
 
 

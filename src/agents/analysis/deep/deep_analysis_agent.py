@@ -5,7 +5,7 @@ import json
 from typing import Dict, Any, List
 from dataclasses import dataclass
 
-from src.agent.sub_analyse_agent.analyse_cluster_subagent import Cluster_data
+from src.agents.analysis.cluster.cluster_agent import Cluster_data
 from langgraph.prebuilt import  create_react_agent
 from src.core.model import llm
 

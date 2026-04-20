@@ -1,0 +1,34 @@
+# LLM配置文件
+
+# 主LLM配置
+primary_llm:
+  provider: "openai_compatible"
+  model: "Qwen/Qwen3-4B"
+  api_key: "${OPEN_API_KEY}"
+  base_url: "https://api-inference.modelscope.cn/v1/"
+  temperature: 0
+  max_tokens: 4096
+  timeout: 120
+  max_retries: 3
+
+# 嵌入模型配置
+embedding_llm:
+  provider: "openai_compatible"
+  model: "Qwen/Qwen3-Embedding-8B"
+  api_key: "${OPEN_API_KEY}"
+  base_url: "https://api-inference.modelscope.cn/v1/"
+  dimension: 4096
+
+# 大模型抽取器配置
+extraction_llm:
+  provider: "openai_compatible"
+  model: "Qwen/Qwen2.5-7B-Instruct"
+  api_key: "${OPEN_API_KEY}"
+  base_url: "https://api-inference.modelscope.cn/v1/"
+  temperature: 0.3
+
+# 模型路由配置
+model_routing:
+  simple_threshold: 0.3
+  complex_threshold: 0.7
+  enable_cache: true

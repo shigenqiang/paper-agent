@@ -2,6 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/LightRAG" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/paper_for_search" vcs="Git" />
   </component>
 </project>
