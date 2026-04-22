@@ -45,3 +45,7 @@ fastmcp>=0.1.0
 arxiv>=2.0.0
 pubmed-parser>=0.4.0
 scholarly>=1.7.0
+
+# Web界面
+streamlit>=1.28.0
+requests>=2.31.0

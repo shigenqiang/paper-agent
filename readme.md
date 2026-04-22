@@ -252,19 +252,41 @@ COLLECTION_NAME=your_collection_name
 NEO4J_PASSWORD=your_neo4j_password
 ```
 
-### 3. 运行主程序
+### 3. 启动服务
 
+**方式一：命令行模式**
 ```bash
 python main.py
 ```
 
-### 4. 启动API服务
+**方式二：API服务模式**
+```bash
+python api.py
+```
+API文档访问：http://localhost:8000/docs
 
+**方式三：Web界面模式（推荐）**
+
+1. 启动后端API服务：
 ```bash
 python api.py
 ```
 
-API文档访问：http://localhost:8000/docs
+2. 启动Web界面（新开终端）：
+```bash
+# Windows
+run_web.bat
+
+# Linux/Mac
+./run_web.sh
+
+# 或直接运行
+streamlit run app.py
+```
+
+Web界面将在浏览器自动打开：http://localhost:8501
+
+详细使用说明请参考：[Web界面使用说明](docs/Web界面使用说明.md)
 
 ## 使用示例
 
@@ -374,6 +396,8 @@ curl -X POST "http://localhost:8000/query" \
 
 ## 文档
 
+- [论文Agent计划书](docs/论文Agent计划书.md) - 项目完整计划与架构设计
+- [Web界面使用说明](docs/Web界面使用说明.md) - Web界面使用指南
 - [架构文档](docs/architecture.md) - 系统架构设计
 - [API文档](docs/api.md) - API接口说明
 - [用户指南](docs/user_guide.md) - 用户使用指南
