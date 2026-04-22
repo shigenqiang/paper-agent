@@ -1,6 +1,4 @@
-
-
-# Python specific
+# === Python ===
 __pycache__/
 *.py[cod]
 *$py.class
@@ -24,35 +22,129 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.env
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.log
+mypy.ini
 
-# macOS
+# === Environment Variables (CRITICAL) ===
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+secrets.yaml
+config/secrets.yaml
+
+# === API Keys and Tokens ===
+*token*
+*api_key*
+*secret*
+openai_api_key.txt
+langsmith_api_key.txt
+
+# === macOS ===
 .DS_Store
 .AppleDouble
 .LSOverride
+._*
+.Spotlight-V100
+.Trashes
 
-# Windows
+# === Windows ===
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+$RECYCLE.BIN/
+*.lnk
 
-# IDE
+# === IDE ===
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+.spyderproject
+.spyproject
 
-# Temporary files
-*.tmp
-*.bak
-*.log
-PackageVersions.lock
+# === Jupyter Notebook ===
+.ipynb_checkpoints
+*.ipynb_checkpoints
 
-# Large data files (keep small files in git)
+# === Database ===
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# === Vector Stores & Cache ===
+chroma/
+faiss_index/
+lancedb/
+qdrant_storage/
+weaviate_data/
+milvus_data/
+.cache/
+.claude/
+__pycache__/
+*.pyc
+
+# === LightRAG ===
+LightRAG/lightrag_data/
+LightRAG/graph_data/
+LightRAG/knowledge_graph/
+*.graphml
+*.gexf
+*.jsonl
+*.parquet
+
+# === Large Data Files ===
 data/*.RData
 data/*.RDS
+data/*.csv
+data/*.json
+data/*.parquet
+data/*.xlsx
+data/*.pdf
+*.pdf
 
-
-# Compressed archives
+# === Compressed Archives ===
 *.zip
 *.tar.gz
+*.rar
+*.7z
+
+# === Temporary Files ===
+*.tmp
+*.bak
+*.swp
+*~
+temp/
+tmp/
+PackageVersions.lock
+
+# === Build Artifacts ===
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info
+
+# === OS Specific ===
+.DS_Store
+Thumbs.db
+desktop.ini
