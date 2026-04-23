@@ -13,24 +13,10 @@ from langgraph.graph import StateGraph,START,END
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser,JsonOutputParser
 from langgraph.checkpoint.memory import  MemorySaver
-from src.core.state_model import State
+from src.core.state_model import State, SearchAgent, Paper
 import json
 
 # tool=get_mcp_tools()
-
-
-class SearchAgent(BaseModel):
-    query: str#类属性
-    next_node:Optional[str]=Field(default=None)
-    structed_query: Optional[dict|str]=Field(default=None,description="进行修改查询")
-    papers_filter: Optional[dict]=Field(default_factory=dict,description="论文过滤要求")
-    papers:Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="检索到的论文元数据列表")
-
-    def __init__(self,**data):
-        super().__init__(**data)
-        # 如果未提供 structed_query，使用 query
-        if not self.structed_query:
-            self.structed_query = self.query
 
 # ============ 节点 1：生成查询 ============
 async def generate_query_node(state: SearchAgent):
@@ -164,125 +150,116 @@ async def paper_search_node(state: SearchAgent):
 
 
 async def paper_filter_node(state: SearchAgent) -> dict:
-        """
-        三阶段论文过滤：
-        1. 基于LLM的相关性评分（标题+摘要 vs 查询）
-        2. 基于元数据的客观评分（引用数、发表年份等）
-        3. 加权线性组合 + Top-K选择
-        """
-        papers = state.get("papers", [])
-        query = state.papers_filter.get("query", "")
-        top_k = state.papers_filter.get("top_k", 5)
-        llm_weight = state.papers_filter.get("llm_weight", 0.7)
-        metadata_weight = state.papers_filter.get("metadata_weight", 0.3)
+    """
+    三阶段论文过滤：
+    1. 基于LLM的相关性评分（标题+摘要 vs 查询）
+    2. 基于元数据的客观评分（发表年份等）
+    3. 加权线性组合 + Top-K选择
+    """
+    papers = state.papers or []
+    papers_filter = state.papers_filter or {}
+    query = papers_filter.get("query", state.query)
+    top_k = papers_filter.get("top_k", 5)
+    llm_weight = papers_filter.get("llm_weight", 0.7)
+    metadata_weight = papers_filter.get("metadata_weight", 0.3)
 
-        if not papers:
-            return {"filtered_papers": [], "papers": papers}
-        # 第一步：LLM相关性评分
-        print("=" * 50)
-        print("开始LLM相关性评分...")
-        print("=" * 50)
+    if not papers:
+        return {"filtered_papers": [], "papers": papers}
 
-        papers_with_llm_scores = []
-        for idx, paper in enumerate(papers, 1):
-            # 构建评分提示词
-            eval_prompt = f"""请评估以下论文与搜索查询的相关性。
-            搜索查询：{query}
-            论文标题：{paper.title}
-            论文摘要：{paper.abstract}
-            请在0-10的范围内评分，其中：
-            - 10分：高度相关，直接解决查询问题
-            - 7-9分：很相关，有重要关联
-            - 5-6分：中等相关，有一定关联
-            - 3-4分：弱相关，间接相关
-            - 0-2分：不相关
-            请用JSON格式返回，包含score（分数）和reasoning（理由）字段。
-            示例：{{"score": 8, "reasoning": "该论文直接讨论了..."}}
-            """
+    # 第一步：LLM相关性评分
+    print("=" * 50)
+    print("开始LLM相关性评分...")
+    print("=" * 50)
 
-            try:
-                # 获取LLM评分
-                response = llm.invoke(eval_prompt)
-                response_text = response.content.strip()
-    
-                # 解析JSON格式的响应
-                score_data = json.loads(response_text)
-                llm_score = float(score_data.get("score", 5))
-                llm_score = min(10, max(0, llm_score))  # 限制在0-10范围内
-    
-                print(f"\n论文 {idx}: {paper.title}")
-                print(f"LLM评分: {llm_score}/10 - {score_data.get('reasoning', '')}")
-    
-            except (json.JSONDecodeError, ValueError, KeyError) as e:
-                print(f"评分解析失败，使用默认值5.0")
-                llm_score = 5.0
-    
-            paper.llm_score =llm_score
-            papers_with_llm_scores.append(paper)
-    
-        # 第二步：元数据评分
-        print("\n" + "=" * 50)
-        print("开始元数据评分...")
-        print("=" * 50)
-    
-        if papers_with_llm_scores:
-                # 提取引用数和年份用于归一化
-                years_list = [p.published_date for p in papers_with_llm_scores if p.published_date is not None]
+    papers_with_llm_scores = []
+    for idx, paper in enumerate(papers, 1):
+        eval_prompt = f"""请评估以下论文与搜索查询的相关性。
+搜索查询：{query}
+论文标题：{paper.get('title', '')}
+论文摘要：{paper.get('abstract', '')}
+请在0-10的范围内评分，其中：
+- 10分：高度相关，直接解决查询问题
+- 7-9分：很相关，有重要关联
+- 5-6分：中等相关，有一定关联
+- 3-4分：弱相关，间接相关
+- 0-2分：不相关
+请用JSON格式返回，包含score（分数）和reasoning（理由）字段。
+示例：{{"score": 8, "reasoning": "该论文直接讨论了..."}}
+"""
+        try:
+            response = llm.invoke(eval_prompt)
+            response_text = response.content.strip()
+            score_data = json.loads(response_text)
+            llm_score = float(score_data.get("score", 5.0))
+            llm_score = min(10.0, max(0.0, llm_score))
+            print(f"\n论文 {idx}: {paper.get('title', 'N/A')}")
+            print(f"LLM评分: {llm_score}/10 - {score_data.get('reasoning', '')}")
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            print(f"评分解析失败，使用默认值5.0")
+            llm_score = 5.0
 
-                max_year = max(years_list) if years_list else 2024
-                min_year = min(years_list) if years_list else 2020
-                year_range = max_year - min_year if max_year > min_year else 1
-    
-                for paper in papers_with_llm_scores:
-                    # 引用评分：引用数越多越好（0-5分）
+        paper["llm_score"] = llm_score
+        papers_with_llm_scores.append(paper)
 
-    
-                    # 新近度评分：发表年份越近越好（0-5分）
-                    recency_score = ((paper.published_date - min_year) / year_range) * 5 if year_range > 0 else 5
-    
-                    # 组合元数据评分（0-10分）
-                    paper.metadata_score =recency_score
-    
-                    print(f"\n论文: {paper.title}")
-                    print(f"  发表年份: {paper.published_date} → 新近度评分: {recency_score:.2f}")
-                    print(f"  元数据评分: {paper.metadata_score:.2f}/10")
-    
-        # 第三步：加权线性组合和排序
-                    print("\n" + "=" * 50)
-                    print("计算最终综合评分...")
-                    print("=" * 50)
-    
-                    for paper in papers_with_llm_scores:
-                        paper.final_score = (
-                                paper.llm_score * llm_weight +
-                                paper.metadata_score *
-                                metadata_weight
-                        )
-                        print(f"\n论文: {paper.title}")
-                        print(
-                            f"  最终评分: {paper.llm_score:.1f}×{llm_weight} + {paper.metadata_score:.1f}×{metadata_weight} = {paper.final_score:.2f}")
-    
-                    # 按最终评分排序并选择前K篇
-                    ranked_papers = sorted(
-                        papers_with_llm_scores,
-                        key=lambda p: p.final_score,
-                        reverse=True
-                    )
-    
-                    filtered_papers = ranked_papers[:top_k]
-    
-                    # 输出过滤结果
-                    print("\n" + "=" * 50)
-                    print(f"论文过滤结果 (前{top_k}篇)：")
-                    print("=" * 50)
-                    for i, paper in enumerate(filtered_papers, 1):
-                        print(f"\n{i}. 【{paper.final_score:.2f}分】{paper.title}")
-                        print(f"   LLM相关性: {paper.llm_score:.1f}/10")
-                        print(f"   元数据质量: {paper.metadata_score:.1f}/10")
-                        print(f"   引用数: {paper.citations} | 发表年份: {paper.published_date}")
-    
-        # 更新状态
-                    return {"filtered_papers": filtered_papers,"papers": papers_with_llm_scores}  # 保留所有论文及其评分以供参考
+    # 第二步：元数据评分
+    print("\n" + "=" * 50)
+    print("开始元数据评分...")
+    print("=" * 50)
+
+    if papers_with_llm_scores:
+        years_list = [
+            p.get("published_date", 2024) for p in papers_with_llm_scores
+            if p.get("published_date") is not None
+        ]
+        if not years_list:
+            years_list = [2024]
+        max_year = max(years_list)
+        min_year = min(years_list)
+        year_range = max_year - min_year if max_year > min_year else 1
+
+        for paper in papers_with_llm_scores:
+            pub_year = paper.get("published_date", max_year)
+            recency_score = ((pub_year - min_year) / year_range) * 5
+            paper["metadata_score"] = recency_score
+            print(f"\n论文: {paper.get('title', 'N/A')}")
+            print(f"  发表年份: {pub_year} → 新近度评分: {recency_score:.2f}")
+            print(f"  元数据评分: {paper['metadata_score']:.2f}/10")
+
+    # 第三步：加权线性组合和排序
+    print("\n" + "=" * 50)
+    print("计算最终综合评分...")
+    print("=" * 50)
+
+    for paper in papers_with_llm_scores:
+        paper["final_score"] = (
+            paper.get("llm_score", 5.0) * llm_weight
+            + paper.get("metadata_score", 5.0) * metadata_weight
+        )
+        print(f"\n论文: {paper.get('title', 'N/A')}")
+        print(
+            f"  最终评分: {paper.get('llm_score', 5.0):.1f}×{llm_weight}"
+            f" + {paper.get('metadata_score', 5.0):.1f}×{metadata_weight}"
+            f" = {paper['final_score']:.2f}"
+        )
+
+    # 按最终评分排序并选择前K篇
+    ranked_papers = sorted(
+        papers_with_llm_scores,
+        key=lambda p: p.get("final_score", 0),
+        reverse=True
+    )
+    filtered_papers = ranked_papers[:top_k]
+
+    # 输出过滤结果
+    print("\n" + "=" * 50)
+    print(f"论文过滤结果 (前{top_k}篇)：")
+    print("=" * 50)
+    for i, paper in enumerate(filtered_papers, 1):
+        print(f"\n{i}. 【{paper.get('final_score', 0):.2f}分】{paper.get('title', 'N/A')}")
+        print(f"   LLM相关性: {paper.get('llm_score', 0):.1f}/10")
+        print(f"   元数据质量: {paper.get('metadata_score', 0):.1f}/10")
+
+    return {"filtered_papers": filtered_papers, "papers": papers_with_llm_scores}
 # ============ 构建图 ============
 
 class SearchWorkflow:
@@ -296,40 +273,50 @@ class SearchWorkflow:
         builder.add_node("human_check_node", human_check_node)
         builder.add_node("query_transform_node", query_transform_node)
         builder.add_node("paper_search_node", paper_search_node)
+        builder.add_node("paper_filter_node", paper_filter_node)
 
         # 添加边
         builder.add_edge(START, "generate_query_node")
         builder.add_edge("generate_query_node", "human_check_node")
 
         # 条件边：人工选择是否改写
-        builder.add_conditional_edges("human_check_node", lambda x: x.next_node,{"query_transform_node":"query_transform_node", "paper_search_node":"paper_search_node"  })
-
+        builder.add_conditional_edges("human_check_node", lambda x: x.next_node, {
+            "query_transform_node": "query_transform_node",
+            "paper_search_node": "paper_search_node",
+        })
 
         builder.add_edge("query_transform_node", "paper_search_node")
-        builder.add_edge("paper_search_node", END)
+        builder.add_edge("paper_search_node", "paper_filter_node")
+        builder.add_edge("paper_filter_node", END)
 
         # 编译
         graph = builder.compile(checkpointer=MemorySaver())
         graph.get_graph().print_ascii()
         return graph
 config = {"configurable": {"thread_id": "session_1"}}
-async def search_node(state:State):
-    current_state=state["value"]
-    current_state.current_step="searching"
-    search_state = SearchAgent(query=current_state.search_state.get("query"))
-    search_workflow= SearchWorkflow()
-    paper_content=await search_workflow.workflow.ainvoke(search_state,config=config)
-    final_search_state= await search_workflow.workflow.ainvoke(
-        Command(resume=True),
-        config
+async def search_node(state: State):
+    """集成 SearchWorkflow 到主流水线"""
+    current_state = state["value"]
+    current_state.current_step = "searching"
+
+    search_agent_state = SearchAgent(
+        query=current_state.search_state.query,
+        papers_filter=current_state.search_state.papers_filter,
     )
-    if len(final_search_state.get("papers"))>0:
-        print(f"共搜索到{len(final_search_state.get('papers'))}篇论文")
+    search_workflow = SearchWorkflow()
+
+    # 运行搜索工作流（human_check_node 默认自动通过）
+    final_search_state = await search_workflow.workflow.ainvoke(
+        search_agent_state, config=config
+    )
+
+    papers = final_search_state.get("papers", [])
+    if len(papers) > 0:
+        print(f"共搜索到{len(papers)}篇论文")
     else:
-        current_state.error.search_node_error="没有找到相关论文,请尝试其他查询条件"
+        current_state.error.search_node_error = "没有找到相关论文，请尝试其他查询条件"
 
-    current_state.search_state=final_search_state
-
+    current_state.search_state = final_search_state
     return {"value": current_state}
 
 
@@ -337,11 +324,10 @@ async def search_node(state:State):
 
 
 
-import grandalf
 # graph.get_graph().print_ascii()
-#论文过滤，
-#论文质量评估
-#根据引用量
+# 论文过滤，
+# 论文质量评估
+# 根据引用量
 
 
 

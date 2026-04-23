@@ -76,16 +76,31 @@ class paper_contens(BaseModel):
 
 
 class SearchAgent(BaseModel):
-    query: str#类属性
-    structed_query: Optional[str]=Field(default=None,description="进行修改查询")
-    papers_filter: Optional[dict]=Field(default_factory=dict,description="论文过滤要求")
-    papers:Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="论文的元数据")
+    query: str
+    next_node: Optional[str] = Field(default=None, description="下一步节点")
+    structed_query: Optional[dict | str] = Field(default=None, description="结构化查询")
+    papers_filter: Optional[dict] = Field(default_factory=dict, description="论文过滤要求")
+    papers: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="检索到的论文元数据列表")
 
-    def __init__(self,**data):
+    def __init__(self, **data):
         super().__init__(**data)
-        # 如果未提供 structed_query，使用 query
         if not self.structed_query:
             self.structed_query = self.query
+
+
+class Paper(BaseModel):
+    """论文元数据"""
+    paper_id: Optional[str] = Field(default=None, description="论文ID")
+    title: str = Field(default="", description="论文标题")
+    authors: List[str] = Field(default_factory=list, description="作者列表")
+    abstract: str = Field(default="", description="摘要")
+    url: Optional[str] = Field(default=None, description="论文链接")
+    pdf_url: Optional[str] = Field(default=None, description="PDF链接")
+    published_date: Optional[str] = Field(default=None, description="发表日期 YYYY-MM-DD")
+    source: str = Field(default="unknown", description="来源: arxiv/semantic_scholar/local")
+    categories: List[str] = Field(default_factory=list, description="分类标签")
+    doi: Optional[str] = Field(default=None, description="DOI")
+    relevance_score: Optional[float] = Field(default=None, description="相关性评分 0-1")
 class AnalysisResults(BaseModel):
     """分析模块产生的结构化结果"""
     topic_clusters: Optional[Dict[str, List[str]]] = Field(default=None, description="主题聚类, key: 主题名, value: 相关paper_id列表")
@@ -106,7 +121,7 @@ class NodeError(BaseModel):
 class paperagentstate(BaseModel):#可以说是agent的短期上下文。
     current_step:str
     search_state:Optional[SearchAgent]=Field(description="查询的状态，包含原始查询和结构化查询")#使用query_State的原因是，查看中间值
-    papers_content:Optional[paper_contens]=Field(default=dict[list],description="包含论文的元数据和处理过的数据")
+    papers_content: Optional[paper_contens] = Field(default=None, description="包含论文的元数据和处理过的数据")
     analysis_result:Optional[AnalysisResults]=Field(default=None,description="分析论文的结果")
     outline: Optional[str] = Field(default=None, description="报告大纲")
     writted_sections: Optional[List[str]] = Field(default=None, description="已写章节内容")

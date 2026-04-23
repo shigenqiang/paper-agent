@@ -1,13 +1,11 @@
 import sys
 import os
 
-# 将项目根目录添加到Python路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from typing import Dict, Any
 from langgraph.graph import StateGraph
-from sqlalchemy.sql.functions import current_date
-from src.agents.writing.writing_state import SectionState,WritingState
+from src.agents.writing.writing_state import SectionState, WritingState
 from src.core.state_model import State
 
 from src.agents.writing.director import writing_director_node
@@ -25,16 +23,19 @@ async def condition_edge(state: WritingState) -> str:
     writted_sections = state["writted_sections"]
     sections = state["sections"]
 
-    if current_section_index + 1 >= len(sections) and writted_sections[-1].completed:
-        # 所有小节都已经完成
-        return "end"
-    elif current_section_index + 1 == len(writted_sections) and writted_sections[-1].completed:
-        # 移动到下一个小节
-        current_section_index = 0
-        return "section_writing_node"
-    else:
-        # 移动到检索节点
+    last_section = writted_sections[-1] if writted_sections else None
+
+    # 当前节需要检索更多内容
+    if last_section and not last_section.completed:
         return "retrieval_node"
+
+    # 所有节都已完成
+    if current_section_index + 1 >= len(sections):
+        return "end"
+
+    # 推进到下一节（修复：更新 state 中的索引，而非局部变量）
+    state["current_section_index"] = current_section_index + 1
+    return "section_writing_node"
 
 
 class WritingWorkflow:
@@ -73,7 +74,7 @@ async def writing_node(state: State) -> State:
         # await state_queue.put(BackToFrontData(step=ExecutionState.WRITING,state="initializing",data=None))
         writing_state = WritingState()
 
-        writing_state["user_request"] = current_state.search_state["query"]
+        writing_state["user_request"] = current_state.search_state.query
         writing_state["global_analysis"] = current_state.analysis_result
         writing_state["sections"] = []
         writing_state["writted_sections"] = []

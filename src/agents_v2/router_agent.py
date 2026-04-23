@@ -3,7 +3,7 @@ import logging
 from typing import List, Dict, Any, Optional
 import json
 
-from .base_agent import BaseAgent, AgentInput, AgentOutput, AgentCapability
+from .base_agent import BaseAgent, AgentInput, AgentOutput, AgentCapability, AgentContext
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class RouterAgent(BaseAgent):
             description="智能路由，任务分配，多Agent协调"
         )
 
-    async def execute(self, input_data: AgentInput) -> AgentOutput:
+    async def execute(self, input_data: AgentInput, context: AgentContext = None) -> AgentOutput:
         """
         执行路由逻辑
 
@@ -168,7 +168,9 @@ class RouterAgent(BaseAgent):
         reasons = []
 
         # 1. 能力匹配度 (40分)
-        if agent.can_handle(task_analysis.get("complexity", "medium")):
+        required_capabilities = task_analysis.get("required_capabilities", [])
+        task_type = task_analysis.get("task_type", "")
+        if agent.can_handle(task_type) or not required_capabilities:
             score += 40
             reasons.append("能力完全匹配")
         else:
@@ -292,7 +294,7 @@ class CapabilityRouter(RouterAgent):
     - 可以作为缓存层
     """
 
-    async def execute(self, input_data: AgentInput) -> AgentOutput:
+    async def execute(self, input_data: AgentInput, context: AgentContext = None) -> AgentOutput:
         """基于能力快速路由"""
         # 直接查找能处理该任务类型的Agent
         for agent in self.available_agents:

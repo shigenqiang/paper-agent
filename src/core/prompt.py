@@ -34,7 +34,7 @@ search_agent_prompt_2="""
   "paper_id": "string",
   "title": "string",
   "authors": ["string"](只提取前两位作者),
-  "Abstract": "string",
+  "abstract": "string",
   "url": "string",
   "pdf_url": "string | null",
   "published_date": "YYYY-MM-DD | null",
@@ -49,7 +49,7 @@ search_agent_prompt_2="""
 - paper_id：从 arXiv entry.id 中提取最后一段（以 '/' 分割）
 - title：使用 entry.title
 - authors：提取作者姓名列表
-- Abstract：使用 entry.summary
+- abstract：使用 entry.summary
 - url：使用 entry.id
 - pdf_url：若存在 PDF 链接则填入，否则为 null
 - published_date：使用 entry.published，格式化为 YYYY-MM-DD
@@ -80,7 +80,7 @@ read_analyse_prompt="""
 1. 阅读全文，先定位“问题-方法-实验-结论”四大区域。  
 2. 逐字段抽取，例子如下： 
    - title：论文的标题 
-   - Abstract：论文的摘要部分，尽可能突出重点
+   - abstract：论文的摘要部分，尽可能突出重点
    - core_problem：用“尽管…但…”或“为了…”句式概括。  
    - key_methodology_name：优先取原文给出的模型/算法/框架名。  
    - key_methodology_principle：用1-2句话描述技术路线（可用公式或缩写，但需保留）。  
@@ -97,7 +97,7 @@ read_analyse_prompt="""
 - 所有字符串值须用英文双引号。  
 - 若信息缺失，用 null（不要空字符串）。  
 - 输出为中文
-- 所有格式必须和上面一摸一样，大小写也一样,摘要的键为Abstract
+- 所有格式必须和上面一摸一样，大小写也一样，摘要的键为 abstract
 """
 
 analyse_cluster_prompt="""
