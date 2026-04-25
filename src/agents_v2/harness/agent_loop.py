@@ -10,8 +10,8 @@ from langchain_core.messages import (
     ToolMessage
 )
 
-from ..models.state import AgentContext, AgentState, ToolCall
-from .base_agent import BaseAgent, VirtualTool
+from src.models.state import AgentContext, AgentState, ToolCall
+from ..base_agent import BaseAgent, VirtualTool
 
 logger = logging.getLogger(__name__)
 

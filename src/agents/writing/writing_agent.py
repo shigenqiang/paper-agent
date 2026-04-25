@@ -18,10 +18,19 @@ from src.agents.writing.retriever import retrieval_node
 
 
 async def condition_edge(state: WritingState) -> str:
-    """判断是否继续下一个小节"""
+    """
+    判断是否继续下一个小节
+
+    注意：此函数只返回下一个节点名称，不修改状态。
+    状态更新由节点函数（如 section_writing_node）完成。
+    """
     current_section_index = state["current_section_index"]
     writted_sections = state["writted_sections"]
-    sections = state["sections"]
+    sections = state["sections"] or []
+
+    # 边界检查
+    if not sections:
+        return "end"
 
     last_section = writted_sections[-1] if writted_sections else None
 
@@ -29,12 +38,12 @@ async def condition_edge(state: WritingState) -> str:
     if last_section and not last_section.completed:
         return "retrieval_node"
 
-    # 所有节都已完成
-    if current_section_index + 1 >= len(sections):
+    # 所有节都已完成（current_section_index 已在 section_writing_node 中推进）
+    # 如果 current_section_index >= sections 长度，说明所有节都处理完了
+    if current_section_index >= len(sections):
         return "end"
 
-    # 推进到下一节（修复：更新 state 中的索引，而非局部变量）
-    state["current_section_index"] = current_section_index + 1
+    # 还有未处理的节
     return "section_writing_node"
 
 

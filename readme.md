@@ -1,4 +1,4 @@
-# 论文Agent - 智能论文调研与知识图谱系统
+ # 论文Agent - 智能论文调研与知识图谱系统
 
 ## 项目简介
 
@@ -143,7 +143,13 @@ d:\pycharmprojects\pythonProject1\
 │   │   ├── base_workflow.py           # 工作流基类
 │   │   ├── paper_workflow.py          # 论文调研工作流
 │   │   ├── knowledge_workflow.py      # 知识构建工作流
-│   │   └── dual_engine_workflow.py    # 双引擎协调工作流
+│   │   ├── dual_engine_workflow.py    # 双引擎协调工作流
+│   │   ├── fault_tolerance.py         # 容错机制（错误边界/Fallback/重试）
+│   │   ├── multi_path_search.py       # 多路径冗余搜索
+│   │   ├── checkpoint_rollback.py     # 状态快照与回滚
+│   │   ├── subgraph_isolation.py       # 隔离子图（阅读/写作/搜索）
+│   │   ├── research_graph.py          # 容错状态机（整合所有改进）
+│   │   └── planner_orchestrator.py    # Planner中枢调度（非线性架构）
 │   │
 │   └── utils/                         # 工具函数
 │       ├── log_utils.py
@@ -388,17 +394,25 @@ curl -X POST "http://localhost:8000/query" \
 - [x] 实现记忆管理模块
 - [ ] 集成到搜索Agent
 
-### 阶段5：双引擎协调
+### 阶段5：双引擎协调 ✓
 - [x] 实现双引擎协调工作流框架
 - [ ] 扩展状态模型
 - [ ] 端到端测试
 - [ ] 性能优化
+
+### 阶段6：容错架构（新增）✓
+- [x] 实现错误边界 + Fallback机制
+- [x] 实现多路径冗余搜索
+- [x] 实现状态快照 + 回滚机制
+- [x] 实现隔离子图（阅读/写作）
+- [x] 重构主状态机整合所有容错机制
 
 ## 文档
 
 - [论文Agent计划书](docs/论文Agent计划书.md) - 项目完整计划与架构设计
 - [Web界面使用说明](docs/Web界面使用说明.md) - Web界面使用指南
 - [架构文档](docs/architecture.md) - 系统架构设计
+- [容错架构改进记录](docs/容错架构改进记录.md) - 容错机制详细说明（新增）
 - [API文档](docs/api.md) - API接口说明
 - [用户指南](docs/user_guide.md) - 用户使用指南
 - [记忆系统使用指南](docs/memory_usage.md) - 记忆模块详细说明

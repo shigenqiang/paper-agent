@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 import json
 
-from ..models.state import AgentContext, AgentState, AgentMessage
-from ..models.task import Task
+from src.models.state import AgentContext, AgentState, AgentMessage
+from src.models.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -98,13 +98,13 @@ class BaseAgent(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, input_data: AgentInput, context: AgentContext) -> AgentOutput:
+    async def execute(self, input_data: AgentInput, context: Optional[AgentContext] = None) -> AgentOutput:
         """
         执行Agent的主要任务
 
         Args:
             input_data: 输入数据
-            context: Agent上下文
+            context: Agent上下文（可选）
 
         Returns:
             AgentOutput: 执行结果

@@ -30,7 +30,47 @@ search → reading → analyse → writing → report
 ✗ 内存系统完整但没有接入主流水线
 ✗ 子 Agent 无上下文隔离，20+ 篇论文直接塞进 context
 ✗ 硬编码路径 D:\pycharmprojects\...
+✗ 无容错机制：任一节点失败，整条链路崩溃
 ```
+
+### 1.3 容错架构改进（2026-04-25）
+
+详见 [容错架构改进记录](docs/容错架构改进记录.md)
+
+**改进要点**：
+
+| 机制 | 文件 | 功能 |
+|------|------|------|
+| 错误边界 + Fallback | `workflows/fault_tolerance.py` | 节点失败时执行降级逻辑 |
+| 多路径冗余搜索 | `workflows/multi_path_search.py` | 多引擎并行，失败自动切换 |
+| 状态快照 + 回滚 | `workflows/checkpoint_rollback.py` | 关键节点保存快照，失败可回退 |
+| 隔离子图 | `workflows/subgraph_isolation.py` | 单篇论文阅读失败不影响整体 |
+| 质量门控 | `workflows/checkpoint_rollback.py` | 低于阈值触发回滚或重试 |
+
+**容错流程图**：
+
+```
+[checkpoint] → search(多引擎+fallback)
+                    ↓失败降级
+               [checkpoint] → rank(RCS)
+                    ↓失败使用原顺序
+               [checkpoint] → reading(隔离子图)
+                    ↓部分失败继续
+               [checkpoint] → analyse
+                    ↓失败可回滚
+               critique → (迭代|写)
+                    ↓失败回滚
+               [checkpoint] → writing(隔离子图)
+                    ↓部分失败继续
+                    → report
+```
+
+**关键特性**：
+- 搜索多路径：MCP引擎失败 → 自动切换本地引擎 → 合并结果
+- 阅读子图隔离：5篇失败仍继续，汇总成功的分析结果
+- 检查点回滚：critique失败 → 回滚到before_critique → 重新搜索
+- 写作并行：章节可并行写，失败跳过继续下一节
+- 质量门：低于阈值触发回滚或重试
 
 ---
 
@@ -558,12 +598,19 @@ async def analysis_node(state: ResearchState):
 ## 五、实施优先级
 
 ### Phase 1：修复（1-2 天）
-- [ ] 修复 `state_model.py` 的 Pydantic default bug
-- [ ] 修复 `search_agent.py` 的 paper_filter_node 接入 + Pydantic get 问题
-- [ ] 修复 `writing_agent.py` 的 condition_edge 索引推进 bug
-- [ ] 修复 `agents_v2/base_agent.py` 的导入路径
-- [ ] 修复 `agents_v2/router_agent.py` 的 execute 签名
-- [ ] 消除重复的 SearchAgent 定义
+- [x] 修复 `state_model.py` 的 Pydantic default bug
+- [x] 修复 `search_agent.py` 的 paper_filter_node 接入 + Pydantic get 问题
+- [x] 修复 `writing_agent.py` 的 condition_edge 索引推进 bug
+- [x] 修复 `agents_v2/base_agent.py` 的导入路径
+- [x] 修复 `agents_v2/router_agent.py` 的 execute 签名
+- [x] 消除重复的 SearchAgent 定义
+
+### Phase 1.5：容错架构（新增，2-3 天）
+- [x] 实现 `workflows/fault_tolerance.py` - 错误边界、Fallback装饰器、并行执行器
+- [x] 实现 `workflows/multi_path_search.py` - 多引擎冗余搜索、级联失败
+- [x] 实现 `workflows/checkpoint_rollback.py` - 快照管理、回滚控制器、质量门
+- [x] 实现 `workflows/subgraph_isolation.py` - 隔离子图（阅读/写作/搜索）
+- [x] 重构 `workflows/research_graph.py` - 整合所有容错机制
 
 ### Phase 2：搜索工具（1 天）
 - [ ] 实现 `paper_for_search/paper_search_mcp/server.py`（Semantic Scholar + arXiv）

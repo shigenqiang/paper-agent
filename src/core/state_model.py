@@ -119,8 +119,8 @@ class NodeError(BaseModel):
     report_node_error: Optional[str] = Field(default=None, description="报告生成节点错误信息")
     error: Optional[str] = Field(default=None, description="错误信息")
 class paperagentstate(BaseModel):#可以说是agent的短期上下文。
-    current_step:str
-    search_state:Optional[SearchAgent]=Field(description="查询的状态，包含原始查询和结构化查询")#使用query_State的原因是，查看中间值
+    current_step:str = "init"
+    search_state:Optional[SearchAgent]=Field(default=None, description="查询的状态，包含原始查询和结构化查询")#使用query_State的原因是，查看中间值
     papers_content: Optional[paper_contens] = Field(default=None, description="包含论文的元数据和处理过的数据")
     analysis_result:Optional[AnalysisResults]=Field(default=None,description="分析论文的结果")
     outline: Optional[str] = Field(default=None, description="报告大纲")
@@ -130,7 +130,15 @@ class paperagentstate(BaseModel):#可以说是agent的短期上下文。
     # 配置与上下文
     llm_provider: Any = Field(default=None, description="LLM提供者实例", exclude=True)  # 排除序列化
 
-    error: Optional[NodeError] = Field(default=NodeError(), description="错误信息")
+    error: Optional[NodeError] = Field(default=None, description="错误信息")
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # 修复 Pydantic default 问题
+        if self.writted_sections is None:
+            self.writted_sections = []
+        if self.error is None:
+            self.error = NodeError()
 
 
 

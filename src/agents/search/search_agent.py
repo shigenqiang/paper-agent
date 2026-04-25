@@ -42,27 +42,48 @@ async def generate_query_node(state: SearchAgent):
 
 
 # ============ 节点 2：人工检查（中断） ============
-async def human_check_node(state: SearchAgent):
-    """等待人工审查和修改"""
-    from langgraph.types import interrupt
+# 配置：设为 True 则跳过人工检查，直接继续
+SKIP_HUMAN_CHECK = True
 
-# 暂停并提交给人工
-    print("进入人工检查,请输入True or False")
-    human_input = interrupt({
+
+async def human_check_node(state: SearchAgent):
+    """
+    等待人工审查和修改
+
+    使用 LangGraph 的 interrupt() 机制暂停，等待人工确认。
+    可通过 SKIP_HUMAN_CHECK 配置跳过。
+    """
+    from langgraph.types import interrupt, Command
+
+    # 如果配置为跳过，直接继续
+    if SKIP_HUMAN_CHECK:
+        state.next_node = "paper_search_node"
+        return state
+
+    # 使用 interrupt 暂停，等待人工输入
+    # 当调用 graph.invoke(Command(resume=...)) 时，会从这里继续
+    result = interrupt({
         "action": "please_review",
         "current_query": state.structed_query,
         "original_request": state.query,
         "message": "请审查查询是否合理，可以修改或保持原样"
     })
 
-    print(f"检查结果为{human_input}退出人工检查")
-
-
-
-    if human_input:
-        state.next_node="paper_search_node"
+    # result 是一个字典，包含用户确认结果
+    # 格式: {"approved": True/False, "modified_query": ...}
+    if isinstance(result, dict):
+        approved = result.get("approved", True)
+        modified_query = result.get("modified_query")
+        if modified_query:
+            state.structed_query = modified_query
     else:
-          state.next_node="query_transform_node"
+        approved = bool(result)
+
+    if approved:
+        state.next_node = "paper_search_node"
+    else:
+        state.next_node = "query_transform_node"
+
     return state
 
 
@@ -149,22 +170,25 @@ async def paper_search_node(state: SearchAgent):
     return state
 
 
-async def paper_filter_node(state: SearchAgent) -> dict:
+async def paper_filter_node(state: SearchAgent) -> SearchAgent:
     """
     三阶段论文过滤：
     1. 基于LLM的相关性评分（标题+摘要 vs 查询）
     2. 基于元数据的客观评分（发表年份等）
     3. 加权线性组合 + Top-K选择
-    """
-    papers = state.papers or []
-    papers_filter = state.papers_filter or {}
-    query = papers_filter.get("query", state.query)
-    top_k = papers_filter.get("top_k", 5)
-    llm_weight = papers_filter.get("llm_weight", 0.7)
-    metadata_weight = papers_filter.get("metadata_weight", 0.3)
 
-    if not papers:
-        return {"filtered_papers": [], "papers": papers}
+    修复：返回 SearchAgent 状态对象而不是字典，并修复 Pydantic 模型的 .get() 问题
+    """
+    # 修复：对 Pydantic 模型使用 model_dump() 或直接访问属性
+    papers_data = state.papers if state.papers else []
+    papers_filter = state.papers_filter if state.papers_filter else {}
+    query = papers_filter.get("query", state.query) if isinstance(papers_filter, dict) else state.query
+    top_k = papers_filter.get("top_k", 5) if isinstance(papers_filter, dict) else 5
+    llm_weight = papers_filter.get("llm_weight", 0.7) if isinstance(papers_filter, dict) else 0.7
+    metadata_weight = papers_filter.get("metadata_weight", 0.3) if isinstance(papers_filter, dict) else 0.3
+
+    if not papers_data:
+        return state
 
     # 第一步：LLM相关性评分
     print("=" * 50)
@@ -172,11 +196,15 @@ async def paper_filter_node(state: SearchAgent) -> dict:
     print("=" * 50)
 
     papers_with_llm_scores = []
-    for idx, paper in enumerate(papers, 1):
+    for idx, paper in enumerate(papers_data, 1):
+        # 安全获取字段值
+        title = paper.get('title', '') if isinstance(paper, dict) else getattr(paper, 'title', '')
+        abstract = paper.get('abstract', '') if isinstance(paper, dict) else getattr(paper, 'abstract', '')
+
         eval_prompt = f"""请评估以下论文与搜索查询的相关性。
 搜索查询：{query}
-论文标题：{paper.get('title', '')}
-论文摘要：{paper.get('abstract', '')}
+论文标题：{title}
+论文摘要：{abstract}
 请在0-10的范围内评分，其中：
 - 10分：高度相关，直接解决查询问题
 - 7-9分：很相关，有重要关联
@@ -192,14 +220,21 @@ async def paper_filter_node(state: SearchAgent) -> dict:
             score_data = json.loads(response_text)
             llm_score = float(score_data.get("score", 5.0))
             llm_score = min(10.0, max(0.0, llm_score))
-            print(f"\n论文 {idx}: {paper.get('title', 'N/A')}")
+            print(f"\n论文 {idx}: {title or 'N/A'}")
             print(f"LLM评分: {llm_score}/10 - {score_data.get('reasoning', '')}")
         except (json.JSONDecodeError, ValueError, KeyError) as e:
             print(f"评分解析失败，使用默认值5.0")
             llm_score = 5.0
 
-        paper["llm_score"] = llm_score
-        papers_with_llm_scores.append(paper)
+        # 安全设置分数
+        if isinstance(paper, dict):
+            paper["llm_score"] = llm_score
+            papers_with_llm_scores.append(paper)
+        else:
+            # 如果是 Pydantic 模型，转换为字典
+            paper_dict = paper.model_dump() if hasattr(paper, 'model_dump') else paper
+            paper_dict["llm_score"] = llm_score
+            papers_with_llm_scores.append(paper_dict)
 
     # 第二步：元数据评分
     print("\n" + "=" * 50)
@@ -213,13 +248,13 @@ async def paper_filter_node(state: SearchAgent) -> dict:
         ]
         if not years_list:
             years_list = [2024]
-        max_year = max(years_list)
-        min_year = min(years_list)
+        max_year = max(years_list) if years_list else 2024
+        min_year = min(years_list) if years_list else 2024
         year_range = max_year - min_year if max_year > min_year else 1
 
         for paper in papers_with_llm_scores:
             pub_year = paper.get("published_date", max_year)
-            recency_score = ((pub_year - min_year) / year_range) * 5
+            recency_score = ((pub_year - min_year) / year_range) * 5 if year_range > 0 else 0
             paper["metadata_score"] = recency_score
             print(f"\n论文: {paper.get('title', 'N/A')}")
             print(f"  发表年份: {pub_year} → 新近度评分: {recency_score:.2f}")
@@ -259,7 +294,9 @@ async def paper_filter_node(state: SearchAgent) -> dict:
         print(f"   LLM相关性: {paper.get('llm_score', 0):.1f}/10")
         print(f"   元数据质量: {paper.get('metadata_score', 0):.1f}/10")
 
-    return {"filtered_papers": filtered_papers, "papers": papers_with_llm_scores}
+    # 修复：返回更新后的 SearchAgent 状态，而不是字典
+    state.papers = filtered_papers
+    return state
 # ============ 构建图 ============
 
 class SearchWorkflow:

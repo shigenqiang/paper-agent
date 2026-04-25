@@ -9,6 +9,20 @@ from .base_agent import (
     VirtualTool
 )
 
+# 统一框架
+from .unified import (
+    MasterSupervisor,
+    PhaseSupervisor,
+    PaperState,
+    CircuitBreaker,
+    CircuitBreakerOpen,
+    FallbackHandler,
+    RetryPolicy,
+    ProblemType,
+    PhaseStatus,
+    QualityLevel
+)
+
 __all__ = [
     "BaseAgent",
     "AgentInput",
@@ -16,5 +30,16 @@ __all__ = [
     "AgentCapability",
     "LLMConfig",
     "Tool",
-    "VirtualTool"
+    "VirtualTool",
+    # 统一框架
+    "MasterSupervisor",
+    "PhaseSupervisor",
+    "PaperState",
+    "CircuitBreaker",
+    "CircuitBreakerOpen",
+    "FallbackHandler",
+    "RetryPolicy",
+    "ProblemType",
+    "PhaseStatus",
+    "QualityLevel"
 ]
