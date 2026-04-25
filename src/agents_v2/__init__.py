@@ -23,7 +23,24 @@ from .unified import (
     QualityLevel
 )
 
+# 统计学问答系统
+from .qa import (
+    QueryRouter,
+    PaperSearchAgent,
+    ReportGenerator,
+    DailyWatcher,
+    CitationManager,
+    QuestionType,
+    RoutingDecision,
+    Paper,
+    SearchResult,
+    PaperReport,
+    DailyPaperReport,
+    Citation
+)
+
 __all__ = [
+    # Base agent
     "BaseAgent",
     "AgentInput",
     "AgentOutput",
@@ -41,5 +58,18 @@ __all__ = [
     "RetryPolicy",
     "ProblemType",
     "PhaseStatus",
-    "QualityLevel"
+    "QualityLevel",
+    # 统计学问答系统
+    "QueryRouter",
+    "PaperSearchAgent",
+    "ReportGenerator",
+    "DailyWatcher",
+    "CitationManager",
+    "QuestionType",
+    "RoutingDecision",
+    "Paper",
+    "SearchResult",
+    "PaperReport",
+    "DailyPaperReport",
+    "Citation"
 ]
