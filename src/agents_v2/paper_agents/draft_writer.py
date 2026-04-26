@@ -9,6 +9,7 @@ DraftWriterAgent - 分节撰写Agent
 from typing import Any, Dict, List, Optional
 import json
 import logging
+import asyncio
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 
@@ -75,11 +76,38 @@ class DraftWriterAgent(PaperAgentBase):
             # 1. 获取章节列表
             chapter_plans = outline.get("chapters", [])
 
-            # 2. 按顺序撰写各章节
-            written_chapters = []
-            for chapter in chapter_plans:
-                section = await self._write_chapter(chapter, thesis, literature, context)
-                written_chapters.append(section)
+            # 2. 分析章节依赖关系，独立章节并行撰写
+            independent_chapters = []
+            dependent_chapters = []
+
+            for i, chapter in enumerate(chapter_plans):
+                if i == 0:  # 引言必须首先撰写
+                    dependent_chapters.append((i, chapter))
+                elif chapter.get("depends_on") is None:
+                    independent_chapters.append((i, chapter))
+                else:
+                    dependent_chapters.append((i, chapter))
+
+            # 并行撰写独立章节
+            written_chapters = {}
+            if independent_chapters:
+                tasks = [
+                    self._write_chapter(chap, thesis, literature, context)
+                    for _, chap in independent_chapters
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for (idx, _), result in zip(independent_chapters, results):
+                    if not isinstance(result, Exception):
+                        written_chapters[idx] = result
+
+            # 顺序撰写依赖章节
+            for idx, chapter in dependent_chapters:
+                if idx not in written_chapters:
+                    result = await self._write_chapter(chapter, thesis, literature, context)
+                    written_chapters[idx] = result
+
+            # 按顺序整理章节
+            written_chapters = [written_chapters[i] for i in sorted(written_chapters.keys())]
 
             # 3. 整合初稿
             draft = self._compile_draft(written_chapters)

@@ -35,6 +35,17 @@ from .phase_supervisor import PhaseSupervisor
 from .circuit_breaker import CircuitBreaker, CircuitBreakerOpen, MultiCircuitBreaker
 from .error_handler import FallbackHandler, RetryPolicy, ErrorAccumulator
 from .intent_router import IntentRouter, IntentType
+from .translation import TranslationWrapper, EnglishFirstMixin
+from .cache import ResultCache, LLMLCallOptimizer, SemanticCache
+from .monitoring import (
+    MetricsCollector,
+    PerformanceMonitor,
+    ConcurrentExecutor,
+    BatchProcessor,
+    get_global_metrics,
+    record_metric,
+    increment_metric
+)
 
 __all__ = [
     # State models
@@ -60,4 +71,19 @@ __all__ = [
     "FallbackHandler",
     "RetryPolicy",
     "ErrorAccumulator",
+    # Translation
+    "TranslationWrapper",
+    "EnglishFirstMixin",
+    # Cache
+    "ResultCache",
+    "LLMLCallOptimizer",
+    "SemanticCache",
+    # Monitoring
+    "MetricsCollector",
+    "PerformanceMonitor",
+    "ConcurrentExecutor",
+    "BatchProcessor",
+    "get_global_metrics",
+    "record_metric",
+    "increment_metric",
 ]

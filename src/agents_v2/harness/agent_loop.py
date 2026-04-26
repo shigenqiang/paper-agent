@@ -1,5 +1,6 @@
 """ReAct循环引擎 - Agent的核心引擎"""
 import logging
+import inspect
 from typing import Any, Dict, List, Optional, Callable
 import time
 
@@ -12,6 +13,8 @@ from langchain_core.messages import (
 
 from src.models.state import AgentContext, AgentState, ToolCall
 from ..base_agent import BaseAgent, VirtualTool
+from ..tools.registry import ToolRegistry, get_tool_registry
+from ..memory import HierarchicalMemory
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +49,22 @@ class AgentLoop:
         agent: BaseAgent,
         llm,
         system_prompt: Optional[str] = None,
-        max_iterations: int = 20
+        max_iterations: int = 20,
+        tool_registry: Optional[ToolRegistry] = None,
+        memory: Optional[HierarchicalMemory] = None
     ):
         self.agent = agent
         self.llm = llm
         self.system_prompt = system_prompt or agent.system_prompt
         self.max_iterations = max_iterations
 
-        # 工具处理器
+        # 工具注册表（可选，用于统一管理工具）
+        self.tool_registry = tool_registry
+
+        # 分层记忆系统（可选）
+        self.memory = memory
+
+        # 工具处理器（兼容性保留）
         self.tool_handlers: Dict[str, Callable] = {}
 
         # 统计信息
@@ -61,7 +72,9 @@ class AgentLoop:
             "total_iterations": 0,
             "total_tool_calls": 0,
             "total_tokens": 0,
-            "total_time_ms": 0
+            "total_time_ms": 0,
+            "memory_hits": 0,
+            "memory_misses": 0
         }
 
         self._setup_handlers()
@@ -78,6 +91,14 @@ class AgentLoop:
             if tool.name not in self.tool_handlers:
                 # 创建默认处理器
                 self.tool_handlers[tool.name] = self._create_default_handler(tool.name)
+
+        # 从工具注册表中注册处理器（如果有）
+        if self.tool_registry:
+            for tool_name in self.tool_registry.list_tools():
+                if tool_name not in self.tool_handlers:
+                    spec = self.tool_registry.get(tool_name)
+                    if spec and spec.handler:
+                        self.tool_handlers[tool_name] = spec.handler
 
     def _create_default_handler(self, tool_name: str) -> Callable:
         """创建默认工具处理器"""
@@ -102,8 +123,16 @@ class AgentLoop:
         Returns:
             执行结果字典
         """
-        # 初始化消息
-        messages = self._build_initial_messages(context)
+        # 1. 从记忆系统获取相关上下文
+        if self.memory:
+            # 获取任务相关的历史上下文
+            relevant_context = self._get_relevant_memory(context)
+            if relevant_context:
+                messages = self._build_initial_messages(context, relevant_context)
+            else:
+                messages = self._build_initial_messages(context)
+        else:
+            messages = self._build_initial_messages(context)
 
         logger.info(f"Starting ReAct loop for {self.agent.name}")
         logger.info(f"Task: {context.task_type} - {context.task_description}")
@@ -151,6 +180,10 @@ class AgentLoop:
         total_time = (time.time() - start_time) * 1000
         self.stats["total_time_ms"] = total_time
 
+        # 4. 存储结果到记忆系统
+        if self.memory:
+            self._store_to_memory(context, agent_state)
+
         # 返回结果
         return {
             "success": True,
@@ -161,7 +194,77 @@ class AgentLoop:
             "tool_calls": len([call for call in context.tool_calls if call.duration_ms])
         }
 
-    def _build_initial_messages(self, context: AgentContext) -> List:
+    def _get_relevant_memory(self, context: AgentContext) -> Optional[Dict[str, Any]]:
+        """从记忆系统获取相关上下文"""
+        if not self.memory:
+            return None
+
+        try:
+            # 尝试通过任务ID检索
+            cached = self.memory.recall(f"task_{context.task_id}")
+            if cached:
+                self.stats["memory_hits"] += 1
+                return cached
+
+            # 尝试通过任务类型检索
+            similar = self.memory.search(context.task_type, limit=3)
+            if similar:
+                self.stats["memory_hits"] += 1
+                return {"similar_tasks": [s.value for s in similar]}
+
+            self.stats["memory_misses"] += 1
+        except Exception as e:
+            logger.warning(f"Memory retrieval failed: {e}")
+            self.stats["memory_misses"] += 1
+
+        return None
+
+    def _store_to_memory(
+        self,
+        context: AgentContext,
+        agent_state: Optional[AgentState]
+    ) -> None:
+        """存储执行结果到记忆系统"""
+        if not self.memory:
+            return
+
+        try:
+            # 存储任务结果
+            task_key = f"task_{context.task_id}"
+            result_data = {
+                "task_id": context.task_id,
+                "task_type": context.task_type,
+                "task_description": context.task_description,
+                "iterations": context.iteration_count,
+                "tool_calls": [tc.tool_name for tc in context.tool_calls],
+                "success": agent_state.status == "completed" if agent_state else True
+            }
+
+            # 存储到短期记忆
+            self.memory.remember(
+                key=task_key,
+                value=result_data,
+                tags=[context.task_type, "task_result"]
+            )
+
+            # 如果任务成功，持久化到长期记忆
+            if agent_state and agent_state.status == "completed":
+                self.memory.remember(
+                    key=task_key,
+                    value=result_data,
+                    tags=[context.task_type, "task_result"],
+                    persist=True
+                )
+
+            logger.debug(f"Stored result to memory: {task_key}")
+        except Exception as e:
+            logger.warning(f"Memory storage failed: {e}")
+
+    def _build_initial_messages(
+        self,
+        context: AgentContext,
+        relevant_context: Optional[Dict[str, Any]] = None
+    ) -> List:
         """构建初始消息列表"""
         messages = []
 
@@ -170,7 +273,7 @@ class AgentLoop:
             messages.append(SystemMessage(content=self.system_prompt))
 
         # 用户任务消息
-        task_prompt = self._build_task_prompt(context)
+        task_prompt = self._build_task_prompt(context, relevant_context)
         messages.append(HumanMessage(content=task_prompt))
 
         # 添加历史消息
@@ -186,7 +289,11 @@ class AgentLoop:
 
         return messages
 
-    def _build_task_prompt(self, context: AgentContext) -> str:
+    def _build_task_prompt(
+        self,
+        context: AgentContext,
+        relevant_context: Optional[Dict[str, Any]] = None
+    ) -> str:
         """构建任务提示词"""
         prompt_parts = [
             f"## 任务",
@@ -194,6 +301,17 @@ class AgentLoop:
             f"任务类型: {context.task_type}",
             f"任务描述: {context.task_description}",
         ]
+
+        # 添加记忆中的相关上下文
+        if relevant_context:
+            if "similar_tasks" in relevant_context:
+                prompt_parts.append("\n## 相关历史任务")
+                for i, task in enumerate(relevant_context["similar_tasks"][:3], 1):
+                    prompt_parts.append(f"- 任务{i}: {task.get('task_description', 'N/A')}")
+            elif "task_id" in relevant_context:
+                # 直接复用之前的任务结果
+                prompt_parts.append("\n## 历史上下文")
+                prompt_parts.append(f"之前的任务结果: {relevant_context}")
 
         if context.metadata:
             prompt_parts.append(f"\n## 任务元数据")
@@ -211,8 +329,11 @@ class AgentLoop:
     async def _llm_invoke(self, messages: List, context: AgentContext) -> Any:
         """调用LLM"""
         try:
-            # 准备工具列表
-            tools = self.agent.get_tool_schemas()
+            # 准备工具列表：优先使用注册表，否则使用agent的
+            if self.tool_registry:
+                tools = self.tool_registry.get_schemas()
+            else:
+                tools = self.agent.get_tool_schemas()
 
             # 调用LLM
             response = await self.llm.ainvoke(messages, tools=tools)
@@ -265,17 +386,27 @@ class AgentLoop:
             start_time = time.time()
 
             try:
-                # 执行工具
-                handler = self.tool_handlers.get(tool_name)
-                if handler:
-                    if asyncio.iscoroutinefunction(handler):
-                        result = await handler(**arguments)
+                # 优先使用注册表执行，否则使用handler
+                if self.tool_registry and tool_name in self.tool_registry.list_tools():
+                    # 使用注册表执行（带验证）
+                    exec_result = await self.tool_registry.execute(tool_name, arguments)
+                    if exec_result.success:
+                        result = exec_result.result
+                        tool_call_record.error = None
                     else:
-                        result = handler(**arguments)
-                    tool_call_record.result = result
-                    tool_call_record.error = None
+                        raise ValueError(exec_result.error)
                 else:
-                    raise ValueError(f"Tool handler not found: {tool_name}")
+                    # 使用handler执行
+                    handler = self.tool_handlers.get(tool_name)
+                    if handler:
+                        if inspect.iscoroutinefunction(handler):
+                            result = await handler(**arguments)
+                        else:
+                            result = handler(**arguments)
+                    else:
+                        raise ValueError(f"Tool handler not found: {tool_name}")
+
+                tool_call_record.result = result
 
                 # 添加到结果列表
                 results.append({
