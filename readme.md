@@ -314,12 +314,22 @@ src/agents_v2/
 │   ├── services.py        # 核心服务
 │   ├── unified.py         # 统一管理器
 │   └── ...
+├── knowledge_graph/       # 知识图谱模块
+│   ├── kg_service.py      # KG核心服务
+│   ├── kg_schema.py       # 图谱Schema
+│   ├── kg_vector_store.py # 向量存储
+│   ├── kg_embeddings.py   # Embeddings
+│   ├── kg_summarizer.py   # 摘要生成
+│   ├── kg_community.py   # 社区检测
+│   ├── kg_batch.py       # 批量操作
+│   ├── kg_graphrag.py     # GraphRAG
+│   └── kg_hybrid_retriever.py # 混合检索
 ├── paper_agents/          # Pipeline Agent
 ├── problem_oriented/      # 问题导向Agent
 ├── writing/               # 写作Agent
 ├── unified/               # 统一框架
 ├── tools/                 # 工具链
-└── api_server.py         # HTTP API
+└── api_server.py          # HTTP API
 ```
 
 ---
@@ -328,12 +338,13 @@ src/agents_v2/
 
 | 文档 | 说明 |
 |------|------|
-| [迭代报告与开发计划](docs/迭代报告与开发计划.md) | 完整迭代历程与开发计划 |
-| [API文档_完整版](docs/API文档_完整版.md) | Agent API、HTTP API、Memory API |
+| [迭代报告与开发计划](docs/开发文档/迭代报告与开发计划.md) | 完整迭代历程与开发计划 |
+| [API文档_完整版](docs/开发文档/API文档_完整版.md) | Agent API、HTTP API、Memory API |
 | [Agent记忆系统设计文档](docs/Agent记忆系统设计文档.md) | 记忆框架调研与设计 |
-| [数据库选型指南](docs/数据库选型指南.md) | PostgreSQL、Redis、Neo4j选型 |
-| [部署指南](docs/部署指南.md) | Docker、本地部署 |
-| [快速开始](docs/快速开始.md) | 入门指南 |
+| [数据库选型指南](docs/开发文档/数据库选型指南.md) | PostgreSQL、Redis、Neo4j选型 |
+| [部署指南](docs/开发文档/部署指南.md) | Docker、本地部署 |
+| [快速开始](docs/开发文档/快速开始.md) | 入门指南 |
+| [Complete Prompt Engineering Guide](docs/调研报告/Complete_Prompt_Engineering_Guide.md) | 提示词工程完全指南 |
 
 ---
 
@@ -377,10 +388,10 @@ src/agents_v2/
 |------|------|------|------|
 | Phase 1 | 101-105 | 评估与优化 | 5/5 (100%) ✅ |
 | Phase 2 | 106-110 | 用户体验优化 | 5/5 (100%) ✅ |
-| Phase 3 | 111-115 | 高级功能 | 3/5 (60%) |
+| Phase 3 | 111-113 | 高级功能 | 3/5 (60%) |
 | Phase 4 | 116-120 | 生产就绪 | 0/5 (0%) |
 
-详细计划请查看 [迭代报告与开发计划](docs/迭代报告与开发计划.md)
+详细计划请查看 [迭代报告与开发计划](docs/开发文档/迭代报告与开发计划.md)
 
 ---
 
