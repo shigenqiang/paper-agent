@@ -27,15 +27,56 @@ class LanguagePolisherAgent(ProblemAgentBase):
     - 学术规范欠缺
     """
 
+    # Few-shot示例 - 润色的期望输出
+    FEW_SHOT_EXAMPLES = """
+
+## 润色输出格式示例
+
+【示例1：中文论文润色】
+输入：我们的方法比基线高了5个百分点
+输出：
+{
+    "original": "我们的方法比基线高了5个百分点",
+    "polished": "相比基线方法，本文方法准确率提升了5个百分点",
+    "issues": ["表述不够量化", "缺少主语明确性"],
+    "improvements": ["使用'相比...提升了'结构更学术", "明确'准确率'等指标名称"]
+}
+
+【示例2：英文论文润色】
+输入：This paper proposes a new method which is very good.
+输出：
+{
+    "original": "This paper proposes a new method which is very good.",
+    "polished": "This paper proposes a novel framework that significantly outperforms existing baselines.",
+    "issues": ["'very good'过于口语化", "缺乏具体量化"],
+    "improvements": ["用'significantly outperforms'替代主观评价", "补充对比数据"]
+}
+"""
+
     def __init__(self, llm_config: Optional[LLMConfig] = None):
-        system_prompt = """你是一个学术语言润色专家。
+        base_prompt = """你是一个学术语言润色专家。
 你的职责是：
 1. 检查语法错误
 2. 规范学术语言
 3. 确保术语一致
 4. 提升语言质量
 
-请确保语言准确、简洁、符合学术规范。"""
+请确保语言准确、简洁、符合学术规范。
+
+【润色原则】
+- 保持原意不变
+- 使用学术规范表达
+- 术语统一准确
+- 避免主观评价词汇
+
+润色输出格式：
+{
+    "original": "原文",
+    "polished": "润色后",
+    "issues": ["发现的问题"],
+    "improvements": ["具体改进点"]
+}"""
+        system_prompt = base_prompt + self.FEW_SHOT_EXAMPLES
         super().__init__(
             name="language_polisher",
             target_problem="语言表达问题/语法错误",

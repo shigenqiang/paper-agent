@@ -30,6 +30,52 @@ class LiteratureAgent(PaperAgentBase):
     - 识别研究空白
     """
 
+    # Few-shot示例 - 文献工作的期望输出格式
+    FEW_SHOT_EXAMPLES = """
+
+## 文献综述输出格式示例
+
+【示例1：高质量文献摘要】
+输入：搜索"深度学习医学图像分割"相关文献
+输出：
+{
+    "papers": [
+        {
+            "title": "Attention U-Net: Learning Where to Look for the Pancreas",
+            "authors": "Oktay et al.",
+            "year": 2018,
+            "venue": "MIDL",
+            "impact": "高（被引5000+）",
+            "key_contribution": "提出Attention Gate机制，增强模型对目标区域的关注",
+            "relevance": 0.95,
+            "limitations": "在极端尺度器官上效果有限"
+        }
+    ],
+    "research_gaps": [
+        "现有方法在少样本场景下效果不佳",
+        "跨模态（CT/MRI）泛化性研究较少"
+    ]
+}
+
+【示例2：研究空白识别】
+输入：分析"目标检测"领域的研究空白
+输出：
+{
+    "identified_gaps": [
+        {
+            "gap": "小目标检测精度低",
+            "severity": "高",
+            "opportunity": "提出针对小目标的特征融合策略"
+        },
+        {
+            "gap": "实时性与精度的矛盾",
+            "severity": "中",
+            "opportunity": "轻量化网络设计"
+        }
+    ]
+}
+"""
+
     def __init__(self, llm_config: Optional[LLMConfig] = None):
         system_prompt = """你是一个专业的学术文献研究员。
 你的职责是：
@@ -41,7 +87,10 @@ class LiteratureAgent(PaperAgentBase):
 请确保：
 - 搜索全面，不遗漏重要工作
 - 筛选严格，只保留高质量文献
-- 提取信息准确、结构化"""
+- 提取信息准确、结构化""" + """
+- 优先选择顶会/顶刊论文
+- 关注近3-5年的最新工作
+- 识别文献之间的关联和差异""" + self.FEW_SHOT_EXAMPLES
         super().__init__(
             name="literature_agent",
             llm_config=llm_config,

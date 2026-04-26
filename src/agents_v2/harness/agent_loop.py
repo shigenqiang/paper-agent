@@ -82,6 +82,45 @@ class CancellationToken:
         return self._cancelled
 
 
+# CoT引导前缀 - 统一思维链提示
+COT_GUIDANCE = """
+## 思维链引导
+
+回答时，请先进行逐步推理（Chain-of-Thought）：
+
+1. **理解任务目标** - 明确需要完成什么
+2. **分析当前状态** - 了解已有信息和限制条件
+3. **制定执行计划** - 规划需要调用的工具和顺序
+4. **逐步执行验证** - 每步完成后验证结果是否正确
+5. **反思调整** - 如遇问题，思考替代方案
+
+【重要】在调用工具前，先在脑海中形成解决思路。
+"""
+
+# Few-shot示例模板
+FEW_SHOT_EXAMPLES = """
+## 示例参考
+
+以下是对话示例，帮助你理解任务的期望格式和质量标准：
+
+### 示例1：主题选择
+用户：我想研究人工智能在教育领域的应用
+思考：
+- 用户需求较宽泛，需要聚焦到具体问题
+- 可以考虑AI+教育的技术结合点：智能辅导、自适应学习、教育机器人
+- 需要评估创新性和可行性
+输出：{{"title": "基于大语言模型的智能辅导系统研究", "feasibility": 0.85, ...}}
+
+### 示例2：文献搜索
+用户：搜索深度学习优化方法的最新进展
+思考：
+- 需要使用搜索工具查找最新论文
+- 关键词：深度学习、优化方法、2024
+- 需要筛选高质量论文（顶会、顶刊）
+输出：{{"papers": [...], "total": 15, "gaps": [...]}}
+"""
+
+
 class AgentLoop:
     """
     ReAct循环引擎 - Agent的核心
@@ -107,6 +146,10 @@ class AgentLoop:
     ```
     """
 
+    # 类级别的CoT和Few-shot配置
+    enable_cot_guidance: bool = True
+    enable_few_shot: bool = True
+
     def __init__(
         self,
         agent: BaseAgent,
@@ -116,13 +159,19 @@ class AgentLoop:
         timeout_seconds: Optional[float] = None,
         tool_registry: Optional[ToolRegistry] = None,
         memory: Optional[HierarchicalMemory] = None,
-        termination_conditions: Optional[List[TerminationCondition]] = None
+        termination_conditions: Optional[List[TerminationCondition]] = None,
+        enable_cot: bool = True,
+        enable_fewshot: bool = True
     ):
         self.agent = agent
         self.llm = llm
         self.system_prompt = system_prompt or agent.system_prompt
         self.max_iterations = max_iterations
         self.timeout_seconds = timeout_seconds
+
+        # 提示词优化开关
+        self.enable_cot = enable_cot
+        self.enable_fewshot = enable_fewshot
 
         # 工具注册表（可选，用于统一管理工具）
         self.tool_registry = tool_registry
@@ -416,9 +465,22 @@ class AgentLoop:
         """构建初始消息列表"""
         messages = []
 
-        # 系统消息
+        # 系统消息 - 组合基础prompt + CoT引导 + Few-shot示例
+        prompt_parts = []
+
         if self.system_prompt:
-            messages.append(SystemMessage(content=self.system_prompt))
+            prompt_parts.append(self.system_prompt)
+
+        # 添加CoT思维链引导
+        if self.enable_cot and hasattr(self, 'enable_cot') and self.enable_cot:
+            prompt_parts.append(COT_GUIDANCE)
+
+        # 添加Few-shot示例
+        if self.enable_fewshot and hasattr(self, 'enable_fewshot') and self.enable_fewshot:
+            prompt_parts.append(FEW_SHOT_EXAMPLES)
+
+        if prompt_parts:
+            messages.append(SystemMessage(content="\n\n".join(prompt_parts)))
 
         # 用户任务消息
         task_prompt = self._build_task_prompt(context, relevant_context)

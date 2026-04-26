@@ -28,6 +28,48 @@ class TopicAgent(PaperAgentBase):
     - 凝练具体研究问题
     """
 
+    # Few-shot示例 - 帮助模型理解期望的输出格式和质量
+    FEW_SHOT_EXAMPLES = """
+
+## 输出格式示例
+
+【示例1：主题选择】
+输入：我想研究人工智能在教育领域的应用
+输出：
+{
+    "title": "基于大语言模型的个性化自适应学习系统研究",
+    "description": "利用LLM技术构建能够根据学生学习行为自动调整难度的智能辅导系统",
+    "scope": "聚焦于K-12数学教育场景",
+    "innovation": "将生成式AI与知识追踪结合，实现真正的个性化",
+    "feasibility": 0.85,
+    "literature_support": "深度学习、教育AI、知识追踪相关文献充足"
+}
+
+【示例2：聚焦具体问题】
+输入：我想做机器学习方面的研究
+输出：
+{
+    "title": "联邦学习中的隐私保护梯度压缩方法研究",
+    "description": "在保证差分隐私前提下，通过梯度压缩减少通信开销",
+    "scope": "聚焦于图像分类任务的联邦学习场景",
+    "innovation": "提出一种新的压缩比自适应策略，平衡隐私和效率",
+    "feasibility": 0.78,
+    "literature_support": "联邦学习、差分隐私相关文献丰富"
+}
+
+【示例3：跨学科研究】
+输入：我想研究AI和生物学的交叉方向
+输出：
+{
+    "title": "基于深度学习的蛋白质结构预测优化方法",
+    "description": "改进AlphaFold2的预测精度和推理速度",
+    "scope": "聚焦于单域蛋白质的结构预测",
+    "innovation": "提出轻量化网络结构，降低计算资源需求",
+    "feasibility": 0.72,
+    "literature_support": "AlphaFold相关文献较多，但应用优化方向较少"
+}
+"""
+
     def __init__(self, llm_config: Optional[LLMConfig] = None):
         system_prompt = """你是一个学术研究主题选择专家。
 你的职责是：
@@ -40,7 +82,7 @@ class TopicAgent(PaperAgentBase):
 - 具有研究价值和创新性
 - 在现有技术和资源下可行
 - 有足够的文献支持
-- 具有实际应用意义"""
+- 具有实际应用意义""" + self.FEW_SHOT_EXAMPLES
         super().__init__(
             name="topic_agent",
             llm_config=llm_config,
