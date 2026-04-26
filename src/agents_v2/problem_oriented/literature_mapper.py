@@ -14,6 +14,7 @@ import json
 import logging
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
+from ..qa.paper_search import PaperSearchAgent
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ class LiteratureMapperAgent(ProblemAgentBase):
             description="文献搜索与研究空白识别",
             system_prompt=system_prompt
         )
+        # 使用真实的论文搜索Agent
+        self.search_agent = PaperSearchAgent()
 
     async def diagnose(
         self,
@@ -158,20 +161,35 @@ class LiteratureMapperAgent(ProblemAgentBase):
         queries: List[str],
         existing_papers: List[Dict]
     ) -> List[Dict[str, Any]]:
-        """搜索文献（模拟，实际应调用搜索API）"""
+        """搜索文献 - 使用真实API"""
+        import asyncio
+
         # 合并已有文献
         all_papers = list(existing_papers)
 
-        # 模拟搜索结果（实际应该调用arXiv/PubMed等API）
-        for query in queries[:5]:
-            # 模拟添加一些论文
-            all_papers.append({
-                "title": f"Paper about {query}",
-                "abstract": f"Abstract for {query}",
-                "year": 2024,
-                "citations": 50,
-                "source": "simulated"
-            })
+        async def search_query(query: str) -> List[Dict[str, Any]]:
+            try:
+                result = await self.search_agent.execute(
+                    query,
+                    {"source": "all", "time_range": 365, "max_results": 10}
+                )
+                return result.get("papers", [])
+            except Exception as e:
+                logger.error(f"Search failed for query '{query}': {e}")
+                return []
+
+        # 并行搜索
+        semaphore = asyncio.Semaphore(3)
+        async def bounded_search(query):
+            async with semaphore:
+                return await search_query(query)
+
+        tasks = [bounded_search(q) for q in queries[:8]]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result in results:
+            if isinstance(result, list):
+                all_papers.extend(result)
 
         # 去重
         seen = set()

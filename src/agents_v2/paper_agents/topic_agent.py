@@ -12,6 +12,7 @@ import json
 import logging
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
+from ..unified.error_handler import log_error_with_context
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ class TopicAgent(PaperAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"TopicAgent execution failed: {e}")
+            log_error_with_context(self.logger, e, "TopicAgent execution", recovered=True)
             return AgentOutput(
                 success=False,
                 result=None,
@@ -124,7 +125,7 @@ class TopicAgent(PaperAgentBase):
             response = await self._llm_call(prompt)
             return json.loads(response)
         except Exception as e:
-            self.logger.error(f"Domain analysis failed: {e}")
+            log_error_with_context(self.logger, e, "Domain analysis", recovered=True)
             return {
                 "main_domain": "未知",
                 "sub_domains": [],
@@ -169,7 +170,7 @@ class TopicAgent(PaperAgentBase):
             data = json.loads(response)
             return data.get("candidates", [])
         except Exception as e:
-            self.logger.error(f"Candidate generation failed: {e}")
+            log_error_with_context(self.logger, e, "Candidate generation", recovered=True)
             return [{"title": user_request, "description": "Research topic", "scope": "中等"}]
 
     async def _evaluate_feasibility(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -217,7 +218,7 @@ class TopicAgent(PaperAgentBase):
             return evaluated
 
         except Exception as e:
-            self.logger.error(f"Feasibility evaluation failed: {e}")
+            log_error_with_context(self.logger, e, "Feasibility evaluation", recovered=True)
             return [{"original": c, "scores": {}, "overall_score": 0.5} for c in candidates]
 
     async def _select_best_topic(self, evaluated: List[Dict[str, Any]]) -> Dict[str, Any]:

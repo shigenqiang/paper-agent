@@ -243,9 +243,592 @@ Phase Output → Reflection → Quality Check → Pass/Fail
 
 ---
 
-## 八、参考资源
+## 八、特定领域Agent指南
 
-- [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
-- [Microsoft: AI Agents for Beginners](https://github.com/microsoft/ai-agents-for-beginners)
-- [LangGraph Documentation](https://langchain.dev/langgraph)
-- [CrewAI Multi-Agent Architecture](https://github.com/crewAI/crewAI)
+### 8.0 框架概述
+
+本框架融合两种Agent设计范式：
+
+| 范式 | 特点 | 适用场景 |
+|------|------|---------|
+| **Pipeline型** | 流程清晰、顺序执行、质量稳定 | 选题、文献、大纲、撰写等线性流程 |
+| **问题导向型** | 针对性强、精准解决问题 | 诊断、修复、润色等非确定性任务 |
+
+**融合后的三阶段流程**：
+```
+诊断阶段 → 问题导向Agent并行诊断
+    ↓
+执行阶段 → Pipeline型Agent顺序执行
+    ↓
+完善阶段 → 问题导向Agent针对性修复
+```
+
+---
+
+### 8.1 论文写作Agent体系架构
+
+#### 论文Agent Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        论文写作Agent Pipeline                        │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌───────────┐    ┌───────────┐    ┌───────────┐    ┌───────────┐
+│   Topic   │───▶│Literature │───▶│  Thesis   │───▶│  Outline  │
+│   Agent   │    │   Agent   │    │   Agent   │    │   Agent   │
+└───────────┘    └───────────┘    └───────────┘    └───────────┘
+      │                                      │
+      │    ┌───────────┐    ┌───────────┐    │
+      └───▶│  Writer   │───▶│  Review   │───┘
+           │   Agent   │    │   Agent   │
+           └───────────┘    └───────────┘
+                  │
+           ┌───────────┐
+           │  Editor   │
+           │   Agent   │
+           └───────────┘
+```
+
+#### Agent职责定义
+
+| Agent | 核心职责 | 输出 |
+|-------|---------|------|
+| **TopicAgent** | 主题选择与研究问题凝练 | 候选主题、研究问题 |
+| **LiteratureAgent** | 文献搜索、筛选、深度分析 | 论文列表、研究空白 |
+| **ThesisAgent** | 研究动机、目标、假设凝练 | Thesis Statement |
+| **OutlineAgent** | 论文结构设计 | 大纲、章节规划 |
+| **WriterAgent** | 各章节撰写 | 初稿内容 |
+| **ReviewerAgent** | 质量审查与反馈 | 评审意见 |
+| **EditorAgent** | 整合修改、最终润色 | 定稿 |
+
+---
+
+### 8.2 论文Agent设计原则
+
+#### 学术严谨性原则
+
+论文Agent必须遵循：
+- **引用准确性**：确保所有引用可溯源
+- **逻辑严密性**：论点推导有据可依
+- **方法科学性**：研究方法符合学术规范
+- **格式规范性**：符合目标期刊/会议要求
+
+#### 领域适配原则
+
+不同的研究领域有不同的写作范式：
+
+```python
+DOMAIN_CONFIGS = {
+    "cs": {
+        "structure": ["Abstract", "Introduction", "Related Work", "Method", "Experiment", "Conclusion"],
+        "citation_style": "ACM/IEEE",
+        "emphasis": ["性能指标", "算法创新", "实验验证"]
+    },
+    "medical": {
+        "structure": ["Abstract", "Background", "Methods", "Results", "Discussion"],
+        "citation_style": "Vancouver",
+        "emphasis": ["统计显著性", "样本量", "伦理审批"]
+    },
+    "social_science": {
+        "structure": ["Abstract", "Introduction", "Literature Review", "Methodology", "Findings", "Discussion"],
+        "citation_style": "APA",
+        "emphasis": ["理论框架", "质性分析", "研究伦理"]
+    }
+}
+```
+
+#### 迭代优化原则
+
+论文写作是迭代过程，每个阶段都应有反馈机制：
+
+```
+Phase Output → Self-Review → Quality Gate → Pass/Revise
+                    ↓
+              Revise → Re-review → ...
+```
+
+---
+
+### 8.3 论文Agent实现规范
+
+#### 基类继承结构
+
+```python
+# 标准论文Agent实现模板
+from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
+from typing import Any, Dict, Optional
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class YourAgentName(PaperAgentBase):
+    """
+    [Agent名称] - [简短描述]
+
+    职责：
+    - [职责1]
+    - [职责2]
+    - [职责3]
+    """
+
+    def __init__(self, llm_config: Optional[LLMConfig] = None):
+        system_prompt = """你是一个[领域]专家。
+你的职责是：
+1. [具体职责1]
+2. [具体职责2]
+3. [具体职责3]
+
+请确保：
+- [质量要求1]
+- [质量要求2]"""
+        super().__init__(
+            name="your_agent_name",
+            llm_config=llm_config,
+            description="Agent描述",
+            system_prompt=system_prompt
+        )
+
+    async def execute(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None
+    ) -> AgentOutput:
+        """执行主任务"""
+        # 1. 输入验证
+        # 2. 核心逻辑
+        # 3. 结果组装
+        # 4. 质量评估
+        pass
+```
+
+#### 标准输入输出格式
+
+**输入格式 (AgentInput)**：
+```python
+{
+    "task_type": "literature_review",      # 任务类型
+    "task_description": "关于XX的研究",    # 任务描述
+    "input_data": {                         # 任务特定数据
+        "topic": "机器学习优化",
+        "keywords": ["深度学习", "优化算法"]
+    },
+    "context": {                            # 执行上下文（上游结果）
+        "thesis_statement": "...",
+        "literature_result": {...}
+    },
+    "requirements": [                       # 特殊需求
+        "需要包含近3年文献",
+        "优先顶级会议论文"
+    ],
+    "metadata": {                           # 元数据
+        "academic_level": "硕士",
+        "target_journal": "CVPR"
+    }
+}
+```
+
+**输出格式 (AgentOutput)**：
+```python
+{
+    "success": True,
+    "result": {                            # 执行结果
+        "key_field": "value"
+    },
+    "agent_name": "your_agent",
+    "reasoning": "为什么输出这个结果",       # 推理过程说明
+    "next_actions": ["suggested_next"],    # 建议的后续操作
+    "quality_score": 0.85,                 # 质量评分 (0-1)
+    "metadata": {                          # 额外信息
+        "papers_analyzed": 20,
+        "time_spent": "30s"
+    }
+}
+```
+
+#### 论文Agent质量门控
+
+```python
+QUALITY_GATES = {
+    "topic_agent": {
+        "min_candidates": 3,
+        "min_feasibility_score": 0.6,
+        "required_fields": ["title", "description", "scope"]
+    },
+    "literature_agent": {
+        "min_papers": 10,
+        "min_relevance_threshold": 0.5,
+        "required_gaps": 2
+    },
+    "thesis_agent": {
+        "required_fields": ["thesis_statement", "research_objectives"],
+        "min_objectives": 3,
+        "coherence_score_threshold": 0.7
+    },
+    "outline_agent": {
+        "min_chapters": 5,
+        "required_sections": ["Introduction", "Method", "Conclusion"]
+    },
+    "writer_agent": {
+        "min_word_count": 500,
+        "required_citations": 3,
+        "coherence_check": True
+    }
+}
+```
+
+---
+
+### 8.4 核心论文Agent详细设计
+
+#### TopicAgent (主题选择)
+
+工作流程：`领域分析 → 候选主题生成 → 可行性评估 → 最佳选择`
+
+**关键设计点**：
+- 多候选原则：生成多个候选而非单一主题
+- 可行性评估：文献充足性、方法可行性、创新性、时间合理性
+- 风险提示：识别潜在风险因素
+
+#### LiteratureAgent (文献工作)
+
+工作流程：`多角度查询生成 → 多源搜索 → 质量排序 → 深度分析 → Gap识别`
+
+**关键设计点**：
+- 并行搜索：利用Semaphore控制并发
+- 去重机制：基于title去重
+- 深度分析：提取core_problem, methodology, findings, limitations
+
+#### ThesisAgent (研究凝练)
+
+工作流程：`文献分析 → 研究动机 → 研究目标 → 研究范围 → Thesis Statement`
+
+#### OutlineAgent (大纲设计)
+
+工作流程：`结构设计 → 章节规划 → 关键论点识别`
+
+#### WriterAgent (章节撰写)
+
+```python
+class WriterAgent(PaperAgentBase):
+    """
+    各章节撰写
+
+    职责：
+    - 根据大纲撰写各章节
+    - 融入文献引用
+    - 保持风格一致性
+    """
+
+    async def execute_section(self, section_type, outline, context):
+        """撰写单个章节"""
+        templates = {
+            "introduction": self._write_introduction,
+            "related_work": self._write_related_work,
+            "methodology": self._write_methodology,
+            "experiment": self._write_experiment,
+            "conclusion": self._write_conclusion
+        }
+        writer = templates.get(section_type, self._write_generic)
+        return await writer(outline, context)
+```
+
+#### ReviewerAgent (质量审查)
+
+审查维度：逻辑连贯性、论据充分性、引用准确性、格式规范性、创新性评估
+
+#### EditorAgent (整合编辑)
+
+职责：整合各章节、统一风格格式、语言润色、最终检查
+
+---
+
+### 8.5 论文Agent间协作规范
+
+#### Context传递协议
+
+```python
+# Pipeline执行时的context流动
+context = {
+    # Stage 1: Topic
+    "user_request": "用户的研究意向",
+    "selected_topic": {...},
+
+    # Stage 2: Literature (receives topic from context)
+    "topic": context["selected_topic"]["title"],
+    "literature_result": {...},
+
+    # Stage 3: Thesis (receives topic + literature from context)
+    "literature_result": context["literature_result"],
+    "thesis_result": {...},
+
+    # Stage 4: Outline (receives thesis + literature from context)
+    "thesis_statement": context["thesis_result"]["thesis_statement"],
+    "literature_result": context["literature_result"],
+    "outline_result": {...}
+}
+```
+
+#### 错误传播与恢复
+
+```python
+ERROR_STRATEGIES = {
+    "topic_agent": {
+        "fallback": "使用用户原始请求作为主题",
+        "retry": True,
+        "max_retries": 2
+    },
+    "literature_agent": {
+        "fallback": "返回已有缓存文献或空列表",
+        "retry": True,
+        "max_retries": 3
+    },
+    "thesis_agent": {
+        "fallback": "生成通用Thesis Statement",
+        "retry": False  # 需要真实的文献分析
+    }
+}
+```
+
+#### 质量验收标准
+
+| Agent | 最低质量分 | 必须满足的条件 |
+|-------|----------|--------------|
+| TopicAgent | 0.6 | 至少3个候选主题，主题可执行 |
+| LiteratureAgent | 0.5 | 至少10篇论文，至少2个研究空白 |
+| ThesisAgent | 0.7 | 有Thesis Statement，至少3个目标 |
+| OutlineAgent | 0.7 | 至少5章，核心章节齐全 |
+
+---
+
+### 8.6 论文Agent开发检查清单
+
+#### 新Agent开发
+- [ ] 明确Agent职责（单一职责原则）
+- [ ] 设计System Prompt（角色定义 + 质量要求）
+- [ ] 定义输入输出格式
+- [ ] 实现主execute方法
+- [ ] 实现子步骤方法（私有方法）
+- [ ] 添加错误处理和fallback
+- [ ] 设置质量评分
+- [ ] 编写单元测试
+
+#### Pipeline集成
+- [ ] 定义context传递结构
+- [ ] 配置上游依赖
+- [ ] 设置质量门控阈值
+- [ ] 实现错误传播
+- [ ] 添加日志记录
+
+#### 质量保证
+- [ ] 每个Agent有自检机制
+- [ ] 输出包含quality_score
+- [ ] 不满足质量标准时有明确反馈
+- [ ] 支持迭代改进
+
+---
+
+### 8.7 统一框架架构
+
+#### 架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         MasterSupervisor                                │
+│                    (全局状态管理 + 路由决策)                            │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+            ┌───────────────────────┼───────────────────────┐
+            ▼                       ▼                       ▼
+    ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+    │   Diagnostic   │     │   Pipeline    │     │   Problem     │
+    │   Phase        │     │   Phase       │     │   Solving     │
+    └───────────────┘     └───────────────┘     └───────────────┘
+            │                       │                       │
+            ▼                       ▼                       ▼
+    TopicRefiner              TopicAgent              ArgumentBuilder
+    LiteratureMapper          LiteratureAgent         SectionDiff
+    MethodologyAdvisor        ThesisAgent            DiscussionDeepener
+                               OutlineAgent           ChartFormatter
+                               DraftWriterAgent      LanguagePolisher
+                               EditorAgent            PlagiarismChecker
+                               ReviewerAgent
+```
+
+#### 核心组件
+
+**MasterSupervisor**：全局协调器
+- 管理全局状态 (PaperState)
+- 路由到正确的PhaseSupervisor
+- 处理阶段间的流转
+- 协调诊断-执行-完善流程
+
+**PhaseSupervisor**：单阶段协调器
+- 调度阶段内的多个Agent
+- 聚合Agent结果
+- 评估阶段质量
+- 决定是否需要诊断修复
+
+支持三种执行模式：
+- **parallel**: 并行执行（诊断阶段）
+- **sequential**: 顺序执行（选题、文献阶段）
+- **adaptive**: 自适应执行（根据结果动态决定）
+
+**PaperState**：全局状态管理
+```python
+@dataclass
+class PaperState:
+    user_request: str
+    current_phase: str
+    phase_sequence: List[str]
+    phase_results: Dict[str, PhaseResult]
+    problems: List[ProblemType]
+    problem_severity: Dict[ProblemType, float]
+    iteration: int
+    quality_history: List[QualityScore]
+```
+
+#### 完整论文流程 (full_paper)
+
+```
+用户输入
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────┐
+│                     1. 诊断阶段 (Diagnostic)                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+│  │TopicRefiner │  │LiteratureMap │  │Methodology   │         │
+│  │  Agent      │  │   Agent      │  │  Advisor     │         │
+│  └──────────────┘  └──────────────┘  └──────────────┘         │
+│              (并行)                                              │
+└────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────┐
+│                     2. 选题阶段 (Topic)                        │
+│                      TopicAgent                                 │
+└────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────┐
+│                     3. 文献阶段 (Literature)                   │
+│                    LiteratureAgent                              │
+└────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────┐
+│                     4. 方法阶段 (Methodology)                   │
+│  ┌──────────────┐  ┌──────────────┐                            │
+│  │Methodology   │  │  Argument    │                            │
+│  │  Advisor     │  │  Builder     │                            │
+│  └──────────────┘  └──────────────┘                            │
+└────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────┐
+│                     5. 写作阶段 (Writing)                      │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐           │
+│  │ Thesis  │→│ Outline │→│  Draft  │→│ Editor  │           │
+│  │ Agent   │  │ Agent   │  │ Writer  │  │ Agent   │           │
+│  └─────────┘  └─────────┘  └─────────┘  └─────────┘           │
+└────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────┐
+│                     6. 完善阶段 (Polish)                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+│  │ChartFormat  │  │  Language    │  │  Plagiarism  │         │
+│  │   Agent     │  │  Polisher    │  │  Checker     │         │
+│  └──────────────┘  └──────────────┘  └──────────────┘         │
+└────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────┐
+│                     最终输出                                    │
+│              符合学术规范的论文                                  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+#### 诊断-治疗模式
+
+```
+发现问题 ──→ 诊断 ──→ 治疗 ──→ 验证
+
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Pipeline   │────▶│  Diagnostic │────▶│  Problem    │
+│   执行      │     │    诊断     │     │   修复      │
+└─────────────┘     └─────────────┘     └─────────────┘
+                           │
+                           ▼
+                   ┌─────────────────┐
+                   │  发现问题列表   │
+                   │  ProblemType    │
+                   └─────────────────┘
+```
+
+#### 迭代改进机制
+
+```
+┌──────────────────────────────────────────┐
+│            质量检查                       │
+│  quality_score < threshold?              │
+└──────────────────────────────────────────┘
+            │
+    Yes     │     No
+    ▼       │       ▼
+┌───────────┐    ┌──────────┐
+│  迭代     │    │  下一阶段 │
+│  修复     │    └──────────┘
+└───────────┘
+    │
+    ▼
+┌──────────────────────────────────────────┐
+│     iteration < max_iterations?          │
+└──────────────────────────────────────────┘
+            │
+    Yes     │     No
+    ▼       │       ▼
+┌───────────┐    ┌──────────┐
+│  重试     │    │  降级/结束│
+└───────────┘    └──────────┘
+```
+
+#### 问题类型映射
+
+| ProblemType | 对应Agent | 修复策略 |
+|------------|----------|---------|
+| TOPIC_VAGUE | TopicRefinerAgent | 明确研究范围 |
+| TOPIC_TOO_BROAD | TopicRefinerAgent | 缩小选题 |
+| LITERATURE_INSUFFICIENT | LiteratureMapperAgent | 扩大文献搜索 |
+| ARGUMENT_WEAK | ArgumentBuilderAgent | 重构论证框架 |
+| DISCUSSION_SHALLOW | DiscussionDeepenerAgent | 深化讨论 |
+| LANGUAGE_POOR | LanguagePolisherAgent | 语言润色 |
+| PLAGIARISM_RISK | PlagiarismCheckerAgent | 改写建议 |
+
+#### 与旧框架的关系
+
+| 旧模块 | 新框架中的位置 | 说明 |
+|--------|---------------|------|
+| paper_agent.py | Pipeline Phase | 单一Agent模式，重组为PhaseSupervisor |
+| paper_agents/ | Pipeline Agents | TopicAgent, LiteratureAgent等 |
+| problem_oriented/ | Problem-Solving Agents | 9个针对性Agent |
+| supervisor/ | PhaseSupervisor + MasterSupervisor | 协调机制融合 |
+
+#### 扩展点
+
+1. **新增Agent类型**: 在对应模块实现后注册到MasterSupervisor
+2. **自定义流程**: 通过_run_custom_flow扩展
+3. **自定义质量评估**: 继承PhaseSupervisor重写_evaluate_quality
+4. **自定义路由**: 继承MasterSupervisor重写RoutingPolicy
+
+---
+
+## 九、参考资源
+
+- Anthropic: [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+- Microsoft: [AI Agents for Beginners](https://github.com/microsoft/ai-agents-for-beginners)
+- LangGraph Documentation: [LangGraph](https://langchain.dev/langgraph)
+- CrewAI: [Multi-Agent Architecture](https://github.com/crewAI/crewAI)
+- 论文写作范式：各学科顶会/顶刊 guidelines (CVPR, NeurIPS, ACL, Nature, etc.)

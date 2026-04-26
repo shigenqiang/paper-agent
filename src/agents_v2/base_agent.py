@@ -236,10 +236,24 @@ class BaseAgent(ABC):
             ]
 
             response = await self.llm.ainvoke(messages)
-            return response.content
+            content = response.content if hasattr(response, 'content') else str(response)
+
+            # 清理MiniMax模型的思考块
+            content = self._clean_thinking_blocks(content)
+
+            return content
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
             raise
+
+    def _clean_thinking_blocks(self, text: str) -> str:
+        """清理思考块 (MiniMax等模型会输出)"""
+        import re
+        # 移除 <think>...</think> 块
+        cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        # 清理多余的空白
+        cleaned = cleaned.strip()
+        return cleaned
 
     def _format_messages(self, messages: List[AgentMessage]) -> str:
         """格式化消息历史"""

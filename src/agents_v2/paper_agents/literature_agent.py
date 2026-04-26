@@ -13,6 +13,8 @@ import logging
 import asyncio
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
+from ..qa.paper_search import PaperSearchAgent
+from ..unified.error_handler import log_error_with_context
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,8 @@ class LiteratureAgent(PaperAgentBase):
             description="文献搜索、筛选与综述",
             system_prompt=system_prompt
         )
+        # 使用真实的论文搜索Agent
+        self.search_agent = PaperSearchAgent()
 
     async def execute(
         self,
@@ -108,7 +112,7 @@ class LiteratureAgent(PaperAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"LiteratureAgent execution failed: {e}")
+            log_error_with_context(self.logger, e, "LiteratureAgent execution", recovered=True)
             return AgentOutput(
                 success=False,
                 result=None,
@@ -146,25 +150,33 @@ class LiteratureAgent(PaperAgentBase):
             data = json.loads(response)
             return data.get("queries", [{"query": topic, "strategy": "基础", "aspect": "综合"}])
         except Exception as e:
-            self.logger.error(f"Query generation failed: {e}")
+            log_error_with_context(self.logger, e, "Query generation", recovered=True)
             return [{"query": topic, "strategy": "基础", "aspect": "综合"}]
 
     async def _multi_engine_search(self, queries: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-        """多引擎并行搜索"""
+        """多引擎并行搜索 - 使用真实API"""
         async def search_single(query_obj: Dict[str, str]) -> List[Dict[str, Any]]:
-            # 这里应该调用实际的搜索API
-            # 目前返回模拟数据
             query = query_obj.get("query", "")
-            return [{
-                "title": f"Paper about {query}",
-                "abstract": f"Abstract for {query}",
-                "authors": ["Author 1", "Author 2"],
-                "year": 2024,
-                "source": f"search_{query_obj.get('strategy', 'default')}",
-                "url": f"https://example.com/{query}",
-                "citations": 50,
-                "relevance_score": 0.8
-            }]
+            source = "all"
+            # 根据策略选择数据源
+            strategy = query_obj.get("strategy", "基础")
+            if strategy == "扩展":
+                source = "arxiv"  # 扩展搜索优先arXiv
+            elif strategy == "验证":
+                source = "pubmed"  # 验证搜索优先PubMed
+
+            try:
+                result = await self.search_agent.execute(
+                    query,
+                    {"source": source, "time_range": 365, "max_results": 10}
+                )
+                papers = result.get("papers", [])
+                for p in papers:
+                    p["relevance_score"] = 0.8  # 默认相关性
+                return papers
+            except Exception as e:
+                logger.error(f"Search failed for query '{query}': {e}")
+                return []
 
         # 并行搜索（限制并发数）
         semaphore = asyncio.Semaphore(3)
@@ -225,7 +237,7 @@ class LiteratureAgent(PaperAgentBase):
             return [p for _, p in sorted_papers]
 
         except Exception as e:
-            self.logger.error(f"Ranking failed: {e}")
+            log_error_with_context(self.logger, e, "Ranking", recovered=True)
             return sorted(papers, key=lambda p: p.get("relevance_score", 0), reverse=True)
 
     async def _deep_read(self, papers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -237,7 +249,7 @@ class LiteratureAgent(PaperAgentBase):
                 analysis = await self._extract_paper_info(paper)
                 analyses.append(analysis)
             except Exception as e:
-                self.logger.error(f"Paper analysis failed: {e}")
+                log_error_with_context(self.logger, e, "Paper analysis", recovered=True)
                 continue
 
         return analyses
@@ -269,7 +281,7 @@ class LiteratureAgent(PaperAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            self.logger.error(f"Paper info extraction failed: {e}")
+            log_error_with_context(self.logger, e, "Paper info extraction", recovered=True)
             return {
                 "paper_id": paper.get("title", "unknown"),
                 "title": paper.get("title", ""),
@@ -313,5 +325,5 @@ class LiteratureAgent(PaperAgentBase):
             data = json.loads(response)
             return data.get("gaps", [])
         except Exception as e:
-            self.logger.error(f"Gap identification failed: {e}")
+            log_error_with_context(self.logger, e, "Gap identification", recovered=True)
             return [{"description": "Further research needed", "evidence": "", "potential_direction": "Explore new methods"}]

@@ -156,10 +156,107 @@ class PaperAgentBase(ABC):
             ]
 
             response = await self._llm.ainvoke(messages)
-            return response.content if hasattr(response, 'content') else str(response)
+            content = response.content if hasattr(response, 'content') else str(response)
+
+            # 清理MiniMax模型的思考块
+            content = self._clean_thinking_blocks(content)
+
+            return content
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
             raise
+
+    def _clean_thinking_blocks(self, text: str) -> str:
+        """清理思考块 (MiniMax等模型会输出)
+
+        MiniMax模型会将实际输出放在<think>...</think>块内部，
+        而不是之后。需要从块内提取实际内容。
+        """
+        import re
+
+        # 首先检查是否有<think>...</think>块
+        thinking_match = re.search(r'<think>(.*?)</think>', text, flags=re.DOTALL)
+
+        if thinking_match:
+            thinking_content = thinking_match.group(1)
+
+            # 从思考内容中提取实际输出
+            # 尝试多种模式来找到实际内容
+            output_patterns = [
+                r'Thus output:\s*(\{[^}]+\})',
+                r'output:\s*(\{[^}]+\})',
+                r'Output:\s*(\{[^}]+\})',
+                r'respond with:\s*(\{[^}]+\})',
+                r'So (?:we|I) (?:should|would|need to) (?:output|respond with|return):\s*(\{[^}]+\})',
+            ]
+
+            cleaned = None
+            for pattern in output_patterns:
+                match = re.search(pattern, thinking_content, flags=re.DOTALL)
+                if match:
+                    cleaned = match.group(1)
+                    break
+
+            # 如果没找到特定模式，尝试查找JSON对象
+            if not cleaned:
+                # 在思考内容中查找JSON对象
+                json_match = re.search(r'\{[^{}]*\}', thinking_content)
+                if json_match:
+                    cleaned = json_match.group()
+
+            # 如果还是没找到，尝试在思考内容之后的部分找
+            if not cleaned:
+                after_thinking = text.split('</think>')[1] if ']]' in text else ''
+                if after_thinking.strip():
+                    cleaned = after_thinking.strip()
+
+            if cleaned:
+                # 修复UTF-8转义并清理
+                cleaned = self._fix_utf8_escapes(cleaned)
+                cleaned = self._remove_code_fences(cleaned)
+                return cleaned
+
+        # 情况2: 没有思考块，内容直接在text中
+        cleaned = text.strip()
+        cleaned = self._fix_utf8_escapes(cleaned)
+        cleaned = self._remove_code_fences(cleaned)
+
+        return cleaned
+
+    def _remove_code_fences(self, text: str) -> str:
+        """移除代码块标记 (```json ... ``` 或 ``` ... ```)"""
+        import re
+        # 匹配 ```json ... ``` 或 ``` ... ```
+        cleaned = re.sub(r'```json\s*(.*?)\s*```', r'\1', text, flags=re.DOTALL)
+        cleaned = re.sub(r'```\s*(.*?)\s*```', r'\1', cleaned, flags=re.DOTALL)
+        return cleaned.strip()
+
+    def _fix_utf8_escapes(self, text: str) -> str:
+        """修复MiniMax返回的UTF-8字节转义序列
+
+        MiniMax有时会在JSON字符串中返回UTF-8字节的转义序列，
+        如 \\xe4\\xbd\\xa0 而不是实际的中文字符。
+        这会导致JSON解析后中文显示为乱码。
+        """
+        import re
+        # 匹配 \xNN 模式的字节序列（连续多个）
+        def replace_escape(match):
+            # 获取完整的匹配，如 \xe4\xbd\xa0
+            full_match = match.group(0)
+            try:
+                # 将 \xNN 转换为实际字节
+                bytes_list = []
+                for i in range(0, len(full_match), 4):  # 4是因为 \xNN
+                    hex_part = full_match[i+2:i+4]
+                    bytes_list.append(int(hex_part, 16))
+                result_bytes = bytes(bytes_list)
+                return result_bytes.decode('utf-8')
+            except Exception:
+                return full_match
+
+        # 匹配连续的反斜杠x十六进制模式
+        cleaned = re.sub(r'(?:\\x[0-9a-fA-F]{2})+', replace_escape, text)
+        return cleaned
 
     def _setup_logging(self):
         """设置日志"""

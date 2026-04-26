@@ -163,6 +163,34 @@ class MasterSupervisor:
         except ImportError as e:
             logger.warning(f"Could not import pipeline agents: {e}")
 
+    def register_writing_agents(self):
+        """注册论文写作全流程Agent"""
+        try:
+            from ..writing import (
+                LiteratureReviewAgent,
+                OutlineGeneratorAgent,
+                DraftGeneratorAgent,
+                ReportRefinerAgent,
+                ReviewerAgent,
+                ProposalGeneratorAgent,
+                ReferenceProcessorAgent,
+                SmartReviserAgent,
+                LanguagePolisherAgent,
+            )
+
+            self.agents["literature_review"] = LiteratureReviewAgent(self.llm_config)
+            self.agents["outline_generator"] = OutlineGeneratorAgent(self.llm_config)
+            self.agents["draft_generator"] = DraftGeneratorAgent(self.llm_config)
+            self.agents["report_refiner"] = ReportRefinerAgent(self.llm_config)
+            self.agents["proposal_generator"] = ProposalGeneratorAgent(self.llm_config)
+            self.agents["reference_processor"] = ReferenceProcessorAgent(self.llm_config)
+            self.agents["smart_reviser"] = SmartReviserAgent(self.llm_config)
+            self.agents["language_polisher_writing"] = LanguagePolisherAgent(self.llm_config)
+
+            logger.info("Writing agents registered")
+        except ImportError as e:
+            logger.warning(f"Could not import writing agents: {e}")
+
     async def run(
         self,
         task_type: str,
@@ -382,6 +410,14 @@ class MasterSupervisor:
                 self.agents.get("language_polisher"),
                 self.agents.get("plagiarism_checker")
             ]
+        elif phase == "literature_review":
+            return [self.agents.get("literature_review")]
+        elif phase == "outline_gen":
+            return [self.agents.get("outline_generator")]
+        elif phase == "draft_gen":
+            return [self.agents.get("draft_generator")]
+        elif phase == "refine":
+            return [self.agents.get("report_refiner")]
 
         return []
 

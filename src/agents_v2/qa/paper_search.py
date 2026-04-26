@@ -336,15 +336,26 @@ class PaperSearchAgent(BaseQAAgent):
                     # 提取摘要（如果可用）
                     abstract = info.get("abstract", "")
 
+                    try:
+                        pubdate = info.get("pubdate", "2024")
+                        year = int(pubdate[:4]) if pubdate else 2024
+                    except (ValueError, TypeError):
+                        year = 2024
+
+                    try:
+                        citations = int(info.get("pmcrefcount", 0) or 0)
+                    except (ValueError, TypeError):
+                        citations = 0
+
                     paper = Paper(
                         paper_id=pmid,
                         title=info.get("title", ""),
                         authors=authors,
-                        year=int(info.get("pubdate", "2024")[:4]) if info.get("pubdate") else 2024,
+                        year=year,
                         abstract=abstract,
                         url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                         source="pubmed",
-                        citations=info.get("pmcrefcount", 0),
+                        citations=citations,
                         methodology=self._extract_methodology(abstract),
                         key_contributions=self._extract_contributions(abstract)
                     )
@@ -423,7 +434,11 @@ class PaperSearchAgent(BaseQAAgent):
                     score += 1.0
 
             # 引用数（归一化）
-            score += min(paper.citations / 100, 2.0)
+            try:
+                citations = int(paper.citations) if paper.citations else 0
+            except (ValueError, TypeError):
+                citations = 0
+            score += min(citations / 100, 2.0)
 
             # 最新论文加分
             if paper.year >= 2024:

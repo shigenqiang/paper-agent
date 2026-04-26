@@ -1,29 +1,38 @@
 """
-问题导向Agent基类 - 针对论文写作常见困难
+Writing Agent基类 - 论文写作全流程Agent基类
 
-设计原则：
-1. 每个Agent针对一个具体问题
-2. 输入-诊断-输出模式
-3. 明确的改进建议
+基于论文Agent基类，针对写作流程做了优化
 """
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
 from pydantic import BaseModel, Field
+from datetime import datetime
 import logging
 import json
 
 logger = logging.getLogger(__name__)
 
 
-class AgentOutput(BaseModel):
-    """Agent输出"""
+class WritingInput(BaseModel):
+    """标准输入"""
+    task_type: str = Field(..., description="任务类型")
+    task_description: str = Field(..., description="任务描述")
+    input_data: Dict[str, Any] = Field(default_factory=dict, description="任务输入数据")
+    context: Optional[Dict[str, Any]] = Field(None, description="上下文信息")
+    requirements: List[str] = Field(default_factory=list, description="需求列表")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="元数据")
+
+
+class WritingOutput(BaseModel):
+    """标准输出"""
     success: bool = Field(..., description="是否成功")
     result: Any = Field(None, description="执行结果")
     agent_name: str = Field(..., description="执行Agent名称")
-    diagnosed_issues: List[str] = Field(default_factory=list, description="诊断出的问题")
-    recommendations: List[str] = Field(default_factory=list, description="改进建议")
-    quality_score: float = Field(0.0, description="质量评分")
+    reasoning: Optional[str] = Field(None, description="推理过程")
+    next_actions: List[str] = Field(default_factory=list, description="建议的后续操作")
     error: Optional[str] = Field(None, description="错误信息")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="元数据")
+    quality_score: float = Field(0.0, description="质量评分")
 
 
 class LLMConfig(BaseModel):
@@ -36,26 +45,25 @@ class LLMConfig(BaseModel):
     base_url: Optional[str] = Field(None, description="API基础URL")
 
 
-class ProblemAgentBase(ABC):
+class WritingAgentBase(ABC):
     """
-    问题导向Agent基类
+    Writing Agent基类 - 所有论文写作全流程Agent的基类
 
-    每个Agent针对论文写作中的一个具体困难：
-    1. 诊断问题
-    2. 分析原因
-    3. 提供改进建议
+    设计原则：
+    1. 统一的输入输出格式
+    2. LLM调用封装
+    3. 日志记录
+    4. 质量评分
     """
 
     def __init__(
         self,
         name: str,
-        target_problem: str,
         llm_config: Optional[LLMConfig] = None,
         description: str = "",
         system_prompt: str = ""
     ):
         self.name = name
-        self.target_problem = target_problem
         self.description = description
         self.system_prompt = system_prompt
         self.llm_config = llm_config or LLMConfig()
@@ -63,36 +71,21 @@ class ProblemAgentBase(ABC):
         self._init_llm()
         self._setup_logging()
 
-        logger.info(f"ProblemAgent {self.name} initialized, targeting: {target_problem}")
+        logger.info(f"WritingAgent {self.name} initialized")
 
     @abstractmethod
-    async def diagnose(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
+    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> WritingOutput:
         """
-        诊断问题
+        执行Agent的主要任务
 
         Args:
             input_data: 输入数据
-            context: 上下文
+            context: 执行上下文
 
         Returns:
-            AgentOutput: 包含诊断结果和改进建议
+            WritingOutput: 执行结果
         """
         pass
-
-    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
-        """
-        执行诊断 (与MasterSupervisor接口兼容)
-
-        实际调用diagnose方法
-
-        Args:
-            input_data: 输入数据
-            context: 上下文
-
-        Returns:
-            AgentOutput: 包含诊断结果和改进建议
-        """
-        return await self.diagnose(input_data, context)
 
     def _init_llm(self):
         """初始化LLM"""
@@ -119,6 +112,7 @@ class ProblemAgentBase(ABC):
             else:
                 raise ValueError(f"不支持的LLM提供商: {provider}")
 
+            logger.info(f"Initialized LLM: {self.llm_config.provider} - {self.llm_config.model_name}")
         except Exception as e:
             logger.error(f"LLM初始化失败: {e}")
             self._llm = None
@@ -158,20 +152,13 @@ class ProblemAgentBase(ABC):
 
     def _setup_logging(self):
         """设置日志"""
-        self.logger = logging.getLogger(f"ProblemAgent.{self.name}")
+        self.logger = logging.getLogger(f"WritingAgent.{self.name}")
+        self.logger.setLevel(logging.INFO)
 
-    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
-        """执行诊断"""
-        try:
-            return await self.diagnose(input_data, context)
-        except Exception as e:
-            self.logger.error(f"Execute failed: {e}")
-            return AgentOutput(
-                success=False,
-                result=None,
-                agent_name=self.name,
-                diagnosed_issues=[str(e)],
-                recommendations=[],
-                quality_score=0.0,
-                error=str(e)
-            )
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "system_prompt": self.system_prompt
+        }

@@ -1,0 +1,2 @@
+<think>The user requests "Return ONLY the JSON. No explanations." So they want just JSON output, presumably from a previous prompt that we didn't see. The user wants only JSON, presumably in response to some earlier question. However, we have no prior context, just the user message. The user is asking for just JSON, presumably to answer whatever question earlier. However, there is no question or context provided. There's no input data to output. So it's ambiguous. But maybe they want a specific JSON object</think>
+

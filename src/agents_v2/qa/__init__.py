@@ -4,6 +4,8 @@ from .query_router import QueryRouter
 from .paper_search import PaperSearchAgent, Paper, SearchResult
 from .report_generator import ReportGenerator, PaperReport, ReportSection
 from .daily_watcher import DailyWatcher, DailyPaperReport
+from .weekly_report import WeeklyReportGenerator, WeeklyPaperReport
+from .monthly_report import MonthlyReportGenerator, MonthlyPaperReport
 from .citation_manager import CitationManager, Citation
 
 __all__ = [
@@ -24,6 +26,12 @@ __all__ = [
     # Daily watcher
     "DailyWatcher",
     "DailyPaperReport",
+    # Weekly report
+    "WeeklyReportGenerator",
+    "WeeklyPaperReport",
+    # Monthly report
+    "MonthlyReportGenerator",
+    "MonthlyPaperReport",
     # Citation management
     "CitationManager",
     "Citation",

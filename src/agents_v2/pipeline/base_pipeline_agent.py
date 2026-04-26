@@ -1,10 +1,10 @@
 """
-问题导向Agent基类 - 针对论文写作常见困难
+Pipeline Agent基类 - 论文写作流程Agent基础类
 
-设计原则：
-1. 每个Agent针对一个具体问题
-2. 输入-诊断-输出模式
-3. 明确的改进建议
+设计原则:
+1. 每个Agent代表论文写作的一个步骤
+2. 输入-处理-输出模式
+3. 与MasterSupervisor无缝集成
 """
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
@@ -15,13 +15,13 @@ import json
 logger = logging.getLogger(__name__)
 
 
-class AgentOutput(BaseModel):
-    """Agent输出"""
+class PipelineOutput(BaseModel):
+    """Pipeline Agent输出"""
     success: bool = Field(..., description="是否成功")
     result: Any = Field(None, description="执行结果")
     agent_name: str = Field(..., description="执行Agent名称")
-    diagnosed_issues: List[str] = Field(default_factory=list, description="诊断出的问题")
-    recommendations: List[str] = Field(default_factory=list, description="改进建议")
+    output_data: Dict[str, Any] = Field(default_factory=dict, description="输出数据")
+    next_agents: List[str] = Field(default_factory=list, description="后续Agent建议")
     quality_score: float = Field(0.0, description="质量评分")
     error: Optional[str] = Field(None, description="错误信息")
 
@@ -31,68 +31,57 @@ class LLMConfig(BaseModel):
     provider: str = Field(default="openai", description="LLM提供商")
     model_name: str = Field(default="gpt-4", description="模型名称")
     temperature: float = Field(default=0.7, description="温度参数")
-    max_tokens: int = Field(default=4096, description="最大token数")
+    max_tokens: int = Field(default=8192, description="最大token数")
     api_key: Optional[str] = Field(None, description="API密钥")
     base_url: Optional[str] = Field(None, description="API基础URL")
 
 
-class ProblemAgentBase(ABC):
+class PipelineAgentBase(ABC):
     """
-    问题导向Agent基类
+    Pipeline Agent基类
 
-    每个Agent针对论文写作中的一个具体困难：
-    1. 诊断问题
-    2. 分析原因
-    3. 提供改进建议
+    每个Agent代表论文写作流程中的一个步骤:
+    1. TopicAgent - 选题
+    2. LiteratureAgent - 文献综述
+    3. ThesisAgent - Thesis凝练
+    4. OutlineAgent - 大纲生成
+    5. DraftWriterAgent - 初稿撰写
+    6. EditorAgent - 编辑
+    7. ReviewerAgent - 评审
     """
 
     def __init__(
         self,
         name: str,
-        target_problem: str,
-        llm_config: Optional[LLMConfig] = None,
         description: str = "",
-        system_prompt: str = ""
+        system_prompt: str = "",
+        llm_config: Optional[LLMConfig] = None,
+        output_schema: Optional[str] = None
     ):
         self.name = name
-        self.target_problem = target_problem
         self.description = description
         self.system_prompt = system_prompt
         self.llm_config = llm_config or LLMConfig()
+        self.output_schema = output_schema
         self._llm = None
         self._init_llm()
         self._setup_logging()
 
-        logger.info(f"ProblemAgent {self.name} initialized, targeting: {target_problem}")
+        logger.info(f"PipelineAgent {self.name} initialized")
 
     @abstractmethod
-    async def diagnose(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
+    async def process(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> PipelineOutput:
         """
-        诊断问题
+        处理输入数据
 
         Args:
             input_data: 输入数据
             context: 上下文
 
         Returns:
-            AgentOutput: 包含诊断结果和改进建议
+            PipelineOutput: 包含处理结果和建议的后续Agent
         """
         pass
-
-    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
-        """
-        执行诊断 (与MasterSupervisor接口兼容)
-
-        实际调用diagnose方法
-
-        Args:
-            input_data: 输入数据
-            context: 上下文
-
-        Returns:
-            AgentOutput: 包含诊断结果和改进建议
-        """
-        return await self.diagnose(input_data, context)
 
     def _init_llm(self):
         """初始化LLM"""
@@ -117,61 +106,63 @@ class ProblemAgentBase(ABC):
                     api_key=self.llm_config.api_key
                 )
             else:
-                raise ValueError(f"不支持的LLM提供商: {provider}")
+                logger.warning(f"Unknown LLM provider: {provider}, using mock")
+                self._llm = None
 
         except Exception as e:
-            logger.error(f"LLM初始化失败: {e}")
+            logger.error(f"LLM initialization failed: {e}")
             self._llm = None
 
-    async def _llm_call(self, prompt: str) -> str:
+    async def _llm_call(self, prompt: str, schema: Optional[str] = None) -> str:
         """LLM调用封装"""
         if not self._llm:
-            raise RuntimeError("LLM未初始化")
+            return self._mock_response(prompt)
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
 
             messages = [
-                SystemMessage(content=self.system_prompt or "你是一个专业的学术写作助手。"),
+                SystemMessage(content=self.system_prompt),
                 HumanMessage(content=prompt)
             ]
 
             response = await self._llm.ainvoke(messages)
-            content = response.content if hasattr(response, 'content') else str(response)
-
-            # 清理MiniMax模型的思考块
-            content = self._clean_thinking_blocks(content)
-
-            return content
+            return response.content if hasattr(response, 'content') else str(response)
         except Exception as e:
-            logger.error(f"LLM调用失败: {e}")
+            logger.error(f"LLM call failed: {e}")
             raise
 
-    def _clean_thinking_blocks(self, text: str) -> str:
-        """清理思考块 (MiniMax等模型会输出)"""
-        import re
-        # 移除 <think>...</think> 块
-        cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-        # 清理多余的空白
-        cleaned = cleaned.strip()
-        return cleaned
+    def _mock_response(self, prompt: str) -> str:
+        """模拟响应（当LLM不可用时）"""
+        return json.dumps({
+            "result": f"Mock response for {self.name}",
+            "status": "simulated"
+        })
 
     def _setup_logging(self):
         """设置日志"""
-        self.logger = logging.getLogger(f"ProblemAgent.{self.name}")
+        self.logger = logging.getLogger(f"PipelineAgent.{self.name}")
 
-    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
-        """执行诊断"""
+    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> PipelineOutput:
+        """执行处理"""
         try:
-            return await self.diagnose(input_data, context)
+            result = await self.process(input_data, context)
+            result.agent_name = self.name
+            return result
         except Exception as e:
             self.logger.error(f"Execute failed: {e}")
-            return AgentOutput(
+            return PipelineOutput(
                 success=False,
                 result=None,
                 agent_name=self.name,
-                diagnosed_issues=[str(e)],
-                recommendations=[],
+                output_data={},
+                next_agents=[],
                 quality_score=0.0,
                 error=str(e)
             )
+
+    def get_output_schema_prompt(self) -> str:
+        """获取输出schema提示"""
+        if self.output_schema:
+            return f"\n\n请按以下JSON格式输出:\n{self.output_schema}"
+        return ""
