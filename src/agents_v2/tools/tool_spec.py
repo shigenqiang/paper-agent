@@ -34,11 +34,19 @@ class ValidationResult:
 class ToolResult:
     """工具执行结果"""
 
-    def __init__(self, success: bool, result: Any = None, error: Optional[str] = None, execution_time: float = 0.0):
+    def __init__(
+        self,
+        success: bool,
+        result: Any = None,
+        error: Optional[str] = None,
+        execution_time: float = 0.0,
+        retry: bool = False
+    ):
         self.success = success
         self.result = result
         self.error = error
         self.execution_time = execution_time
+        self.retry = retry  # 标记是否需要重试
 
 
 class ToolSpec:

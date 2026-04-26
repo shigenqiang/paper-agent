@@ -417,3 +417,346 @@ def get_coordination_engine() -> ToolCoordinationEngine:
     if _coordination_engine is None:
         _coordination_engine = ToolCoordinationEngine()
     return _coordination_engine
+
+
+# ==================== 工具执行器 ====================
+
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
+from abc import ABC, abstractmethod
+import asyncio
+from datetime import datetime
+from .tool_spec import ToolResult
+
+
+@dataclass
+class ExecutionContext:
+    """执行上下文"""
+    tool_name: str
+    args: Dict[str, Any]
+    start_time: datetime
+    attempt: int = 1
+    metadata: Dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
+
+
+class ToolMiddleware(ABC):
+    """工具中间件基类"""
+
+    @abstractmethod
+    async def before_execute(
+        self,
+        context: ExecutionContext
+    ) -> ExecutionContext:
+        """执行前调用"""
+        pass
+
+    @abstractmethod
+    async def after_execute(
+        self,
+        context: ExecutionContext,
+        result: ToolResult
+    ) -> ToolResult:
+        """执行后调用"""
+        pass
+
+
+class RetryMiddleware(ToolMiddleware):
+    """重试中间件"""
+
+    def __init__(
+        self,
+        max_retries: int = 3,
+        base_delay: float = 0.5,
+        max_delay: float = 10.0,
+        exponential_base: float = 2.0
+    ):
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.exponential_base = exponential_base
+
+    async def before_execute(self, context: ExecutionContext) -> ExecutionContext:
+        return context
+
+    async def after_execute(
+        self,
+        context: ExecutionContext,
+        result: ToolResult
+    ) -> ToolResult:
+        if result.success or context.attempt >= self.max_retries:
+            return result
+
+        # 计算延迟
+        delay = min(
+            self.base_delay * (self.exponential_base ** (context.attempt - 1)),
+            self.max_delay
+        )
+        logger.warning(
+            f"Tool {context.tool_name} failed (attempt {context.attempt}), "
+            f"retrying in {delay:.1f}s..."
+        )
+        await asyncio.sleep(delay)
+
+        # 返回特殊标记触发重试
+        result.retry = True
+        return result
+
+
+class TimeoutMiddleware(ToolMiddleware):
+    """超时中间件"""
+
+    def __init__(self, default_timeout: float = 30.0):
+        self.default_timeout = default_timeout
+
+    async def before_execute(self, context: ExecutionContext) -> ExecutionContext:
+        timeout = context.metadata.get("timeout", self.default_timeout)
+        context.metadata["timeout"] = timeout
+        return context
+
+    async def after_execute(
+        self,
+        context: ExecutionContext,
+        result: ToolResult
+    ) -> ToolResult:
+        return result
+
+
+class RateLimitMiddleware(ToolMiddleware):
+    """限流中间件"""
+
+    def __init__(self, max_calls_per_minute: int = 60):
+        self.max_calls = max_calls_per_minute
+        self.calls: List[float] = []
+
+    async def before_execute(self, context: ExecutionContext) -> ExecutionContext:
+        now = time.time()
+        # 清理过期的调用记录
+        self.calls = [t for t in self.calls if now - t < 60]
+
+        if len(self.calls) >= self.max_calls:
+            wait_time = 60 - (now - self.calls[0]) if self.calls else 60
+            logger.warning(
+                f"Rate limit reached for {context.tool_name}, "
+                f"waiting {wait_time:.1f}s"
+            )
+            await asyncio.sleep(wait_time)
+            self.calls = [t for t in self.calls if now - t < 60]
+
+        self.calls.append(now)
+        return context
+
+    async def after_execute(
+        self,
+        context: ExecutionContext,
+        result: ToolResult
+    ) -> ToolResult:
+        return result
+
+
+class ToolExecutor:
+    """
+    工具执行器
+
+    特性:
+    - 中间件支持（拦截器链）
+    - 重试机制
+    - 超时控制
+    - 熔断器集成
+    - 执行日志
+    """
+
+    def __init__(
+        self,
+        registry: 'ToolRegistry',  # 前向引用
+        circuit_breaker: Optional['CircuitBreaker'] = None
+    ):
+        self.registry = registry
+        self.circuit_breaker = circuit_breaker
+        self.middlewares: List[ToolMiddleware] = [
+            RateLimitMiddleware(),
+            TimeoutMiddleware(),
+            RetryMiddleware(),
+        ]
+        self.execution_log: List[Dict] = []
+
+    def add_middleware(self, middleware: ToolMiddleware) -> None:
+        """添加中间件"""
+        self.middlewares.append(middleware)
+
+    async def execute(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        timeout: Optional[float] = None,
+        retry: bool = True
+    ) -> ToolResult:
+        """
+        执行工具
+
+        Args:
+            tool_name: 工具名称
+            args: 工具参数
+            timeout: 超时时间（秒）
+            retry: 是否启用重试
+
+        Returns:
+            ToolResult
+        """
+        context = ExecutionContext(
+            tool_name=tool_name,
+            args=args,
+            start_time=datetime.now(),
+            metadata={"timeout": timeout} if timeout else {}
+        )
+
+        attempt = 0
+        max_attempts = 1 if not retry else 10  # 重试由RetryMiddleware控制
+
+        while attempt < max_attempts:
+            attempt += 1
+            context.attempt = attempt
+
+            try:
+                # 通过中间件链处理
+                ctx = context
+                for mw in self.middlewares:
+                    ctx = await mw.before_execute(ctx)
+
+                # 执行工具
+                spec = self.registry.get(tool_name)
+                if not spec:
+                    return ToolResult(
+                        success=False,
+                        error=f"Tool not found: {tool_name}"
+                    )
+
+                # 带超时执行
+                result = await self._execute_with_timeout(
+                    spec, args, ctx.metadata.get("timeout")
+                )
+
+                # 通过中间件链后处理
+                for mw in self.middlewares:
+                    result = await mw.after_execute(ctx, result)
+
+                # 记录执行
+                self._log_execution(ctx, result)
+
+                # 检查是否需要重试
+                if not hasattr(result, 'retry') or not result.retry:
+                    return result
+
+            except asyncio.TimeoutError:
+                result = ToolResult(
+                    success=False,
+                    error=f"Tool execution timed out after {ctx.metadata.get('timeout')}s"
+                )
+                self._log_execution(ctx, result)
+                return result
+
+            except Exception as e:
+                logger.error(f"Tool execution error: {e}")
+                result = ToolResult(success=False, error=str(e))
+                self._log_execution(ctx, result)
+                return result
+
+        return result
+
+    async def _execute_with_timeout(
+        self,
+        spec: 'ToolSpec',
+        args: Dict[str, Any],
+        timeout: Optional[float]
+    ) -> ToolResult:
+        """带超时的执行"""
+        if timeout:
+            try:
+                return await asyncio.wait_for(
+                    self._do_execute(spec, args),
+                    timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                raise
+        else:
+            return await self._do_execute(spec, args)
+
+    async def _do_execute(
+        self,
+        spec: 'ToolSpec',
+        args: Dict[str, Any]
+    ) -> ToolResult:
+        """实际执行"""
+        try:
+            handler = spec.handler
+            if asyncio.iscoroutinefunction(handler):
+                result = await handler(**args)
+            else:
+                result = handler(**args)
+
+            if isinstance(result, ToolResult):
+                return result
+            return ToolResult(success=True, result=result)
+
+        except Exception as e:
+            logger.error(f"Tool handler error: {e}")
+            return ToolResult(success=False, error=str(e))
+
+    def _log_execution(
+        self,
+        context: ExecutionContext,
+        result: ToolResult
+    ) -> None:
+        """记录执行日志"""
+        duration = (datetime.now() - context.start_time).total_seconds()
+        entry = {
+            "tool_name": context.tool_name,
+            "args": context.args,
+            "attempt": context.attempt,
+            "success": result.success,
+            "error": result.error,
+            "duration": duration,
+            "timestamp": context.start_time.isoformat()
+        }
+        self.execution_log.append(entry)
+
+        # 保持日志在合理大小
+        if len(self.execution_log) > 1000:
+            self.execution_log = self.execution_log[-500:]
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取执行统计"""
+        if not self.execution_log:
+            return {"total": 0, "success_rate": 0}
+
+        total = len(self.execution_log)
+        successes = sum(1 for e in self.execution_log if e["success"])
+        avg_duration = sum(e["duration"] for e in self.execution_log) / total
+
+        return {
+            "total": total,
+            "successes": successes,
+            "failures": total - successes,
+            "success_rate": successes / total if total > 0 else 0,
+            "avg_duration": avg_duration
+        }
+
+
+# 全局执行器实例
+_executor: Optional[ToolExecutor] = None
+
+
+def get_tool_executor() -> ToolExecutor:
+    """获取工具执行器单例"""
+    global _executor
+    if _executor is None:
+        from .registry import ToolRegistry
+        from ..unified.circuit_breaker import CircuitBreaker
+
+        registry = ToolRegistry()
+        cb = CircuitBreaker(name="tool_circuit_breaker")
+        _executor = ToolExecutor(registry, cb)
+    return _executor

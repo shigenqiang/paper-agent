@@ -4,15 +4,23 @@
 提供:
 1. AlertManager: 告警管理器
 2. RateLimiter: 限流器
-3. AlertChannel: 告警渠道（日志、Webhook等）
+3. AlertChannel: 告警渠道（日志、Webhook、Email、Slack等）
+4. AlertRule: 告警规则引擎
+5. AlertAggregator: 告警聚合器
 """
 import time
 import asyncio
-from typing import Any, Callable, Dict, List, Optional
+import json
+import hashlib
+from typing import Any, Callable, Dict, List, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
+from datetime import datetime, timedelta
 import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +41,12 @@ class AlertType(str, Enum):
     TIMEOUT = "timeout"
     CACHE_MISS = "cache_miss"
     RATE_LIMIT = "rate_limit"
+    MEMORY_HIGH = "memory_high"
+    CPU_HIGH = "cpu_high"
+    AGENT_FAILURE = "agent_failure"
+    TOOL_FAILURE = "tool_failure"
+    DATABASE_UNAVAILABLE = "database_unavailable"
+    REDIS_UNAVAILABLE = "redis_unavailable"
 
 
 @dataclass
@@ -43,13 +57,24 @@ class Alert:
     message: str
     timestamp: float = field(default_factory=time.time)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    alert_id: str = ""
+    source: str = ""
+    deduplication_key: str = ""
+
+    def __post_init__(self):
+        if not self.alert_id:
+            self.alert_id = hashlib.md5(
+                f"{self.alert_type.value}:{self.message}:{self.timestamp}".encode()
+            ).hexdigest()[:12]
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "alert_id": self.alert_id,
             "type": self.alert_type.value,
             "severity": self.severity.value,
             "message": self.message,
             "timestamp": self.timestamp,
+            "source": self.source,
             "metadata": self.metadata
         }
 
@@ -107,6 +132,320 @@ class WebhookAlertChannel(AlertChannel):
             logger.error(f"Failed to send alert to webhook: {e}")
 
 
+class EmailAlertChannel(AlertChannel):
+    """Email告警渠道"""
+
+    def __init__(
+        self,
+        smtp_host: str,
+        smtp_port: int,
+        username: str,
+        password: str,
+        from_addr: str,
+        to_addrs: List[str],
+        min_severity: AlertSeverity = AlertSeverity.ERROR
+    ):
+        self.smtp_host = smtp_host
+        self.smtp_port = smtp_port
+        self.username = username
+        self.password = password
+        self.from_addr = from_addr
+        self.to_addrs = to_addrs
+        self.min_severity = min_severity
+
+    def send(self, alert: Alert):
+        """发送告警到Email"""
+        if not self._should_send(alert):
+            return
+
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = f"[{alert.severity.value.upper()}] Paper Agent Alert: {alert.alert_type.value}"
+            msg['From'] = self.from_addr
+            msg['To'] = ', '.join(self.to_addrs)
+
+            # 创建HTML内容
+            html_content = self._create_html_content(alert)
+            msg.attach(MIMEText(html_content, 'html'))
+
+            # 发送邮件
+            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.username, self.password)
+                server.send_message(msg)
+
+            logger.info(f"Alert email sent: {alert.message}")
+
+        except Exception as e:
+            logger.error(f"Failed to send alert email: {e}")
+
+    def _should_send(self, alert: Alert) -> bool:
+        severity_order = [AlertSeverity.INFO, AlertSeverity.WARNING, AlertSeverity.ERROR, AlertSeverity.CRITICAL]
+        return severity_order.index(alert.severity) >= severity_order.index(self.min_severity)
+
+    def _create_html_content(self, alert: Alert) -> str:
+        timestamp = datetime.fromtimestamp(alert.timestamp).strftime('%Y-%m-%d %H:%M:%S')
+        severity_colors = {
+            AlertSeverity.INFO: '#17a2b8',
+            AlertSeverity.WARNING: '#ffc107',
+            AlertSeverity.ERROR: '#dc3545',
+            AlertSeverity.CRITICAL: '#8b0000'
+        }
+        color = severity_colors.get(alert.severity, '#6c757d')
+
+        metadata_html = ""
+        for key, value in alert.metadata.items():
+            metadata_html += f"<tr><td><b>{key}</b></td><td>{value}</td></tr>"
+
+        return f"""
+        <html>
+        <body style="font-family: Arial, sans-serif;">
+            <div style="border-left: 4px solid {color}; padding: 10px; margin: 10px 0;">
+                <h2 style="color: {color}; margin: 0;">
+                    [{alert.severity.value.upper()}] {alert.alert_type.value}
+                </h2>
+            </div>
+            <p><b>Time:</b> {timestamp}</p>
+            <p><b>Message:</b> {alert.message}</p>
+            <p><b>Alert ID:</b> {alert.alert_id}</p>
+            <h3>Details:</h3>
+            <table style="border-collapse: collapse; width: 100%;">
+                {metadata_html or '<tr><td>No additional details</td></tr>'}
+            </table>
+        </body>
+        </html>
+        """
+
+
+class SlackAlertChannel(AlertChannel):
+    """Slack告警渠道"""
+
+    def __init__(
+        self,
+        webhook_url: str,
+        channel: str = "#alerts",
+        min_severity: AlertSeverity = AlertSeverity.WARNING
+    ):
+        self.webhook_url = webhook_url
+        self.channel = channel
+        self.min_severity = min_severity
+
+    async def send(self, alert: Alert):
+        """发送告警到Slack"""
+        if not self._should_send(alert):
+            return
+
+        try:
+            import aiohttp
+
+            severity_emoji = {
+                AlertSeverity.INFO: ":information_source:",
+                AlertSeverity.WARNING: ":warning:",
+                AlertSeverity.ERROR: ":x:",
+                AlertSeverity.CRITICAL: ":fire:"
+            }
+            emoji = severity_emoji.get(alert.severity, ":bell:")
+
+            payload = {
+                "channel": self.channel,
+                "username": "Paper Agent Alerts",
+                "icon_emoji": emoji,
+                "attachments": [{
+                    "color": self._get_severity_color(alert.severity),
+                    "title": f"[{alert.severity.value.upper()}] {alert.alert_type.value}",
+                    "text": alert.message,
+                    "fields": [
+                        {"title": "Alert ID", "value": alert.alert_id, "short": True},
+                        {"title": "Time", "value": datetime.fromtimestamp(alert.timestamp).strftime('%Y-%m-%d %H:%M:%S'), "short": True}
+                    ],
+                    "footer": "Paper Agent Monitoring"
+                }]
+            }
+
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    self.webhook_url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=5)
+                )
+
+            logger.info(f"Alert sent to Slack: {alert.message}")
+
+        except Exception as e:
+            logger.error(f"Failed to send Slack alert: {e}")
+
+    def _should_send(self, alert: Alert) -> bool:
+        severity_order = [AlertSeverity.INFO, AlertSeverity.WARNING, AlertSeverity.ERROR, AlertSeverity.CRITICAL]
+        return severity_order.index(alert.severity) >= severity_order.index(self.min_severity)
+
+    def _get_severity_color(self, severity: AlertSeverity) -> str:
+        colors = {
+            AlertSeverity.INFO: "#17a2b8",
+            AlertSeverity.WARNING: "#ffc107",
+            AlertSeverity.ERROR: "#dc3545",
+            AlertSeverity.CRITICAL: "#8b0000"
+        }
+        return colors.get(severity, "#6c757d")
+
+
+class AlertAggregator:
+    """
+    告警聚合器
+
+    防止告警风暴，自动聚合相似告警
+    """
+
+    def __init__(self, aggregation_window: int = 300):
+        self.aggregation_window = aggregation_window
+        self._alert_groups: Dict[str, List[Alert]] = defaultdict(list)
+        self._last_aggregated: Dict[str, float] = {}
+
+    def add(self, alert: Alert) -> Optional[Alert]:
+        """
+        添加告警到聚合器
+
+        Returns:
+            如果应该发送聚合告警，返回聚合后的告警；否则返回None
+        """
+        key = self._get_aggregation_key(alert)
+
+        if key not in self._alert_groups:
+            self._alert_groups[key] = []
+
+        self._alert_groups[key].append(alert)
+        self._cleanup(key)
+
+        # 检查是否需要发送聚合告警
+        count = len(self._alert_groups[key])
+        if count >= 10 or alert.severity == AlertSeverity.CRITICAL:
+            aggregated = self._create_aggregated_alert(key)
+            self._last_aggregated[key] = time.time()
+            return aggregated
+
+        return None
+
+    def _get_aggregation_key(self, alert: Alert) -> str:
+        """获取聚合键"""
+        return f"{alert.alert_type.value}:{alert.source or 'unknown'}"
+
+    def _cleanup(self, key: str):
+        """清理过期的告警"""
+        now = time.time()
+        cutoff = now - self.aggregation_window
+        self._alert_groups[key] = [
+            a for a in self._alert_groups[key]
+            if a.timestamp > cutoff
+        ]
+
+    def _create_aggregated_alert(self, key: str) -> Alert:
+        """创建聚合告警"""
+        alerts = self._alert_groups[key]
+        if not alerts:
+            raise ValueError("No alerts to aggregate")
+
+        first = alerts[0]
+        count = len(alerts)
+
+        message = f"{first.message} (occurred {count} times)"
+
+        aggregated = Alert(
+            alert_type=first.alert_type,
+            severity=first.severity,
+            message=message,
+            metadata={
+                "aggregated_count": count,
+                "first_occurrence": alerts[0].timestamp,
+                "last_occurrence": alerts[-1].timestamp,
+                "sample_alerts": [a.to_dict() for a in alerts[:3]]
+            },
+            source=first.source,
+            deduplication_key=key
+        )
+
+        return aggregated
+
+
+class AlertRule:
+    """
+    告警规则
+
+    定义条件触发告警的规则
+    """
+
+    def __init__(
+        self,
+        name: str,
+        condition: Callable[[Dict], bool],
+        alert_type: AlertType,
+        severity: AlertSeverity,
+        message_template: str,
+        cooldown: int = 300
+    ):
+        self.name = name
+        self.condition = condition
+        self.alert_type = alert_type
+        self.severity = severity
+        self.message_template = message_template
+        self.cooldown = cooldown
+        self._last_triggered: Dict[str, float] = {}
+
+    def evaluate(self, metrics: Dict[str, Any], entity_id: str = "default") -> Optional[Alert]:
+        """评估规则"""
+        now = time.time()
+
+        # 检查冷却期
+        if entity_id in self._last_triggered:
+            if now - self._last_triggered[entity_id] < self.cooldown:
+                return None
+
+        try:
+            if self.condition(metrics):
+                self._last_triggered[entity_id] = now
+                return Alert(
+                    alert_type=self.alert_type,
+                    severity=self.severity,
+                    message=self.message_template.format(**metrics),
+                    metadata={"rule": self.name, "metrics": metrics},
+                    source=entity_id
+                )
+        except Exception as e:
+            logger.error(f"Alert rule {self.name} evaluation failed: {e}")
+
+        return None
+
+
+class AlertRuleEngine:
+    """
+    告警规则引擎
+
+    管理多个告警规则并自动评估
+    """
+
+    def __init__(self):
+        self._rules: List[AlertRule] = []
+
+    def add_rule(self, rule: AlertRule):
+        """添加规则"""
+        self._rules.append(rule)
+
+    def evaluate(self, metrics: Dict[str, Any], entity_id: str = "default") -> List[Alert]:
+        """评估所有规则"""
+        alerts = []
+        for rule in self._rules:
+            alert = rule.evaluate(metrics, entity_id)
+            if alert:
+                alerts.append(alert)
+        return alerts
+
+    def remove_rule(self, name: str):
+        """移除规则"""
+        self._rules = [r for r in self._rules if r.name != name]
+
+    def get_rules(self) -> List[str]:
+        """获取所有规则名称"""
+        return [r.name for r in self._rules]
+
+
 class AlertManager:
     """
     告警管理器
@@ -119,10 +458,13 @@ class AlertManager:
         manager.trigger(AlertType.ERROR_RATE, AlertSeverity.WARNING, "Error rate exceeded 5%")
     """
 
-    def __init__(self):
+    def __init__(self, enable_aggregation: bool = True):
         self._channels: List[AlertChannel] = []
         self._metrics: Dict[str, List[float]] = defaultdict(list)
         self._last_cleanup = time.time()
+        self._alert_history: List[Alert] = []
+        self._alert_rule_engine = AlertRuleEngine()
+        self._aggregator = AlertAggregator() if enable_aggregation else None
 
     def add_channel(self, channel: AlertChannel):
         """添加告警渠道"""
@@ -133,28 +475,64 @@ class AlertManager:
         if channel in self._channels:
             self._channels.remove(channel)
 
+    def add_rule(self, rule: AlertRule):
+        """添加告警规则"""
+        self._alert_rule_engine.add_rule(rule)
+
     def trigger(
         self,
         alert_type: AlertType,
         severity: AlertSeverity,
         message: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        source: str = ""
     ):
         """触发告警"""
         alert = Alert(
             alert_type=alert_type,
             severity=severity,
             message=message,
-            metadata=metadata or {}
+            metadata=metadata or {},
+            source=source
         )
 
+        return self._send_alert(alert)
+
+    def _send_alert(self, alert: Alert):
+        """发送告警（通过渠道）"""
+        # 如果有聚合器，先处理聚合
+        if self._aggregator:
+            aggregated = self._aggregator.add(alert)
+            if aggregated:
+                self._deliver_alert(aggregated)
+            self._deliver_alert(alert)
+        else:
+            self._deliver_alert(alert)
+
+        # 记录告警历史
+        self._alert_history.append(alert)
+        if len(self._alert_history) > 1000:
+            self._alert_history = self._alert_history[-500:]
+
+        return alert
+
+    def _deliver_alert(self, alert: Alert):
+        """通过所有渠道发送告警"""
         for channel in self._channels:
             try:
-                channel.send(alert)
+                if asyncio.iscoroutinefunction(channel.send):
+                    asyncio.create_task(channel.send(alert))
+                else:
+                    channel.send(alert)
             except Exception as e:
                 logger.error(f"Failed to send alert via channel {channel}: {e}")
 
-        return alert
+    def evaluate_rules(self, metrics: Dict[str, Any], entity_id: str = "default") -> List[Alert]:
+        """评估所有告警规则"""
+        alerts = self._alert_rule_engine.evaluate(metrics, entity_id)
+        for alert in alerts:
+            self._send_alert(alert)
+        return alerts
 
     def record_metric(self, metric_name: str, value: float):
         """记录指标（用于告警判断）"""

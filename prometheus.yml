@@ -1,0 +1,35 @@
+# Prometheus配置 - Paper Agent监控
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # Paper Agent应用指标
+  - job_name: 'paper-agent'
+    static_configs:
+      - targets: ['paper-agent:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Prometheus自我监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Redis监控
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  # PostgreSQL监控
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
