@@ -46,6 +46,15 @@ from .monitoring import (
     record_metric,
     increment_metric
 )
+from .execution_replay import (
+    ExecutionReplay,
+    ExecutionReplayManager,
+    ReplayEntry,
+    SlowExecutionWarning,
+    EarlyResult,
+    create_replay,
+    create_replay_manager,
+)
 
 __all__ = [
     # State models
@@ -86,4 +95,12 @@ __all__ = [
     "get_global_metrics",
     "record_metric",
     "increment_metric",
+    # Execution replay
+    "ExecutionReplay",
+    "ExecutionReplayManager",
+    "ReplayEntry",
+    "SlowExecutionWarning",
+    "EarlyResult",
+    "create_replay",
+    "create_replay_manager",
 ]

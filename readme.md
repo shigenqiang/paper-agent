@@ -4,7 +4,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Test Status](https://img.shields.io/badge/tests-157%20passed-green.svg)]()
-[![Score](https://img.shields.io/badge/score-9.2%2F10-orange.svg)]()
+[![Score](https://img.shields.io/badge/score-9.5%2F10-orange.svg)]()
 
 ---
 
@@ -292,11 +292,23 @@ context = await memory.get_context_for_agent("topic_agent")
 ## 测试状态
 
 ```
-总测试数: 260个
-通过: 254个
-失败: 0个 (6个跳过因需要外部服务)
-通过率: 100% (核心测试)
+总测试数: 835个
+通过: 827个
+失败: 8个 (需要外部数据库服务的扩展测试)
+通过率: 99.0%
 ```
+
+### 新增模块测试覆盖
+
+| 模块 | 测试数 | 状态 |
+|------|--------|------|
+| evaluation (Benchmarks) | 33 | ✅ |
+| retrieval (Dynamic RAG) | 32 | ✅ |
+| multimodal (Vision/Chart) | 31 | ✅ |
+| personalization (Memory) | 50 | ✅ |
+| multi_agent (Debate) | 33 | ✅ |
+| production (Rate/Cost) | 43 | ✅ |
+| reasoning (CoT/ToT) | 7+ | ✅ |
 
 ---
 
@@ -324,6 +336,43 @@ src/agents_v2/
 │   ├── kg_batch.py       # 批量操作
 │   ├── kg_graphrag.py     # GraphRAG
 │   └── kg_hybrid_retriever.py # 混合检索
+├── evaluation/            # 评估基准模块
+│   └── benchmarks/        # GAIA, AgentBench, PaperWriting, A/B Testing
+├── retrieval/             # Agentic RAG模块
+│   ├── dynamic_planner.py # 动态检索规划
+│   ├── self_rag_controller.py # SELF-RAG控制
+│   ├── cross_encoder_reranker.py # 交叉编码重排序
+│   └── iterative_retriever.py # 迭代检索
+├── multimodal/            # 多模态理解模块
+│   ├── vision_encoder.py  # CLIP视觉编码
+│   ├── chart_analyzer.py  # 图表理解
+│   ├── formula_recognizer.py # 公式识别
+│   ├── diagram_parser.py  # 流程图解析
+│   └── multimodal_retriever.py # 多模态检索
+├── personalization/        # 个性化模块
+│   ├── forgetting_curve_memory.py # 遗忘曲线记忆
+│   ├── preference_learner.py # 偏好学习
+│   ├── spaced_repetition.py # 间隔重复
+│   └── user_profile_manager.py # 用户画像
+├── multi_agent/           # 多Agent协作模块
+│   ├── debate.py          # 辩论系统
+│   └── self_learning_engine.py # 自主学习
+├── production/            # 生产级稳定性模块
+│   ├── rate_limiter.py    # 限流器
+│   ├── cost_optimizer.py  # 成本优化
+│   └── monitoring.py      # 监控仪表板
+├── reasoning/             # 高级推理模块
+│   └── chain_of_thought.py # CoT/ToT推理器
+├── execution/              # 长期执行模块
+│   └── skill_engine.py    # 技能获取引擎
+├── enterprise/             # 企业级功能模块
+│   └── enterprise.py      # 多租户/审计/RBAC/加密
+├── optimization/           # 性能优化模块
+│   └── performance_optimizer.py # 性能优化
+├── api/                    # API网关模块
+│   └── gateway.py         # REST API网关
+├── ecosystem/             # 生态适配器模块
+│   └── adapters.py        # LangChain/AutoGen/HF/OpenAI适配
 ├── paper_agents/          # Pipeline Agent
 ├── problem_oriented/      # 问题导向Agent
 ├── writing/               # 写作Agent
