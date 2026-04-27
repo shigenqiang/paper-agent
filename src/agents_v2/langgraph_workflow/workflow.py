@@ -4,6 +4,7 @@ LangGraph 工作流构建器
 组装所有 Agent 节点，定义边和条件路由，编译为可执行应用。
 """
 import logging
+import time
 from typing import Optional
 
 from langgraph.graph import StateGraph, END
@@ -15,6 +16,8 @@ from .nodes.selector import SelectorAgent
 from .nodes.outline import OutlineAgent
 from .nodes.writer import WriterAgent
 from .nodes.reviewer import ReviewerAgent
+from .nodes.evaluator import EvaluatorNode
+from .observability.tracer import WorkflowTracer, create_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,7 @@ class PaperAgentWorkflow:
         max_iterations: int = 3,
         enable_enhanced_retrieval: bool = True,
         retriever=None,
+        enable_evaluation: bool = True,
     ):
         """
         Args:
@@ -39,9 +43,12 @@ class PaperAgentWorkflow:
             max_iterations: 最大迭代次数
             enable_enhanced_retrieval: 是否启用增强检索
             retriever: 外部检索器实例
+            enable_evaluation: 是否启用评估节点
         """
         self.llm = llm
         self.max_iterations = max_iterations
+        self.enable_evaluation = enable_evaluation
+        self.tracer = create_tracer()
 
         # 初始化 Agent 节点
         self.crawler = CrawlerAgent(
@@ -54,12 +61,12 @@ class PaperAgentWorkflow:
         self.outline = OutlineAgent(llm=llm)
         self.writer = WriterAgent(llm=llm)
         self.reviewer = ReviewerAgent(llm=llm)
+        self.evaluator = EvaluatorNode() if enable_evaluation else None
 
         self.app = None
 
     def _build_graph(self) -> StateGraph:
         """构建 LangGraph 状态图"""
-        # 使用 Python dict 作为状态（兼容 LangGraph 的 TypedDict 模式）
         workflow = StateGraph(dict)
 
         # 添加节点
@@ -68,6 +75,8 @@ class PaperAgentWorkflow:
         workflow.add_node("outline", self._outline_node)
         workflow.add_node("writing", self._writer_node)
         workflow.add_node("review", self._reviewer_node)
+        if self.evaluator:
+            workflow.add_node("evaluator", self._evaluator_node)
 
         # 添加边
         workflow.set_entry_point("crawler")
@@ -76,15 +85,28 @@ class PaperAgentWorkflow:
         workflow.add_edge("outline", "writing")
         workflow.add_edge("writing", "review")
 
-        # 条件边：审查后决定是否回到写作
-        workflow.add_conditional_edges(
-            "review",
-            should_continue,
-            {
-                "write": "writing",
-                "done": END,
-            },
-        )
+        if self.evaluator:
+            workflow.add_edge("review", "evaluator")
+
+            # 条件边：评估后决定是否回到写作
+            workflow.add_conditional_edges(
+                "evaluator",
+                self._route_after_eval,
+                {
+                    "write": "writing",
+                    "done": END,
+                },
+            )
+        else:
+            # 无评估器：审查后决定
+            workflow.add_conditional_edges(
+                "review",
+                should_continue,
+                {
+                    "write": "writing",
+                    "done": END,
+                },
+            )
 
         return workflow
 
@@ -123,6 +145,24 @@ class PaperAgentWorkflow:
         result = self.reviewer.execute(agent_state)
         return dict(result)
 
+    def _evaluator_node(self, state: dict) -> dict:
+        """LangGraph 兼容的评估节点"""
+        agent_state = PaperAgentState()
+        agent_state.update(state)
+        result = self.evaluator.execute(agent_state)
+        return dict(result)
+
+    def _route_after_eval(self, state: dict) -> str:
+        """评估后路由：质量不够则重新写作"""
+        score = state.get("evaluation_score", 0.0)
+        iteration = state.get("iteration", 0)
+        max_iterations = state.get("max_iterations", 3)
+
+        # 质量达标或达到最大迭代
+        if score >= self.evaluator.min_quality_score or iteration >= max_iterations:
+            return "done"
+        return "write"
+
     def compile(self):
         """编译工作流"""
         graph = self._build_graph()
@@ -153,7 +193,12 @@ class PaperAgentWorkflow:
         if self.app is None:
             self.compile()
 
-        import time
+        # 开始追踪
+        self.tracer.start_trace(
+            query=query,
+            user_id=user_id,
+            session_id=session_id,
+        )
 
         initial_state = {
             "user_query": query,
@@ -172,9 +217,18 @@ class PaperAgentWorkflow:
         }
 
         if stream:
-            return self._run_stream(initial_state)
+            result = self._run_stream(initial_state)
         else:
-            return self._run_sync(initial_state)
+            result = self._run_sync(initial_state)
+
+        # 结束追踪
+        self.tracer.end_trace()
+
+        return result
+
+    def get_trace_summary(self) -> dict:
+        """获取最近一次执行的追踪摘要"""
+        return self.tracer.get_summary()
 
     def _run_sync(self, initial_state: dict) -> dict:
         """同步运行"""
@@ -205,6 +259,7 @@ def create_workflow(
     max_iterations: int = 3,
     enable_enhanced_retrieval: bool = True,
     retriever=None,
+    enable_evaluation: bool = True,
 ) -> PaperAgentWorkflow:
     """便捷函数：创建工作流
 
@@ -215,6 +270,7 @@ def create_workflow(
         max_iterations: 最大写作迭代数
         enable_enhanced_retrieval: 是否启用增强检索
         retriever: 外部检索器实例
+        enable_evaluation: 是否启用评估节点
 
     Returns:
         PaperAgentWorkflow 实例
@@ -226,4 +282,5 @@ def create_workflow(
         max_iterations=max_iterations,
         enable_enhanced_retrieval=enable_enhanced_retrieval,
         retriever=retriever,
+        enable_evaluation=enable_evaluation,
     )

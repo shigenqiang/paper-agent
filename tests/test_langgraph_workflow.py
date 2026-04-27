@@ -336,5 +336,160 @@ class TestKnowledgeGraphNode:
         assert "knowledge_graph" not in result or result["knowledge_graph"].get("total_entities", 0) == 0
 
 
+class TestEvaluatorNode:
+    """测试评估节点"""
+
+    def test_evaluator_retrieval_metrics(self):
+        from src.agents_v2.langgraph_workflow.nodes.evaluator import EvaluatorNode
+
+        node = EvaluatorNode()
+        state = create_initial_state(user_query="deep learning")
+        state.papers = [
+            Paper(id=f"p{i}", title=f"Paper {i}", authors=[], abstract="", url="", year=2023, citations=i*10)
+            for i in range(30)
+        ]
+        state.selected_papers = state.papers[:10]
+        result = node.execute(state)
+        report = result.get("evaluation_report")
+        assert report is not None
+        assert report.retrieval.total_papers_found == 30
+        assert report.retrieval.selected_papers == 10
+        assert report.retrieval.selection_rate == 10/30
+        assert report.retrieval.venue_diversity == 0  # 没有设置 venue
+
+    def test_evaluator_writing_metrics(self):
+        from src.agents_v2.langgraph_workflow.nodes.evaluator import EvaluatorNode
+
+        node = EvaluatorNode()
+        state = create_initial_state(user_query="test")
+        state.draft = """## Introduction
+This is a comprehensive survey. However, there are challenges.
+Compared to previous work, our approach is novel. [Test Paper, 2023]
+
+## Methods
+Several methods have been proposed. Furthermore, the results show improvements.
+
+## Challenges
+There are limitations. In contrast to earlier methods, the new approach is different.
+
+## Conclusion
+Therefore, the conclusion is clear."""
+        state.outline = {"sections": [{"title": "Introduction"}, {"title": "Methods"}, {"title": "Conclusion"}]}
+        result = node.execute(state)
+        report = result.get("evaluation_report")
+        assert report.writing.total_words > 30
+        assert report.writing.has_introduction is True
+        assert report.writing.has_conclusion is True
+        assert report.writing.analysis_keywords >= 3
+        assert report.overall_score > 0
+
+    def test_evaluator_empty_draft(self):
+        from src.agents_v2.langgraph_workflow.nodes.evaluator import EvaluatorNode
+
+        node = EvaluatorNode()
+        state = create_initial_state(user_query="test")
+        result = node.execute(state)
+        report = result.get("evaluation_report")
+        assert report.overall_score < 3.0  # 空草稿分数很低
+        assert len(report.issues) > 0
+
+
+class TestObservability:
+    """测试可观测性"""
+
+    def test_tracer_lifecycle(self):
+        import time as _time
+        from src.agents_v2.langgraph_workflow.observability import create_tracer
+
+        tracer = create_tracer()
+        trace = tracer.start_trace(query="test", user_id="test_user")
+        assert trace is not None
+
+        span = tracer.start_node("crawler")
+        assert span.node_name == "crawler"
+        assert span.status == "running"
+
+        _time.sleep(0.01)  # 确保时间精度
+        tracer.record_paper_count(10)
+        tracer.record_tokens(500)
+        tracer.end_node(status="completed")
+
+        assert span.duration_ms > 0
+        assert span.status == "completed"
+        assert span.paper_count == 10
+        assert span.token_estimate == 500
+
+        # get_summary 应在 end_trace 前也可用
+        summary = tracer.get_summary()
+        assert summary["query"] == "test"
+        assert len(summary["nodes"]) == 1
+
+        tracer.end_trace()
+
+    def test_tracer_error_handling(self):
+        from src.agents_v2.langgraph_workflow.observability import create_tracer
+
+        tracer = create_tracer()
+        tracer.start_trace(query="error test")
+
+        span = tracer.start_node("failing_node")
+        tracer.end_node(status="failed", error="Something went wrong")
+
+        assert span.status == "failed"
+        assert span.error == "Something went wrong"
+
+        report = tracer.get_summary()
+        assert report["error_count"] == 1
+
+    def test_tracer_multiple_nodes(self):
+        from src.agents_v2.langgraph_workflow.observability import create_tracer
+
+        tracer = create_tracer()
+        tracer.start_trace(query="multi-node test")
+
+        for name in ["crawler", "selector", "outline", "writer", "reviewer"]:
+            tracer.start_node(name)
+            tracer.record_paper_count(5)
+            tracer.record_tokens(100)
+            tracer.end_node(status="completed")
+
+        final = tracer.end_trace()
+        assert len(final.nodes) == 5
+        assert final.total_tokens == 500
+        assert len(tracer.get_summary()["nodes"]) == 5
+
+    def test_workflow_with_evaluation(self):
+        from src.agents_v2.langgraph_workflow import create_workflow
+        from src.agents_v2.search.search_factory import SearchFactory
+        from tests.test_e2e_langgraph import MockSearcher
+
+        # Patch searcher
+        SearchFactory._searchers["arxiv"] = MockSearcher("arxiv")
+
+        workflow = create_workflow(
+            llm=None,
+            sources=["arxiv"],
+            top_k=5,
+            max_iterations=1,
+            enable_evaluation=True,
+        )
+
+        result = workflow.run(
+            query="machine learning",
+            user_id="eval_test",
+            session_id="eval_session",
+            max_iterations=1,
+            stream=False,
+        )
+
+        # 检查评估结果
+        assert "evaluation_report" in result or "evaluation_score" in result
+
+        # 检查追踪信息
+        trace_summary = workflow.get_trace_summary()
+        assert trace_summary.get("query") == "machine learning"
+        assert trace_summary.get("total_duration_ms", 0) > 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
