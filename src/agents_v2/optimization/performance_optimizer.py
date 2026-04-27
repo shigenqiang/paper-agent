@@ -233,9 +233,12 @@ class PerformanceOptimizer:
 
     def get_metrics(self) -> PerformanceMetrics:
         """获取性能指标"""
-        import psutil
-        process = psutil.Process()
-        self._metrics.memory_usage_mb = process.memory_info().rss / 1024 / 1024
+        try:
+            import psutil
+            process = psutil.Process()
+            self._metrics.memory_usage_mb = process.memory_info().rss / 1024 / 1024
+        except ImportError:
+            self._metrics.memory_usage_mb = 0.0
         self._metrics.cache_hit_rate = self._vector_cache.hit_rate
         self._metrics.total_requests = int(time.time() - self._start_time)
         return self._metrics

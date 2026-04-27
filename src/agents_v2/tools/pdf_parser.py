@@ -77,6 +77,163 @@ class PDFParseResult:
     full_text: str = ""
     num_pages: int = 0
     error: Optional[str] = None
+    layout_type: str = "unknown"  # "single_column", "double_column", "mixed"
+    page_dimensions: Tuple[float, float] = (0, 0)  # width, height in points
+
+
+class LayoutDetector:
+    """PDF布局检测器"""
+
+    def __init__(self):
+        self.column_threshold = 0.45  # 页面宽度比例阈值
+        self.min_column_height = 100   # 最小栏高度（像素）
+
+    def detect_layout(self, page_text: str, page_width: float, page_height: float) -> str:
+        """检测页面布局类型
+
+        Returns:
+            "single_column": 单栏布局
+            "double_column": 双栏布局
+            "mixed": 混合格局
+        """
+        if not page_text:
+            return "single_column"
+
+        lines = page_text.split('\n')
+
+        # 检查是否有明显的两栏特征
+        left_aligned = 0
+        right_aligned = 0
+        center_aligned = 0
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # 估算行起始位置比例
+            # 这里用字符数来估算（简化版）
+            indent_ratio = len(line) / max(len(page_text.split('\n')[0]), 1) if page_text.split('\n') else 0.5
+
+            if indent_ratio < 0.35:
+                left_aligned += 1
+            elif indent_ratio > 0.65:
+                right_aligned += 1
+            else:
+                center_aligned += 1
+
+        total_lines = len([l for l in lines if l.strip()])
+
+        if total_lines < 10:
+            return "single_column"
+
+        left_ratio = left_aligned / total_lines
+        right_ratio = right_aligned / total_lines
+
+        # 双栏特征：左对齐和右对齐的比例都较高
+        if left_ratio > 0.3 and right_ratio > 0.3:
+            return "double_column"
+        elif left_ratio > 0.4 or right_ratio > 0.4:
+            return "mixed"
+        else:
+            return "single_column"
+
+    def should_use_two_column_extraction(self, page_text: str) -> bool:
+        """判断是否需要使用双栏提取"""
+        # 检测常见的双栏论文特征
+        double_column_indicators = [
+            '1 Introduction',
+            '2 Related',
+            '3 Method',
+            '4 Experiment',
+            '5 Conclusion',
+            '1.',
+            '2.',
+            'REFERENCES',
+        ]
+
+        text_lower = page_text.lower()
+        matches = sum(1 for ind in double_column_indicators if ind in text_lower)
+
+        return matches >= 2
+
+    def extract_text_blocks(self, page_text: str, layout: str) -> List[Tuple[str, int]]:
+        """提取文本块
+
+        Returns:
+            List of (text_block, block_column) tuples
+            block_column: 0 = left, 1 = right, -1 = full width
+        """
+        if layout == "single_column":
+            return [(page_text, -1)]
+
+        blocks = []
+        lines = page_text.split('\n')
+
+        # 简单的分栏逻辑：按页面的水平位置估计
+        # 实际应用中应该使用更精确的位置信息
+        if layout == "double_column":
+            mid_point = len(max(lines, key=len)) // 2
+
+            left_lines = []
+            right_lines = []
+
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                # 估算行属于左栏还是右栏
+                # 通过分析缩进和内容分布
+                leading_spaces = len(line) - len(line.lstrip())
+
+                if leading_spaces > 10:
+                    # 明显缩进，可能属于右栏
+                    right_lines.append(line)
+                else:
+                    # 检查内容分布
+                    words = stripped.split()
+                    if len(stripped) < mid_point:
+                        left_lines.append(line)
+                    else:
+                        # 长行可能跨两栏或者是右栏
+                        if any(c.isdigit() for c in stripped[:10]):
+                            right_lines.append(line)
+                        else:
+                            left_lines.append(line)
+
+            if left_lines:
+                blocks.append(('\n'.join(left_lines), 0))
+            if right_lines:
+                blocks.append(('\n'.join(right_lines), 1))
+
+        return blocks if blocks else [(page_text, -1)]
+
+    def is_cross_column_title(self, line: str, page_text: str) -> bool:
+        """检测是否跨栏标题（如章节标题居中）"""
+        line_stripped = line.strip()
+
+        # 常见的跨栏标题特征
+        cross_column_patterns = [
+            r'^\d+\s+[A-Z]',  # "1 Introduction"
+            r'^[A-Z][a-z]+\s+[A-Z]',  # "Related Work"
+            r'^\s*[A-Z]{5,}\s*$',  # 全大写单词
+        ]
+
+        for pattern in cross_column_patterns:
+            if re.match(pattern, line_stripped):
+                return True
+
+        return False
+
+    def is_footnote(self, line: str, page_height: float, footnotes_start_y: float = 0.7) -> bool:
+        """检测是否是脚注（位于页面底部）"""
+        # 脚注通常在页面底部70%以后开始
+        # 这需要实际的y坐标信息，这里做启发式判断
+        if len(line) < 100 and re.match(r'^\d+\s+', line):
+            # 数字开头的短行，可能是脚注引用
+            return True
+        return False
 
 
 class PDFParser:
@@ -89,10 +246,14 @@ class PDFParser:
     - 章节检测
     - 参考文献提取
     - 表格检测
+    - 双栏布局检测与正确提取
     """
 
     def __init__(self):
         self.text = ""
+        self.layout_detector = LayoutDetector()
+        self.layout_type = "unknown"
+        self.page_texts = []  # 保存每页的文本用于布局分析
 
     async def parse_file(self, file_path: str) -> PDFParseResult:
         """
@@ -161,23 +322,42 @@ class PDFParser:
         return await self._extract_from_pypdf_reader(reader)
 
     async def _extract_from_pypdf_reader(self, reader) -> PDFParseResult:
-        """从PyPDF2 reader提取内容"""
+        """从PyPDF2 reader提取内容（支持双栏布局检测）"""
         self.text = ""
+        self.page_texts = []
 
-        # 提取所有页面的文本
+        # 提取所有页面的文本，同时收集布局信息
+        page_widths = []
+        page_heights = []
+
         for page in reader.pages:
             text = page.extract_text()
+
+            # 获取页面尺寸
+            if hasattr(page, 'mediabox'):
+                mediabox = page.mediabox
+                page_widths.append(float(mediabox.width))
+                page_heights.append(float(mediabox.height))
+
             if text:
+                self.page_texts.append(text)
                 self.text += text + "\n\n"
+
+        # 检测整体布局类型
+        self.layout_type = self._detect_overall_layout()
 
         # 解析元数据
         metadata = self._extract_metadata(reader)
 
-        # 提取章节
-        sections = self._extract_sections(self.text)
+        # 提取章节（考虑双栏布局）
+        sections = self._extract_sections_with_layout()
 
         # 提取参考文献
         references = self._extract_references(self.text)
+
+        # 获取典型页面尺寸
+        avg_width = sum(page_widths) / len(page_widths) if page_widths else 612  # 默认 letter 宽度
+        avg_height = sum(page_heights) / len(page_heights) if page_heights else 792  # 默认 letter 高度
 
         return PDFParseResult(
             success=True,
@@ -185,8 +365,86 @@ class PDFParser:
             sections=sections,
             references=references,
             full_text=self.text,
-            num_pages=len(reader.pages)
+            num_pages=len(reader.pages),
+            layout_type=self.layout_type,
+            page_dimensions=(avg_width, avg_height)
         )
+
+    def _detect_overall_layout(self) -> str:
+        """检测整体布局类型"""
+        if not self.page_texts:
+            return "unknown"
+
+        double_column_count = 0
+        single_column_count = 0
+
+        for page_text in self.page_texts[:5]:  # 只检查前5页
+            # 估算页面宽度（基于最长的行）
+            max_line_len = max(len(line) for line in page_text.split('\n')) if page_text else 0
+
+            # 双栏论文通常行较短（~40-60字符），单栏行较长（~80+字符）
+            if max_line_len < 70 and self.layout_detector.should_use_two_column_extraction(page_text):
+                double_column_count += 1
+            else:
+                single_column_count += 1
+
+        if double_column_count > single_column_count:
+            return "double_column"
+        elif single_column_count > double_column_count:
+            return "single_column"
+        else:
+            return "mixed"
+
+    def _extract_sections_with_layout(self) -> List[PDFSection]:
+        """考虑布局的章节提取"""
+        sections = []
+
+        # 使用文本重组：如果是双栏，先尝试按阅读顺序合并
+        processed_text = self.text
+
+        if self.layout_type == "double_column":
+            processed_text = self._reorder_double_column_text()
+
+        # 然后进行章节提取
+        return self._extract_sections(processed_text)
+
+    def _reorder_double_column_text(self) -> str:
+        """重新排序双栏文本（按阅读顺序）"""
+        if len(self.page_texts) < 2:
+            return self.text
+
+        reordered_lines = []
+
+        for page_text in self.page_texts:
+            lines = page_text.split('\n')
+
+            # 分离可能属于不同栏的内容
+            left_content = []
+            right_content = []
+            cross_column_titles = []
+
+            for line in lines:
+                stripped = line.strip()
+
+                if self.layout_detector.is_cross_column_title(stripped, page_text):
+                    cross_column_titles.append(line)
+                elif len(stripped) < 50 and re.match(r'^\d+\.\d+\s', stripped):
+                    # 子章节标题，通常是左对齐
+                    cross_column_titles.append(line)
+                else:
+                    # 估算属于哪一栏
+                    leading_spaces = len(line) - len(line.lstrip())
+                    if leading_spaces > 15:
+                        right_content.append(line)
+                    else:
+                        left_content.append(line)
+
+            # 先添加跨栏标题，再按左右顺序添加内容
+            reordered_lines.extend(cross_column_titles)
+            reordered_lines.extend(left_content)
+            reordered_lines.extend(right_content)
+
+        return '\n'.join(reordered_lines)
 
     async def _parse_with_pdfplumber(self, file_path: str) -> PDFParseResult:
         """使用pdfplumber解析"""

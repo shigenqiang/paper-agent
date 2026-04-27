@@ -10,6 +10,7 @@ IntentRouter - 意图路由Agent
 """
 from typing import Any, Dict, List, Optional, Callable
 from enum import Enum
+from dataclasses import dataclass, field
 import logging
 import json
 
@@ -45,6 +46,38 @@ class IntentType(str, Enum):
 
     # 未知
     UNKNOWN = "unknown"
+
+
+class IntentConfidence(str, Enum):
+    """意图置信度等级"""
+    HIGH = "high"      # >= 0.8
+    MEDIUM = "medium"  # 0.5 - 0.8
+    LOW = "low"        # < 0.5
+
+
+@dataclass
+class IntentResult:
+    """意图识别结果（含置信度和多意图支持）"""
+    primary_intent: IntentType
+    confidence: float
+    confidence_level: IntentConfidence
+    is_multi_intent: bool = False
+    secondary_intents: List[IntentType] = field(default_factory=list)
+    intent_conflicts: List[str] = field(default_factory=list)
+    reasoning: str = ""
+    keywords_matched: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "primary_intent": self.primary_intent.value,
+            "confidence": self.confidence,
+            "confidence_level": self.confidence_level.value,
+            "is_multi_intent": self.is_multi_intent,
+            "secondary_intents": [i.value for i in self.secondary_intents],
+            "intent_conflicts": self.intent_conflicts,
+            "reasoning": self.reasoning,
+            "keywords_matched": self.keywords_matched
+        }
 
 
 # 意图关键词映射
@@ -155,6 +188,67 @@ class IntentRouter:
 
         logger.info("IntentRouter initialized")
 
+    def _calibrate_confidence(
+        self,
+        base_confidence: float,
+        keyword_match: bool,
+        llm_match: bool
+    ) -> float:
+        """置信度校准
+
+        根据多种信号对置信度进行校准：
+        - 关键词匹配：+0.1
+        - LLM匹配：+0.0（无调整）
+        - 两者都匹配：+0.15
+        - 两者都不匹配：-0.2
+        """
+        calibrated = base_confidence
+
+        if keyword_match and llm_match:
+            calibrated += 0.15
+        elif keyword_match:
+            calibrated += 0.1
+        elif not keyword_match and not llm_match:
+            calibrated -= 0.2
+
+        return max(0.0, min(1.0, calibrated))
+
+    def _get_confidence_level(self, confidence: float) -> IntentConfidence:
+        """获取置信度等级"""
+        if confidence >= 0.8:
+            return IntentConfidence.HIGH
+        elif confidence >= 0.5:
+            return IntentConfidence.MEDIUM
+        else:
+            return IntentConfidence.LOW
+
+    def _detect_intent_conflicts(
+        self,
+        primary: IntentType,
+        secondary: List[IntentType]
+    ) -> List[str]:
+        """检测意图冲突
+
+        检测同时出现的意图之间是否有冲突：
+        - literature_search + topic_select: 可能有冲突（搜索 vs 选题）
+        - draft_write + literature_review: 可能有冲突（写作 vs 综述）
+        """
+        conflicts = []
+
+        conflict_pairs = [
+            (IntentType.LITERATURE_SEARCH, IntentType.TOPIC_SELECT),
+            (IntentType.LITERATURE_SEARCH, IntentType.OUTLINE_GENERATE),
+            (IntentType.DRAFT_WRITE, IntentType.LANGUAGE_POLISH),
+        ]
+
+        for sec in secondary:
+            for cp in conflict_pairs:
+                if (primary == cp[0] and sec == cp[1]) or \
+                   (primary == cp[1] and sec == cp[0]):
+                    conflicts.append(f"{primary.value} <-> {sec.value}")
+
+        return conflicts
+
     def _init_llm(self):
         """初始化LLM"""
         try:
@@ -178,7 +272,7 @@ class IntentRouter:
 
     async def route(self, user_request: str) -> Dict[str, Any]:
         """
-        路由用户请求
+        路由用户请求（增强版：支持多意图检测和置信度校准）
 
         Args:
             user_request: 用户请求文本
@@ -186,38 +280,252 @@ class IntentRouter:
         Returns:
             路由结果，包含：
             - intent: 识别的意图类型
+            - confidence: 置信度
+            - confidence_level: 置信度等级
+            - is_multi_intent: 是否多意图
+            - secondary_intents: 次要意图列表
+            - intent_conflicts: 意图冲突列表
             - suggested_agents: 建议的Agent列表
             - mode: 处理模式 (single/collaboration/pipeline)
             - input_format: 建议的输入格式化
             - reasoning: 路由推理过程
         """
-        # 1. 关键词匹配（快速路径）
-        keyword_intent = self._match_keywords(user_request)
+        # 1. 关键词匹配（快速路径）+ 记录匹配词
+        keyword_matches = self._match_keywords_with_detail(user_request)
 
-        # 2. LLM辅助识别（复杂情况）
-        llm_intent = await self._llm_assisted_route(user_request)
+        # 2. LLM辅助识别（复杂情况）+ 多意图检测
+        llm_result = await self._llm_multi_intent_route(user_request)
 
-        # 3. 合并结果
-        final_intent = llm_intent if llm_intent != IntentType.UNKNOWN else keyword_intent
+        # 3. 合并结果，确定主意图和次要意图
+        all_intents = set()
 
-        # 4. 获取Agent建议
-        # 如果需要协作，返回协作Agent列表
-        if final_intent in self.intent_collaboration_map:
-            agents = self.intent_collaboration_map[final_intent]
+        # 关键词匹配的意图
+        if keyword_matches:
+            all_intents.add(keyword_matches[0]["intent"])
+
+        # LLM识别出的意图
+        if llm_result["intents"]:
+            for intent_data in llm_result["intents"]:
+                try:
+                    all_intents.add(IntentType(intent_data["intent"]))
+                except ValueError:
+                    pass
+
+        # 按优先级排序（FULL_PAPER > DIAGNOSTIC > 其他）
+        intent_priority = {
+            IntentType.FULL_PAPER: 100,
+            IntentType.DIAGNOSTIC: 90,
+            IntentType.DRAFT_WRITE: 80,
+            IntentType.PROPOSAL_GENERATE: 70,
+            IntentType.LITERATURE_SEARCH: 60,
+            IntentType.LITERATURE_REVIEW: 60,
+            IntentType.TOPIC_SELECT: 50,
+            IntentType.OUTLINE_GENERATE: 40,
+            IntentType.LANGUAGE_POLISH: 30,
+        }
+
+        sorted_intents = sorted(
+            all_intents,
+            key=lambda x: intent_priority.get(x, 0),
+            reverse=True
+        )
+
+        if not sorted_intents:
+            primary = IntentType.UNKNOWN
+            secondaries = []
         else:
-            agents = self.intent_agent_map.get(final_intent, [])
+            primary = sorted_intents[0]
+            secondaries = sorted_intents[1:6]  # 最多5个次要意图
 
-        mode = self._determine_mode(final_intent)
-        input_format = self._suggest_input_format(final_intent, user_request)
+        # 4. 置信度校准
+        keyword_match = len(keyword_matches) > 0
+        llm_match = len(llm_result["intents"]) > 0
+
+        base_conf = llm_result.get("confidence", 0.5)
+        calibrated_conf = self._calibrate_confidence(base_conf, keyword_match, llm_match)
+
+        # 5. 意图冲突检测
+        conflicts = self._detect_intent_conflicts(primary, secondaries)
+
+        # 6. 构建IntentResult
+        intent_result = IntentResult(
+            primary_intent=primary,
+            confidence=calibrated_conf,
+            confidence_level=self._get_confidence_level(calibrated_conf),
+            is_multi_intent=len(sorted_intents) > 1,
+            secondary_intents=secondaries,
+            intent_conflicts=conflicts,
+            reasoning=llm_result.get("reasoning", ""),
+            keywords_matched=[m["keyword"] for m in keyword_matches]
+        )
+
+        # 7. 获取Agent建议
+        agents = self._get_agents_for_intent(primary, secondaries)
+        mode = self._determine_mode_enhanced(primary, secondaries)
+        input_format = self._suggest_input_format_enhanced(primary, user_request, secondaries)
 
         return {
-            "intent": final_intent.value,
-            "suggested_agents": agents if isinstance(agents, list) else [agents],
+            **intent_result.to_dict(),
+            "suggested_agents": agents,
             "mode": mode,
             "input_format": input_format,
-            "reasoning": f"Intent '{final_intent.value}' identified via {self._get_intent_source(keyword_intent, llm_intent)}",
-            "requires_collaboration": final_intent in self.intent_collaboration_map
+            "requires_collaboration": len(secondaries) > 1 or primary in self.intent_collaboration_map
         }
+
+    def _match_keywords_with_detail(self, text: str) -> List[Dict[str, Any]]:
+        """关键词匹配，返回匹配详情"""
+        text_lower = text.lower()
+        matches = []
+
+        for intent_type, keywords in INTENT_KEYWORDS.items():
+            for keyword in keywords:
+                if keyword.lower() in text_lower:
+                    matches.append({
+                        "intent": intent_type,
+                        "keyword": keyword,
+                        "position": text_lower.find(keyword.lower())
+                    })
+                    break  # 每个意图只取第一个匹配
+
+        return matches
+
+    async def _llm_multi_intent_route(self, user_request: str) -> Dict[str, Any]:
+        """LLM多意图识别"""
+        if not self._llm:
+            return {"intents": [], "confidence": 0.5, "reasoning": "LLM not available"}
+
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+
+            prompt = f"""
+分析以下用户请求，识别所有可能的意图（可能是多个）：
+
+用户请求：{user_request}
+
+可选意图类型（每个都可能是一个意图）：
+- literature_search: 搜索论文/文献
+- literature_review: 文献综述
+- literature_tracking: 文献追踪（最新论文）
+- literature_summary: 论文对比总结
+- topic_select: 选题
+- thesis_formulate: Thesis凝练
+- outline_generate: 大纲生成
+- draft_write: 初稿撰写
+- report_refine: 报告精炼
+- paper_revision: 智能改稿（根据导师意见）
+- proposal_generate: 开题报告
+- language_polish: 语言润色
+- reference_format: 参考文献处理
+- full_paper: 完整论文流程
+- diagnostic: 诊断
+
+请输出JSON格式（注意：intents是一个数组）：
+{{"intents": [
+    {{"intent": "意图类型1", "confidence": 0.0-1.0}},
+    {{"intent": "意图类型2", "confidence": 0.0-1.0}}
+], "reasoning": "综合识别理由"}}
+"""
+            messages = [
+                SystemMessage(content="你是一个意图识别专家，擅长识别多个并存的意图。"),
+                HumanMessage(content=prompt)
+            ]
+
+            response = await self._llm.invoke(messages)
+            content = response.content if hasattr(response, 'content') else str(response)
+
+            data = json.loads(content)
+            return {
+                "intents": data.get("intents", []),
+                "confidence": data.get("confidence", 0.5),
+                "reasoning": data.get("reasoning", "")
+            }
+
+        except Exception as e:
+            logger.error(f"LLM multi-intent routing failed: {e}")
+            return {"intents": [], "confidence": 0.5, "reasoning": ""}
+
+    def _get_agents_for_intent(
+        self,
+        primary: IntentType,
+        secondaries: List[IntentType]
+    ) -> List[str]:
+        """获取处理意图所需的Agent列表"""
+        agents = []
+
+        # 主意图的Agent
+        primary_agent = self.intent_agent_map.get(primary)
+        if primary_agent:
+            if isinstance(primary_agent, list):
+                agents.extend(primary_agent)
+            else:
+                agents.append(primary_agent)
+
+        # 检查是否需要协作
+        if primary in self.intent_collaboration_map:
+            for col_agent in self.intent_collaboration_map[primary]:
+                if col_agent not in agents:
+                    agents.append(col_agent)
+
+        # 次要意图也需要对应的Agent
+        for sec in secondaries:
+            sec_agent = self.intent_agent_map.get(sec)
+            if sec_agent and sec_agent not in agents:
+                if isinstance(sec_agent, list):
+                    agents.extend(sec_agent)
+                else:
+                    agents.append(sec_agent)
+
+        return list(dict.fromkeys(agents))  # 去重保持顺序
+
+    def _determine_mode_enhanced(
+        self,
+        primary: IntentType,
+        secondaries: List[IntentType]
+    ) -> str:
+        """增强的模式确定（考虑多意图）"""
+        # 多意图需要协作模式
+        if len(secondaries) > 1:
+            return "collaboration"
+
+        # 主意图本身需要协作
+        if primary in self.intent_collaboration_map:
+            return "collaboration"
+
+        # 全流程需要Pipeline模式
+        if primary == IntentType.FULL_PAPER:
+            return "pipeline"
+
+        return "single"
+
+    def _suggest_input_format_enhanced(
+        self,
+        primary: IntentType,
+        user_request: str,
+        secondaries: List[IntentType]
+    ) -> Dict[str, Any]:
+        """建议输入格式化（考虑多意图）"""
+        base_format = {
+            "user_request": user_request,
+            "task_type": primary.value,
+            "is_multi_intent": len(secondaries) > 0,
+            "secondary_intents": [s.value for s in secondaries]
+        }
+
+        # 根据不同意图添加特定字段建议
+        if primary == IntentType.LITERATURE_TRACKING:
+            base_format["mode"] = "tracking"
+            base_format["time_range"] = "6months"
+        elif primary == IntentType.LITERATURE_SUMMARY:
+            base_format["mode"] = "summary"
+        elif primary == IntentType.PAPER_REVISION:
+            base_format["highlight_changes"] = True
+
+        # 多意图时的特殊处理
+        if len(secondaries) > 1:
+            base_format["parallel_processing"] = True
+            base_format["result_aggregation"] = "merge"
+
+        return base_format
 
     def _match_keywords(self, text: str) -> IntentType:
         """关键词匹配"""
