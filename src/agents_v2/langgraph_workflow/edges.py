@@ -43,3 +43,24 @@ def route_by_phase(state: dict) -> str:
         "review": "review",
     }
     return routing.get(phase, "done")
+
+
+def route_by_intent(state: dict) -> str:
+    """根据意图路由到不同的工作流路径
+
+    Args:
+        state: 包含 route_path 字段的状态
+
+    Returns:
+        工作流路径名称: "search", "writing", "report", "qa", "revision"
+    """
+    route_path = state.get("route_path", "search")
+
+    # 路径映射
+    valid_paths = ["search", "writing", "report", "qa", "revision"]
+
+    if route_path in valid_paths:
+        return route_path
+
+    # 默认返回搜索路径
+    return "search"

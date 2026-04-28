@@ -5,6 +5,20 @@
 version: '3.8'
 
 services:
+  # ---- 前端服务 ----
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: paper-agent-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - paper-agent
+    restart: unless-stopped
+    networks:
+      - paper-network
+
   # ---- 主服务 ----
   paper-agent:
     build:
