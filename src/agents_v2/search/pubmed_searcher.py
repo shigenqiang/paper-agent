@@ -3,7 +3,11 @@ PubMed Searcher - 生物医学文献搜索
 
 搜索PubMed生物医学数据库。
 """
+import json
 import logging
+import urllib.request
+import urllib.parse
+import ssl
 from typing import Optional
 
 from .base_searcher import BaseSearcher, SearchResult, SearchResponse
@@ -28,7 +32,45 @@ class PubmedSearcher(BaseSearcher):
             SearchResponse
         """
         try:
-            results = self._mock_search(query, max_results)
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+            search_url = f"{base_url}esearch.fcgi"
+
+            search_query = f"{query}[Title/Abstract]"
+
+            params = urllib.parse.urlencode({
+                "db": "pubmed",
+                "term": search_query,
+                "retmax": max_results,
+                "retstart": 0,
+                "retmode": "json",
+                "datetype": "pdat",
+                "reldate": 365
+            })
+
+            url = f"{search_url}?{params}"
+            with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
+                search_data = json.loads(response.read().decode("utf-8"))
+
+            id_list = search_data.get("esearchresult", {}).get("idlist", [])
+            if not id_list:
+                return self._create_response(query, [], self.name)
+
+            # 获取详情
+            summary_url = f"{base_url}esummary.fcgi"
+            summary_params = urllib.parse.urlencode({
+                "db": "pubmed",
+                "id": ",".join(id_list),
+                "retmode": "json"
+            })
+
+            with urllib.request.urlopen(f"{summary_url}?{summary_params}", timeout=30, context=ssl_context) as response:
+                summary_data = json.loads(response.read().decode("utf-8"))
+
+            results = self._parse_pubmed_summary(summary_data, query)
             return self._create_response(query, results, self.name)
 
         except Exception as e:
@@ -45,33 +87,67 @@ class PubmedSearcher(BaseSearcher):
             SearchResult
         """
         try:
-            return SearchResult(
-                paper_id=paper_id,
-                title=f"PubMed Paper {paper_id}",
-                abstract="This is a biomedical research abstract.",
-                authors=["Researcher A", "Researcher B"],
-                year=2023,
-                venue="PubMed",
-                url=f"https://pubmed.ncbi.nlm.nih.gov/{paper_id}/",
-                citations=20,
-                doi=f"10.1234/pubmed.{paper_id}"
-            )
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+            url = f"{base_url}esummary.fcgi?db=pubmed&id={paper_id}&retmode=json"
+
+            with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
+                summary_data = json.loads(response.read().decode("utf-8"))
+
+            results = self._parse_pubmed_summary(summary_data, "")
+            if results:
+                return results[0]
+            return None
         except Exception as e:
             logger.error(f"Get PubMed paper failed: {e}")
             return None
 
-    def _mock_search(self, query: str, max_results: int) -> list:
-        """模拟搜索结果"""
-        return [
-            SearchResult(
-                paper_id=f"PMID{35000000 + i}",
-                title=f"{query} - Biomedical Study {i}",
-                abstract=f"Abstract for biomedical study {i} about {query}...",
-                authors=[f"Dr. {j}" for j in ["Smith", "Johnson"]],
-                year=2021 + i % 4,
-                venue="Nature Medicine" if i % 2 == 0 else "Cell",
-                url=f"https://pubmed.ncbi.nlm.nih.gov/{35000000 + i}/",
-                citations=i * 3
-            )
-            for i in range(1, min(max_results + 1, 11))
-        ]
+    def _parse_pubmed_summary(self, summary_data: dict, query: str) -> list:
+        """解析PubMed摘要响应"""
+        results = []
+        try:
+            result = summary_data.get("result", {})
+            for pmid, info in result.items():
+                if pmid == "uids":
+                    continue
+
+                try:
+                    authors = []
+                    author_list = info.get("authors", [])
+                    for auth in author_list:
+                        if "name" in auth:
+                            authors.append(auth["name"])
+
+                    abstract = info.get("abstract", "")
+
+                    try:
+                        pubdate = info.get("pubdate", "2024")
+                        year = int(pubdate[:4]) if pubdate else 2024
+                    except (ValueError, TypeError):
+                        year = 2024
+
+                    try:
+                        citations = int(info.get("pmcrefcount", 0) or 0)
+                    except (ValueError, TypeError):
+                        citations = 0
+
+                    results.append(SearchResult(
+                        paper_id=pmid,
+                        title=info.get("title", ""),
+                        abstract=abstract,
+                        authors=authors,
+                        year=year,
+                        venue="PubMed",
+                        url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                        citations=citations
+                    ))
+                except Exception as e:
+                    logger.warning(f"解析PubMed论文失败: {e}")
+                    continue
+        except Exception as e:
+            logger.error(f"PubMed摘要解析失败: {e}")
+
+        return results

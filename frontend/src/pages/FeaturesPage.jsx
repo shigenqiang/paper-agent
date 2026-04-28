@@ -15,7 +15,6 @@ import {
   BuildOutlined,
   DatabaseOutlined,
   ArrowRightOutlined,
-  StarOutlined,
   FireOutlined,
   EditOutlined,
 } from '@ant-design/icons'
@@ -172,57 +171,6 @@ const FeaturesPage = () => {
         </Card>
       ))}
 
-      {/* 快速开始引导 */}
-      <Card className="!rounded-xl !bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 !border-0">
-        <div className="text-center py-4">
-          <Space direction="vertical" size="large" className="w-full">
-            <Title level={4} className="!mb-0">
-              <StarOutlined className="text-yellow-500" /> 快速开始
-            </Title>
-            <Text type="secondary" className="text-base">
-              选择上方任意功能开始使用，或前往首页创建您的第一篇论文
-            </Text>
-            <Space size="large">
-              <Card
-                hoverable
-                className="cursor-pointer inline-block"
-                onClick={() => navigate('/writing')}
-                bodyStyle={{ padding: '16px 32px' }}
-              >
-                <Space>
-                  <FileTextOutlined className="text-blue-500 text-xl" />
-                  <span className="font-medium">新建论文</span>
-                  <ArrowRightOutlined className="text-gray-400" />
-                </Space>
-              </Card>
-              <Card
-                hoverable
-                className="cursor-pointer inline-block"
-                onClick={() => navigate('/reports')}
-                bodyStyle={{ padding: '16px 32px' }}
-              >
-                <Space>
-                  <BulbOutlined className="text-orange-500 text-xl" />
-                  <span className="font-medium">学术资讯</span>
-                  <ArrowRightOutlined className="text-gray-400" />
-                </Space>
-              </Card>
-              <Card
-                hoverable
-                className="cursor-pointer inline-block"
-                onClick={() => navigate('/literature')}
-                bodyStyle={{ padding: '16px 32px' }}
-              >
-                <Space>
-                  <SearchOutlined className="text-green-500 text-xl" />
-                  <span className="font-medium">文献搜索</span>
-                  <ArrowRightOutlined className="text-gray-400" />
-                </Space>
-              </Card>
-            </Space>
-          </Space>
-        </div>
-      </Card>
     </div>
   )
 }

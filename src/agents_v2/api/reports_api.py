@@ -47,7 +47,7 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
         List of paper search results
     """
     try:
-        from src.agents_v2.search import search_merged, MergeConfig
+        from src.agents_v2.search import search_all, MergeConfig, merge_search_results
 
         # 从设置获取用户关键词，如果没有则使用默认关键词
         from src.agents_v2.api.paper_api import SETTINGS_STORAGE
@@ -64,7 +64,10 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
 
         for query in keywords:
             try:
-                # 使用合并搜索获取去重后的结果
+                # 使用search_all获取所有源的结果，然后合并去重
+                search_results = await search_all(query=query, max_results=20)
+
+                # 合并去重
                 config = MergeConfig(
                     title_similarity_threshold=0.8,
                     citation_weight=0.4,
@@ -73,11 +76,7 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
                     relevance_weight=0.2
                 )
 
-                results = await search_merged(
-                    query=query,
-                    max_results=20,
-                    config=config
-                )
+                results = await merge_search_results(search_results, config=config)
 
                 for r in results:
                     if r.paper_id not in seen_ids:
@@ -113,81 +112,129 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
 
 def generate_digest_summary(papers: List[Dict], digest_type: str) -> str:
     """
-    Generate AI summary for the digest
+    Generate report with citation markers and reference list
 
     Args:
         papers: List of papers
         digest_type: daily, weekly, monthly
 
     Returns:
-        Generated summary text
+        Generated summary text with [1], [2] citations and references
     """
+    from datetime import datetime
     if not papers:
         return "本期资讯暂无相关论文。"
 
-    # 基本统计
     total_count = len(papers)
     venues = {}
     sources = {}
-    top_papers = []
-    keyword_stats = {}
 
     for paper in papers:
-        # 统计关键词命中
-        for kw in paper.get("keywords", []):
-            keyword_stats[kw] = keyword_stats.get(kw, 0) + 1
-
-        # 统计来源
         for src in paper.get("sources", []):
             sources[src] = sources.get(src, 0) + 1
-
-        # 统计发表 venue
         if paper.get("venue"):
             venues[paper["venue"]] = venues.get(paper["venue"], 0) + 1
 
-        # 高引用论文
-        if paper.get("citations", 0) > 10:
-            top_papers.append(paper)
-
-    # 按引用数排序
-    top_papers.sort(key=lambda x: x.get("citations", 0), reverse=True)
-    top_papers = top_papers[:5]
-
-    # 构建摘要
     type_name = {"daily": "今日", "weekly": "本周", "monthly": "本月"}.get(digest_type, "本期")
-
-    # 获取用户设置的关键词
     from src.agents_v2.api.paper_api import SETTINGS_STORAGE
     user_keywords = SETTINGS_STORAGE.get("keywords", [])
+    date_str = datetime.now().strftime('%Y-%m-%d')
 
-    summary = f"""# {type_name}学术资讯快报
+    # 按引用排序所有论文
+    sorted_papers = sorted(papers, key=lambda x: x.get("citations", 0), reverse=True)
 
-## 概览
-- 收录论文: {total_count} 篇
-- 数据来源: {', '.join(sources.keys()) if sources else '未知'}
-- 监测关键词: {', '.join(user_keywords) if user_keywords else '全部'}
+    # 为所有论文分配引用编号
+    for idx, paper in enumerate(sorted_papers, 1):
+        paper["citation_index"] = idx
 
-## 关键词分布
-{', '.join([f'{k}({v}篇)' for k, v in sorted(keyword_stats.items(), key=lambda x: x[1], reverse=True)[:5]]) if keyword_stats else '暂无数据'}
+    # ===== 报告正文 =====
+    summary = f"# {type_name}学术资讯快报 - {date_str}\n\n"
 
-## 热门发表 venue
-{', '.join([f'{k}({v}篇)' for k, v in sorted(venues.items(), key=lambda x: x[1], reverse=True)[:5]]) if venues else '暂无数据'}
+    # 概览
+    summary += "## 概览\n"
+    summary += f"- 收录论文: {total_count} 篇\n"
+    summary += f"- 数据来源: {', '.join(sources.keys()) if sources else '未知'}\n"
+    summary += f"- 监测关键词: {', '.join(user_keywords) if user_keywords else '全部'}\n\n"
 
-## 高影响力论文 (引用>10)
-"""
+    # 热门发表场所
+    if venues:
+        summary += "## 热门发表场所\n"
+        for k, v in sorted(venues.items(), key=lambda x: x[1], reverse=True)[:5]:
+            summary += f"- {k}: {v}篇\n"
+        summary += "\n"
 
-    for i, paper in enumerate(top_papers, 1):
-        summary += f"""
-### {i}. {paper.get('title', '未知标题')}
-- 作者: {', '.join(paper.get('authors', [])[:3])}{' et al.' if len(paper.get('authors', [])) > 3 else ''}
-- 发表: {paper.get('venue', '未知')} ({paper.get('year', '未知')})
-- 引用: {paper.get('citations', 0)}
-"""
+    # 高影响力论文
+    high_impact = [p for p in sorted_papers if p.get("citations", 0) > 0][:5]
+    if high_impact:
+        summary += "## 高影响力论文\n\n"
+        for paper in high_impact:
+            title = paper.get('title', '未知标题')
+            authors = ', '.join(paper.get('authors', [])[:3])
+            if len(paper.get('authors', [])) > 3:
+                authors += ' 等'
+            year = paper.get('year', '未知')
+            venue = paper.get('venue', '未知')
+            citations = paper.get('citations', 0)
+            cite_idx = paper.get("citation_index")
+            summary += f"- **{title}** [{cite_idx}] ({citations}次引用)\n"
+            summary += f"  - {authors} · {venue} ({year})\n\n"
 
-    summary += f"""
----
-生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-"""
+    # 新发表论文
+    recent_papers = [p for p in sorted_papers if p.get("year", 0) >= 2024][:5]
+    if recent_papers:
+        summary += "## 最新研究进展\n\n"
+        for paper in recent_papers:
+            title = paper.get('title', '未知标题')
+            authors = ', '.join(paper.get('authors', [])[:3])
+            if len(paper.get('authors', [])) > 3:
+                authors += ' 等'
+            year = paper.get('year', '未知')
+            cite_idx = paper.get("citation_index")
+            abstract = paper.get('abstract', '')
+            summary += f"- **{title}** [{cite_idx}]\n"
+            summary += f"  - 作者: {authors} ({year})\n"
+            if abstract:
+                summary += f"  - 摘要: {abstract[:200]}{'...' if len(abstract) > 200 else ''}\n"
+            summary += "\n"
+
+    # 全部论文列表
+    summary += "## 论文列表\n\n"
+    for paper in sorted_papers:
+        title = paper.get('title', '未知标题')
+        authors = ', '.join(paper.get('authors', [])[:3])
+        if len(paper.get('authors', [])) > 3:
+            authors += ' 等'
+        year = paper.get('year', '未知')
+        venue = paper.get('venue', '')
+        citations = paper.get('citations', 0)
+        cite_idx = paper.get("citation_index")
+        source = paper.get('sources', ['未知'])[0] if paper.get('sources') else '未知'
+
+        summary += f"{cite_idx}. **{title}**\n"
+        summary += f"   - {authors} · {venue} ({year}) · {source}"
+        if citations > 0:
+            summary += f" · {citations}次引用"
+        summary += "\n\n"
+
+    # 参考文献列表
+    summary += "## 参考文献\n\n"
+    for paper in sorted_papers:
+        idx = paper.get("citation_index", 0)
+        authors = ', '.join(paper.get('authors', [])[:3])
+        if len(paper.get('authors', [])) > 3:
+            authors += ' et al.'
+        title = paper.get('title', '未知标题')
+        year = paper.get('year', '未知')
+        venue = paper.get('venue', '')
+        url = paper.get('url', '')
+        source = paper.get('sources', ['未知'])[0] if paper.get('sources') else '未知'
+
+        if url:
+            summary += f"[{idx}] {authors}. \"{title}\". {venue}, {year}. [{source}]({url})\n\n"
+        else:
+            summary += f"[{idx}] {authors}. \"{title}\". {venue}, {year}. {source}\n\n"
+
+    summary += f"---\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
 
     return summary
 

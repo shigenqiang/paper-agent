@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Tabs, Button, Space, Typography, List, Tag, Empty, Spin, message, Divider, Statistic, Row, Col, Alert, Badge } from 'antd'
+import { Card, Tabs, Button, Space, Typography, List, Tag, Empty, Spin, message, Divider, Statistic, Row, Col, Alert, Badge, Collapse, Tooltip } from 'antd'
+import ReactMarkdown from 'react-markdown'
 import {
   ReloadOutlined,
   FileTextOutlined,
@@ -10,8 +11,12 @@ import {
   FilterOutlined,
   SettingOutlined,
   ClockCircleOutlined,
+  CopyOutlined,
+  PlusCircleOutlined,
+  CheckCircleFilled,
 } from '@ant-design/icons'
 import { reportsAPI, settingsAPI } from '../services/api'
+import { usePaperStore } from '../store/paperStore'
 import { useNavigate } from 'react-router-dom'
 
 const { Title, Text } = Typography
@@ -32,6 +37,7 @@ const SOURCE_CONFIG = {
 
 const ReportsPage = () => {
   const navigate = useNavigate()
+  const { literature, addLiterature } = usePaperStore()
   const [activeTab, setActiveTab] = useState(REPORT_TYPES.DAILY)
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -135,6 +141,9 @@ const ReportsPage = () => {
           if (digest.status === 'ready') {
             setGenerating(false)
             loadDigests()
+            // 自动选中最新生成的报告
+            const updatedDigest = digests.find(d => d.id === digestId)
+            if (updatedDigest) setSelectedDigest(updatedDigest)
             message.success('资讯生成完成！')
             return
           } else if (digest.status === 'error') {
@@ -146,17 +155,61 @@ const ReportsPage = () => {
       } catch (e) {
         console.error('检查状态失败', e)
       }
-
-      if (generating) {
-        setTimeout(checkStatus, 3000)
-      }
+      setTimeout(checkStatus, 3000)
     }
-
     setTimeout(checkStatus, 2000)
   }
 
   const handleViewDigest = (digest) => {
     setSelectedDigest(digest)
+  }
+
+  // 复制报告内容
+  const handleCopyReport = () => {
+    if (!selectedDigest) return
+    const content = selectedDigest.summary || selectedDigest.content || ''
+    navigator.clipboard.writeText(content).then(() => {
+      message.success('报告已复制到剪贴板')
+    }).catch(() => {
+      message.error('复制失败')
+    })
+  }
+
+  // 下载报告为 Markdown 文件
+  const handleDownloadReport = () => {
+    if (!selectedDigest) return
+    const content = selectedDigest.summary || selectedDigest.content || ''
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${selectedDigest.title || '学术资讯报告'}.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    message.success('报告已下载')
+  }
+
+  // 添加论文到文献库
+  const handleAddPaper = (paper) => {
+    if (literature.some(l => l.id === paper.paper_id)) {
+      message.info('该文献已在库中')
+      return
+    }
+    addLiterature({
+      id: paper.paper_id || Date.now(),
+      title: paper.title || '',
+      authors: Array.isArray(paper.authors) ? paper.authors.join(', ') : (paper.authors || ''),
+      year: paper.year || '',
+      journal: paper.venue || paper.journal || '',
+      url: paper.url || '',
+      abstract: paper.abstract || '',
+      source: Array.isArray(paper.sources) ? paper.sources[0] : (paper.sources || ''),
+      citations: paper.citations || 0,
+      status: 'pending',
+    })
+    message.success('已添加到文献库')
   }
 
   const getSourceColor = (source) => {
@@ -286,6 +339,10 @@ const ReportsPage = () => {
               loading={loading}
               onViewDigest={handleViewDigest}
               onGenerate={handleGenerateDigest}
+              onCopyReport={handleCopyReport}
+              onDownloadReport={handleDownloadReport}
+              onAddPaper={handleAddPaper}
+              literature={literature}
               getSourceColor={getSourceColor}
               formatDate={formatDate}
               generating={generating}
@@ -299,6 +356,10 @@ const ReportsPage = () => {
               loading={loading}
               onViewDigest={handleViewDigest}
               onGenerate={handleGenerateDigest}
+              onCopyReport={handleCopyReport}
+              onDownloadReport={handleDownloadReport}
+              onAddPaper={handleAddPaper}
+              literature={literature}
               getSourceColor={getSourceColor}
               formatDate={formatDate}
               generating={generating}
@@ -312,6 +373,10 @@ const ReportsPage = () => {
               loading={loading}
               onViewDigest={handleViewDigest}
               onGenerate={handleGenerateDigest}
+              onCopyReport={handleCopyReport}
+              onDownloadReport={handleDownloadReport}
+              onAddPaper={handleAddPaper}
+              literature={literature}
               getSourceColor={getSourceColor}
               formatDate={formatDate}
               generating={generating}
@@ -335,6 +400,10 @@ const ContentPanel = ({
   loading,
   onViewDigest,
   onGenerate,
+  onCopyReport,
+  onDownloadReport,
+  onAddPaper,
+  literature,
   getSourceColor,
   formatDate,
   generating
@@ -362,97 +431,183 @@ const ContentPanel = ({
   }
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-340px)] min-h-[400px]">
-      {/* 左侧资讯列表 - 时间线样式 */}
-      <Card className="w-80 flex-shrink-0 flex flex-col !rounded-lg" title={<Space><FileTextOutlined /><span>资讯列表</span></Space>} bodyStyle={{ padding: 0, flex: 1, overflow: 'auto' }}>
-        <List
-          size="small"
-          dataSource={digests}
-          renderItem={(item, index) => (
-            <List.Item
-              className={`cursor-pointer hover:bg-blue-50 px-4 py-3 transition-all ${selectedDigest?.id === item.id ? 'bg-blue-50 border-l-4 border-blue-500' : 'border-l-4 border-transparent'}`}
-              onClick={() => onViewDigest(item)}
-            >
-              <div className="w-full">
-                <div className="flex items-center justify-between mb-1">
-                  <Text strong className="text-sm">{item.title || `第${index + 1}期`}</Text>
-                  {item.status === 'ready' ? (
-                    <CheckCircleOutlined className="text-green-500" />
-                  ) : item.status === 'generating' ? (
-                    <LoadingOutlined className="text-orange-500" />
-                  ) : null}
+    <div className="flex gap-4" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
+      {/* 左侧资讯列表 */}
+      <div className="w-72 flex-shrink-0 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white">
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <Space>
+            <FileTextOutlined />
+            <Text strong>资讯列表</Text>
+          </Space>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <List
+            size="small"
+            dataSource={digests}
+            renderItem={(item, index) => (
+              <List.Item
+                className={`cursor-pointer hover:bg-blue-50 px-4 py-3 transition-all border-l-4 ${selectedDigest?.id === item.id ? 'bg-blue-50 border-blue-500' : 'border-transparent'}`}
+                onClick={() => onViewDigest(item)}
+              >
+                <div className="w-full">
+                  <div className="flex items-center justify-between mb-1">
+                    <Text strong className="text-sm">{item.title || `第${index + 1}期`}</Text>
+                    {item.status === 'ready' ? (
+                      <CheckCircleOutlined className="text-green-500" />
+                    ) : item.status === 'generating' ? (
+                      <LoadingOutlined className="text-orange-500" />
+                    ) : null}
+                  </div>
+                  <div className="text-xs text-gray-400">{formatDate(item.created_at)}</div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Tag className="!text-xs" size="small" color="blue">{item.papers?.length || 0} 篇</Tag>
+                    {item.sources?.slice(0, 2).map(source => (
+                      <Tag className="!text-xs" size="small" color={getSourceColor(source)} key={source}>
+                        {SOURCE_CONFIG[source]?.label || source}
+                      </Tag>
+                    ))}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400">{formatDate(item.created_at)}</div>
-                <div className="flex items-center gap-2 mt-2">
-                  <Tag className="!text-xs" size="small" color="blue">{item.papers?.length || 0} 篇</Tag>
-                  {item.sources?.slice(0, 2).map(source => (
-                    <Tag className="!text-xs" size="small" color={getSourceColor(source)} key={source}>
-                      {SOURCE_CONFIG[source]?.label || source}
-                    </Tag>
-                  ))}
-                </div>
-              </div>
-            </List.Item>
-          )}
-        />
-      </Card>
+              </List.Item>
+            )}
+          />
+        </div>
+      </div>
 
       {/* 右侧资讯详情 */}
-      <Card className="flex-1 flex flex-col !rounded-lg" title={
-        <Space>
-          {selectedDigest ? <FileTextOutlined /> : <ClockCircleOutlined />}
-          <span>{selectedDigest ? selectedDigest.title : '请选择资讯'}</span>
-        </Space>
-      }>
+      <div className="flex-1 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white">
         {!selectedDigest ? (
           <div className="flex-1 flex items-center justify-center">
             <Empty description="请从左侧选择一期资讯查看详情" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         ) : (
-          <div className="flex flex-col h-full">
-            {/* 详情头部 */}
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <Space split={<Divider type="vertical" />}>
-                <Text type="secondary"><FileTextOutlined /> {selectedDigest.papers?.length || 0} 篇</Text>
-                <Text type="secondary"><CalendarOutlined /> {formatDate(selectedDigest.created_at)}</Text>
+          <>
+            {/* 标题栏 */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+              <Space>
+                <FileTextOutlined />
+                <Text strong>{selectedDigest.title}</Text>
+                <Tag color={selectedDigest.status === 'ready' ? 'green' : 'orange'}>
+                  {selectedDigest.status === 'ready' ? '已完成' : '生成中'}
+                </Tag>
               </Space>
               <Space>
-                {selectedDigest.sources?.map(source => (
-                  <Tag color={getSourceColor(source)} key={source}>{SOURCE_CONFIG[source]?.label || source}</Tag>
-                ))}
+                <Tooltip title="下载报告">
+                  <Button icon={<FileTextOutlined />} size="small" onClick={onDownloadReport} disabled={selectedDigest.status !== 'ready'}>
+                    下载
+                  </Button>
+                </Tooltip>
+                <Tooltip title="复制报告">
+                  <Button icon={<CopyOutlined />} size="small" onClick={onCopyReport} disabled={selectedDigest.status !== 'ready'}>
+                    复制
+                  </Button>
+                </Tooltip>
               </Space>
             </div>
 
-            {/* 论文列表 */}
-            <div className="flex-1 overflow-auto py-2">
-              <List
-                size="small"
-                dataSource={selectedDigest.papers || []}
-                renderItem={(paper, idx) => (
-                  <List.Item className={`!py-3 ${idx !== 0 ? '!border-t !border-gray-100' : ''}`}>
-                    <div className="w-full">
-                      <div className="flex items-start gap-3">
-                        <Badge count={idx + 1} style={{ backgroundColor: '#1890ff' }} />
-                        <div className="flex-1">
-                          <Text strong className="text-sm block">{paper.title}</Text>
-                          <Text type="secondary" className="text-xs block mt-1">
-                            {paper.authors?.slice(0, 3).join(', ')}{paper.authors?.length > 3 && ' 等'} · {paper.year}
-                          </Text>
-                          {paper.abstract && (
-                            <Text type="secondary" className="text-xs block mt-1 line-clamp-2">
-                              {paper.abstract}
-                            </Text>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </List.Item>
+            {selectedDigest.status !== 'ready' ? (
+              <div className="flex-1 flex items-center justify-center">
+                <Spin tip="生成中..." size="large" />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto">
+                {/* Markdown 报告内容 */}
+                <div className="p-4" style={{ maxWidth: '900px' }}>
+                  <div className="prose prose-sm max-w-none" style={{
+                    fontSize: '14px',
+                    lineHeight: '1.6',
+                  }}>
+                    <ReactMarkdown
+                      components={{
+                        h1: ({ children }) => <h1 className="text-xl font-bold mb-3 pb-2 border-b border-gray-200" style={{ color: '#1a1a1a' }}>{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-lg font-bold mt-5 mb-2" style={{ color: '#333' }}>{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-base font-bold mt-3 mb-1" style={{ color: '#555' }}>{children}</h3>,
+                        a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" style={{ color: '#1890ff' }}>{children}</a>,
+                        p: ({ children }) => <p className="my-2 text-sm leading-relaxed" style={{ color: '#444' }}>{children}</p>,
+                        li: ({ children }) => <li className="text-sm leading-relaxed" style={{ color: '#444' }}>{children}</li>,
+                        ul: ({ children }) => <ul className="my-2 list-disc pl-5">{children}</ul>,
+                        ol: ({ children }) => <ol className="my-2 list-decimal pl-5">{children}</ol>,
+                        hr: () => <Divider className="my-3" />,
+                        strong: ({ children }) => <strong className="font-bold" style={{ color: '#1a1a1a' }}>{children}</strong>,
+                        em: ({ children }) => <em className="italic" style={{ color: '#666' }}>{children}</em>,
+                        code: ({ children }) => <code className="px-1 py-0.5 bg-gray-100 rounded text-sm font-mono">{children}</code>,
+                        blockquote: ({ children }) => <blockquote className="pl-4 border-l-4 border-gray-300 italic text-gray-600 my-2">{children}</blockquote>,
+                      }}
+                    >
+                      {selectedDigest.summary || selectedDigest.content || '暂无内容'}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+
+                {/* 本期论文列表 - 可一键添加 */}
+                {selectedDigest.papers && selectedDigest.papers.length > 0 && (
+                  <div className="border-t border-gray-200">
+                    <Collapse
+                      defaultActiveKey={['papers']}
+                      items={[{
+                        key: 'papers',
+                        label: (
+                          <Space>
+                            <FileTextOutlined />
+                            <Text strong>本期论文 ({selectedDigest.papers.length} 篇)</Text>
+                            <Text type="secondary" className="text-xs">点击可添加到文献库</Text>
+                          </Space>
+                        ),
+                        children: (
+                          <List
+                            size="small"
+                            dataSource={selectedDigest.papers}
+                            renderItem={(paper, idx) => {
+                              const isInLibrary = literature.some(l => l.id === paper.paper_id || l.title === paper.title)
+                              return (
+                                <List.Item
+                                  className="!py-2"
+                                  actions={[
+                                    isInLibrary ? (
+                                      <Tag color="green" className="!m-0"><CheckCircleFilled /> 已在库中</Tag>
+                                    ) : (
+                                      <Button
+                                        type="primary"
+                                        size="small"
+                                        icon={<PlusCircleOutlined />}
+                                        onClick={() => onAddPaper(paper)}
+                                      >
+                                        添加
+                                      </Button>
+                                    )
+                                  ]}
+                                >
+                                  <List.Item.Meta
+                                    avatar={<Badge count={paper.citation_index || idx + 1} style={{ backgroundColor: '#722ed1' }} />}
+                                    title={<Text strong className="text-sm">{paper.title}</Text>}
+                                    description={
+                                      <Space wrap>
+                                        <Text type="secondary" className="text-xs">
+                                          {Array.isArray(paper.authors) ? paper.authors.slice(0, 3).join(', ') : (paper.authors || '')}
+                                          {Array.isArray(paper.authors) && paper.authors.length > 3 && ' 等'}
+                                          {paper.year && ` · ${paper.year}`}
+                                        </Text>
+                                        {paper.sources?.map(s => (
+                                          <Tag className="!text-xs !m-0" color={getSourceColor(s)} key={s}>{SOURCE_CONFIG[s]?.label || s}</Tag>
+                                        ))}
+                                        {paper.citations > 0 && <Tag className="!text-xs !m-0">引用 {paper.citations}</Tag>}
+                                      </Space>
+                                    }
+                                  />
+                                </List.Item>
+                              )
+                            }}
+                          />
+                        ),
+                      }]}
+                    />
+                  </div>
                 )}
-              />
-            </div>
-          </div>
+              </div>
+            )}
+          </>
         )}
-      </Card>
+      </div>
     </div>
   )
 }
