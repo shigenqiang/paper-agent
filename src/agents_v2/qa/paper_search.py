@@ -176,14 +176,15 @@ class PaperSearchAgent(BaseQAAgent):
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
-            # 构建arXiv API查询
+            # 构建arXiv API查询 - 使用更宽泛的类别搜索
             base_url = "http://export.arxiv.org/api/query"
-            search_query = f"all:{query} AND cat:stat.ML OR cat:math.ST OR cat:stat.ME"
+            # 搜索标题和摘要，不限制类别
+            search_query = f"ti:{query} OR abs:{query}"
             start_date = datetime.now() - timedelta(days=time_range)
             date_query = f"submittedDate:[{start_date.strftime('%Y%m%d')} TO NOW]"
 
             params = urllib.parse.urlencode({
-                "search_query": f"{search_query} AND {date_query}",
+                "search_query": f"({search_query}) AND {date_query}",
                 "start": 0,
                 "max_results": max_results,
                 "sortBy": "relevance"
@@ -227,8 +228,8 @@ class PaperSearchAgent(BaseQAAgent):
             base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
             search_url = f"{base_url}esearch.fcgi"
 
-            # 搜索统计相关关键词
-            search_query = f"{query}[Title/Abstract] AND (statistics[Title/Abstract] OR statistical[Title/Abstract] OR biostatistics[Title/Abstract])"
+            # 直接搜索标题和摘要，不添加额外限制
+            search_query = f"{query}[Title/Abstract]"
 
             params = urllib.parse.urlencode({
                 "db": "pubmed",
