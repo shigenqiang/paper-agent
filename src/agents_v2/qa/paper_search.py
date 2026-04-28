@@ -97,13 +97,14 @@ class PaperSearchAgent(BaseQAAgent):
         source = context.get("source", "all")  # all, arxiv, pubmed
         time_range = context.get("time_range", 365)  # 天数
         max_results = context.get("max_results", 10)
+        page = context.get("page", 1)
 
         results = SearchResult(
             papers=[],
             total_count=0,
             search_time=0.0,
             query=query,
-            filters_applied={"source": source, "time_range": time_range}
+            filters_applied={"source": source, "time_range": time_range, "page": page}
         )
 
         start_time = asyncio.get_event_loop().time()
@@ -113,10 +114,10 @@ class PaperSearchAgent(BaseQAAgent):
             tasks = []
 
             if source in ["all", "arxiv"]:
-                tasks.append(self._search_arxiv(query, time_range, max_results))
+                tasks.append(self._search_arxiv(query, time_range, max_results, page))
 
             if source in ["all", "pubmed"]:
-                tasks.append(self._search_pubmed(query, time_range, max_results))
+                tasks.append(self._search_pubmed(query, time_range, max_results, page))
 
             # 并行执行搜索
             search_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -162,7 +163,8 @@ class PaperSearchAgent(BaseQAAgent):
         self,
         query: str,
         time_range: int = 365,
-        max_results: int = 10
+        max_results: int = 10,
+        page: int = 1
     ) -> List[Paper]:
         """搜索arXiv"""
         try:
@@ -183,9 +185,11 @@ class PaperSearchAgent(BaseQAAgent):
             start_date = datetime.now() - timedelta(days=time_range)
             date_query = f"submittedDate:[{start_date.strftime('%Y%m%d')} TO NOW]"
 
+            start = (page - 1) * max_results
+
             params = urllib.parse.urlencode({
                 "search_query": f"({search_query}) AND {date_query}",
-                "start": 0,
+                "start": start,
                 "max_results": max_results,
                 "sortBy": "relevance"
             })
@@ -210,7 +214,8 @@ class PaperSearchAgent(BaseQAAgent):
         self,
         query: str,
         time_range: int = 365,
-        max_results: int = 10
+        max_results: int = 10,
+        page: int = 1
     ) -> List[Paper]:
         """搜索PubMed"""
         try:
@@ -235,6 +240,7 @@ class PaperSearchAgent(BaseQAAgent):
                 "db": "pubmed",
                 "term": search_query,
                 "retmax": max_results,
+                "retstart": (page - 1) * max_results,
                 "retmode": "json",
                 "datetype": "pdat",
                 "reldate": time_range

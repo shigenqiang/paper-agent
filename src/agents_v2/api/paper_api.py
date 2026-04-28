@@ -378,7 +378,11 @@ async def search_literature(request: web.Request) -> web.Response:
         from src.agents_v2.qa import PaperSearchAgent
 
         agent = PaperSearchAgent()
-        result = await agent.execute(query, {"max_results": data.get("max_results", 10)})
+        page = data.get("page", 1)
+        result = await agent.execute(query, {
+            "max_results": data.get("max_results", 10),
+            "page": page,
+        })
 
         papers = result.get("papers", []) if isinstance(result, dict) else []
 
