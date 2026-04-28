@@ -6,6 +6,7 @@ from .report_generator import ReportGenerator, PaperReport, ReportSection
 from .daily_watcher import DailyWatcher, DailyPaperReport
 from .weekly_report import WeeklyReportGenerator, WeeklyPaperReport
 from .monthly_report import MonthlyReportGenerator, MonthlyPaperReport
+from .paper_flash import PaperFlash, FlashType, FlashReport, PaperFlashResult, FlashSubscription
 from .citation_manager import CitationManager, Citation
 
 __all__ = [
@@ -32,6 +33,12 @@ __all__ = [
     # Monthly report
     "MonthlyReportGenerator",
     "MonthlyPaperReport",
+    # Paper flash
+    "PaperFlash",
+    "FlashType",
+    "FlashReport",
+    "PaperFlashResult",
+    "FlashSubscription",
     # Citation management
     "CitationManager",
     "Citation",

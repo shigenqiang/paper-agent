@@ -13,6 +13,7 @@ import logging
 import asyncio
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
+from .logic_coherence import LogicCoherenceChecker, SelfReviseManager, CoherenceReport
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ class DraftGeneratorAgent(WritingAgentBase):
             description="论文全文初稿生成",
             system_prompt=system_prompt
         )
+        # 初始化逻辑一致性检查器
+        self.coherence_checker = LogicCoherenceChecker()
+        self.revise_manager = SelfReviseManager(self.coherence_checker)
 
     async def execute(
         self,
@@ -104,6 +108,18 @@ class DraftGeneratorAgent(WritingAgentBase):
                 full_draft, topic, thesis_statement
             )
 
+            # 5. 逻辑一致性检查
+            coherence_report = await self.coherence_checker.check_draft(
+                full_draft, outline, references
+            )
+
+            # 6. 如果有不一致问题，尝试自动修订
+            if not coherence_report.passed:
+                logger.warning(f"Coherence issues found: {coherence_report.summary()}")
+                full_draft, coherence_report = await self.revise_manager.revise_draft(
+                    full_draft, outline, references, auto_fix=True
+                )
+
             return WritingOutput(
                 success=True,
                 result={
@@ -113,11 +129,16 @@ class DraftGeneratorAgent(WritingAgentBase):
                     "chapters": generated_chapters,
                     "full_draft": full_draft,
                     "total_words": len(full_draft.split()),
-                    "chapter_count": len(generated_chapters)
+                    "chapter_count": len(generated_chapters),
+                    "coherence_report": coherence_report.to_dict() if coherence_report else None
                 },
                 agent_name=self.name,
-                reasoning=f"Generated draft with {len(generated_chapters)} chapters, {len(full_draft.split())} words",
-                quality_score=quality_score
+                reasoning=f"Generated draft with {len(generated_chapters)} chapters, {len(full_draft.split())} words. Coherence score: {coherence_report.overall_score if coherence_report else 'N/A'}",
+                quality_score=quality_score,
+                metadata={
+                    "coherence_score": coherence_report.overall_score if coherence_report else 0,
+                    "coherence_issues": len(coherence_report.issues) if coherence_report else 0
+                }
             )
 
         except Exception as e:

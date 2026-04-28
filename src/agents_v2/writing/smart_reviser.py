@@ -6,6 +6,7 @@ SmartReviserAgent - 智能改稿Agent
 - 针对性修改文本
 - 保持修改前后一致性
 """
+import os
 from typing import Any, Dict, List, Optional
 import json
 import logging
@@ -14,6 +15,114 @@ import re
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
 
 logger = logging.getLogger(__name__)
+
+
+class TrinkaGrammarChecker:
+    """
+    Trinka AI 语法检查器
+
+    集成 Trinka API 进行专业学术语法检查。
+    API 文档: https://api.trinka.ai/docs/
+    """
+
+    API_KEY = os.getenv("TRINKA_API_KEY", "")
+    BASE_URL = "https://api.trinka.ai/api/v1/document/check"
+
+    def __init__(self):
+        self.enabled = bool(self.API_KEY)
+
+    async def check(self, text: str, language: str = "en") -> Dict[str, Any]:
+        """
+        使用 Trinka API 检查语法
+
+        Args:
+            text: 待检查文本
+            language: 语言 (en/zh)
+
+        Returns:
+            包含错误列表的字典
+        """
+        if not self.enabled:
+            logger.warning("Trinka API key not configured, skipping API check")
+            return {"success": False, "error": "API not configured", "issues": []}
+
+        try:
+            import aiohttp
+
+            headers = {
+                "Authorization": f"Bearer {self.API_KEY}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "content": text,
+                "language": language
+            }
+
+            timeout = aiohttp.ClientTimeout(total=60)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(self.BASE_URL, json=data, headers=headers) as resp:
+                    if resp.status == 401:
+                        logger.error("Trinka API authentication failed")
+                        return {"success": False, "error": "Authentication failed", "issues": []}
+                    if resp.status == 429:
+                        logger.warning("Trinka API rate limit exceeded")
+                        return {"success": False, "error": "Rate limit exceeded", "issues": []}
+                    if resp.status != 200:
+                        text_response = await resp.text()
+                        logger.error(f"Trinka API error: {resp.status} - {text_response}")
+                        return {"success": False, "error": f"API error: {resp.status}", "issues": []}
+
+                    result = await resp.json()
+                    return self._parse_trinka_result(result)
+
+        except Exception as e:
+            logger.error(f"Trinka grammar check failed: {e}")
+            return {"success": False, "error": str(e), "issues": []}
+
+    def _parse_trinka_result(self, result: dict) -> Dict[str, Any]:
+        """解析 Trinka API 返回结果"""
+        issues = []
+
+        try:
+            matches = result.get("matches", [])
+            for match in matches:
+                issue = {
+                    "location": match.get("location", {}),
+                    "original": match.get("original", ""),
+                    "replacement": match.get("replacement", ""),
+                    "message": match.get("message", ""),
+                    "rule": match.get("rule", {}),
+                    "type": match.get("type", ""),
+                    "category": match.get("category", "")
+                }
+                issues.append(issue)
+        except Exception as e:
+            logger.error(f"Failed to parse Trinka result: {e}")
+
+        return {
+            "success": True,
+            "error": "",
+            "issues": issues,
+            "total_issues": len(issues)
+        }
+
+    def format_issues(self, issues: List[Dict]) -> str:
+        """格式化错误列表为可读文本"""
+        if not issues:
+            return "No grammar issues found."
+
+        lines = []
+        for i, issue in enumerate(issues, 1):
+            original = issue.get("original", "")
+            replacement = issue.get("replacement", "")
+            message = issue.get("message", "")
+
+            if replacement:
+                lines.append(f"{i}. '{original}' → '{replacement}'")
+            else:
+                lines.append(f"{i}. '{original}': {message}")
+
+        return "\n".join(lines)
 
 
 class SmartReviserAgent(WritingAgentBase):
@@ -301,7 +410,7 @@ class LanguagePolisherAgent(WritingAgentBase):
     - 中英翻译润色
     """
 
-    def __init__(self, llm_config: Optional[LLMConfig] = None):
+    def __init__(self, llm_config: Optional[LLMConfig] = None, use_trinka: bool = True):
         system_prompt = """你是一个专业的语言润色专家。
 你的职责是：
 1. 语法检查与纠正
@@ -319,6 +428,23 @@ class LanguagePolisherAgent(WritingAgentBase):
             description="语言润色",
             system_prompt=system_prompt
         )
+        self._trinka = TrinkaGrammarChecker() if use_trinka else None
+
+    async def _check_grammar_with_trinka(
+        self,
+        text: str,
+        language: str
+    ) -> List[Dict[str, Any]]:
+        """使用 Trinka API 进行专业语法检查"""
+        if not self._trinka:
+            return []
+
+        result = await self._trinka.check(text, language)
+        if result.get("success"):
+            return result.get("issues", [])
+        else:
+            logger.info(f"Trinka check failed: {result.get('error')}, falling back to LLM")
+            return []
 
     async def execute(
         self,
@@ -389,7 +515,19 @@ class LanguagePolisherAgent(WritingAgentBase):
         text: str,
         language: str
     ) -> List[Dict[str, Any]]:
-        """检查语法"""
+        """检查语法 - 优先使用 Trinka API，回退到 LLM"""
+        # 优先使用 Trinka API 进行专业检查
+        if self._trinka and language == "en":
+            trinka_issues = await self._check_grammar_with_trinka(text, language)
+            if trinka_issues:
+                return [{
+                    "location": issue.get("location", {}),
+                    "original": issue.get("original", ""),
+                    "issue": issue.get("message", ""),
+                    "suggestion": issue.get("replacement", "")
+                } for issue in trinka_issues]
+
+        # 回退到 LLM 检查
         prompt = f"""
 检查以下{language}语文本的语法问题：
 

@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "data": {
+    "message": "我叫什么名字？",
+    "response": "你叫**李四**呀！这是你刚才告诉我的 😊\n\n有什么写作上的问题想问我吗？",
+    "agent": "SimpleChatAgent"
+  }
+}

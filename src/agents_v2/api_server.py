@@ -504,6 +504,14 @@ def create_app() -> web.Application:
     # WebSocket端点
     app.router.add_get('/ws/status', handle_websocket_status)
 
+    # Paper Agent RESTful API (frontend)
+    from src.agents_v2.api.paper_api import setup_paper_routes
+    setup_paper_routes(app)
+
+    # Reports API
+    from src.agents_v2.api.reports_api import setup_reports_routes
+    setup_reports_routes(app)
+
     return app
 
 

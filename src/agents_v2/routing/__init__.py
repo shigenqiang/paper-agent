@@ -19,6 +19,12 @@ from .fallback_router import (
     FallbackResult,
     FallbackStrategy,
 )
+from .llm_intent_classifier import (
+    LLMIntentClassifier,
+    Intent,
+    IntentResult,
+    classify_intent,
+)
 
 __all__ = [
     "RoutingOptimizer",
@@ -31,4 +37,8 @@ __all__ = [
     "FallbackRouter",
     "FallbackResult",
     "FallbackStrategy",
+    "LLMIntentClassifier",
+    "Intent",
+    "IntentResult",
+    "classify_intent",
 ]
