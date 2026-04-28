@@ -27,7 +27,13 @@ const LiteraturePage = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [selectedRowKeys, setSelectedRowKeys] = useState([])
   const [activeTab, setActiveTab] = useState('library')
+
+  const PAGE_SIZE = 10
 
   // 从 header 搜索跳转过来时自动触发搜索
   useEffect(() => {
@@ -46,10 +52,14 @@ const LiteraturePage = () => {
       return
     }
     setSearchLoading(true)
+    setSearchResults([])
+    setSelectedRowKeys([])
+    setCurrentPage(1)
+    setHasMore(true)
     try {
-      const result = await literatureAPI.search(q, { max_results: 10 })
+      const result = await literatureAPI.search(q, { max_results: PAGE_SIZE })
       if (result.success && result.data) {
-        setSearchResults(result.data.map(item => ({
+        const papers = result.data.map(item => ({
           id: item.paper_id || item.id || Date.now() + Math.random(),
           title: item.title || '',
           authors: Array.isArray(item.authors) ? item.authors.join(', ') : (item.authors || ''),
@@ -60,18 +70,72 @@ const LiteraturePage = () => {
           source: item.source || 'unknown',
           citations: item.citations || 0,
           doi: item.doi || '',
-        })))
+        }))
+        setSearchResults(papers)
+        setHasMore(result.data.length >= PAGE_SIZE)
         setActiveTab('search')
       } else {
         message.warning('未找到相关文献')
         setSearchResults([])
+        setHasMore(false)
       }
     } catch (e) {
       message.error('搜索失败: ' + (e.message || '网络错误'))
       setSearchResults([])
+      setHasMore(false)
     } finally {
       setSearchLoading(false)
     }
+  }
+
+  // 加载更多搜索结果
+  const handleLoadMore = async () => {
+    if (searchLoadingMore || !hasMore) return
+    setSearchLoadingMore(true)
+    try {
+      const nextPage = currentPage + 1
+      const result = await literatureAPI.search(searchQuery, {
+        max_results: PAGE_SIZE,
+        page: nextPage,
+      })
+      if (result.success && result.data) {
+        const papers = result.data.map(item => ({
+          id: item.paper_id || item.id || Date.now() + Math.random(),
+          title: item.title || '',
+          authors: Array.isArray(item.authors) ? item.authors.join(', ') : (item.authors || ''),
+          year: item.year || '',
+          journal: item.venue || item.journal || '',
+          abstract: item.abstract || '',
+          url: item.url || '',
+          source: item.source || 'unknown',
+          citations: item.citations || 0,
+          doi: item.doi || '',
+        }))
+        setSearchResults(prev => [...prev, ...papers])
+        setCurrentPage(nextPage)
+        setHasMore(result.data.length >= PAGE_SIZE)
+      } else {
+        setHasMore(false)
+      }
+    } catch (e) {
+      message.error('加载更多失败')
+    } finally {
+      setSearchLoadingMore(false)
+    }
+  }
+
+  // 批量添加选中结果到文献库
+  const handleBatchAddSelected = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择要添加的文献')
+      return
+    }
+    const selected = searchResults.filter(r => selectedRowKeys.includes(r.id))
+    selected.forEach(item => {
+      addLiterature({ ...item, status: 'pending' })
+    })
+    message.success(`已添加 ${selected.length} 篇文献到文献库`)
+    setSelectedRowKeys([])
   }
 
   // 添加搜索结果到文献库
@@ -250,24 +314,15 @@ const LiteraturePage = () => {
       },
     },
     { title: '引用数', dataIndex: 'citations', key: 'citations', width: 80 },
-    {
-      title: '操作',
-      key: 'action',
-      width: 80,
-      render: (_, record) => (
-        <Tooltip title="添加到文献库">
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusCircleOutlined />}
-            onClick={() => handleAddToLibrary(record)}
-          >
-            添加
-          </Button>
-        </Tooltip>
-      ),
-    },
   ]
+
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (keys) => setSelectedRowKeys(keys),
+    getCheckboxProps: (record) => ({
+      disabled: literature.some(l => l.id === record.id),
+    }),
+  }
 
   return (
     <div className="space-y-4">
@@ -340,27 +395,60 @@ const LiteraturePage = () => {
                 </span>
               ),
               children: searchLoading ? (
-                <div className="text-center py-12"><Spin size="large" tip="正在搜索 arXiv, PubMed, Semantic Scholar..." /></div>
+                <div className="text-center py-12"><Spin size="large" tip="正在搜索 arXiv, PubMed..." /></div>
               ) : searchResults.length === 0 ? (
                 <Empty description="请输入关键词进行学术搜索" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                  <Text type="secondary">支持搜索 arXiv、PubMed、Semantic Scholar 等多个学术数据库</Text>
+                  <Text type="secondary">支持搜索 arXiv、PubMed 等多个学术数据库</Text>
                 </Empty>
               ) : (
-                <Table
-                  dataSource={searchResults}
-                  columns={searchResultColumns}
-                  rowKey="id"
-                  pagination={{ pageSize: 10 }}
-                  size="middle"
-                  expandable={{
-                    rowExpandable: (record) => !!record.abstract,
-                    expandedRowRender: (record) => (
-                      <div className="py-2 px-4">
-                        <Text type="secondary" className="text-sm">{record.abstract}</Text>
+                <div>
+                  {/* 批量操作栏 */}
+                  {selectedRowKeys.length > 0 && (
+                    <div className="flex justify-between items-center mb-3 p-2 bg-blue-50 rounded-lg">
+                      <Text>已选择 <strong className="text-blue-600">{selectedRowKeys.length}</strong> 篇</Text>
+                      <Button type="primary" icon={<PlusCircleOutlined />} onClick={handleBatchAddSelected}>
+                        批量添加到文献库
+                      </Button>
+                    </div>
+                  )}
+                  {/* 搜索结果表格 - 带滚动加载 */}
+                  <div
+                    className="max-h-[600px] overflow-auto"
+                    onScroll={(e) => {
+                      const { scrollTop, scrollHeight, clientHeight } = e.target
+                      if (scrollHeight - scrollTop - clientHeight < 100 && hasMore && !searchLoadingMore) {
+                        handleLoadMore()
+                      }
+                    }}
+                  >
+                    <Table
+                      dataSource={searchResults}
+                      columns={searchResultColumns}
+                      rowKey="id"
+                      rowSelection={rowSelection}
+                      pagination={false}
+                      size="middle"
+                      expandable={{
+                        rowExpandable: (record) => !!record.abstract,
+                        expandedRowRender: (record) => (
+                          <div className="py-2 px-4">
+                            <Text type="secondary" className="text-sm">{record.abstract}</Text>
+                          </div>
+                        ),
+                      }}
+                    />
+                    {/* 加载更多提示 */}
+                    {hasMore && (
+                      <div className="text-center py-4">
+                        {searchLoadingMore ? (
+                          <Spin size="small" tip="加载更多..." />
+                        ) : (
+                          <Text type="secondary" className="text-sm">滚动加载更多</Text>
+                        )}
                       </div>
-                    ),
-                  }}
-                />
+                    )}
+                  </div>
+                </div>
               ),
             },
             {
