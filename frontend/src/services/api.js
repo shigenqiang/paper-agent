@@ -1,12 +1,14 @@
 import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+const DEFAULT_API_KEY = 'dev-api-key'
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
+    'X-API-Key': DEFAULT_API_KEY,  // 设置默认API Key
   },
 })
 
@@ -15,7 +17,12 @@ apiClient.interceptors.request.use(
   (config) => {
     // 添加API密钥认证
     const apiKey = localStorage.getItem('api_key') || 'dev-api-key'
+    // 确保headers对象存在
+    if (!config.headers) {
+      config.headers = {}
+    }
     config.headers['X-API-Key'] = apiKey
+    console.log('API Request:', config.method?.toUpperCase(), config.url, 'Headers:', config.headers)
     return config
   },
   (error) => Promise.reject(error)
@@ -81,15 +88,25 @@ export const literatureAPI = {
 
 // AI助手API
 export const aiAPI = {
-  // 发送消息
-  sendMessage: (paperId, message) =>
-    apiClient.post(`/papers/${paperId}/chat`, { message }),
+  // 发送消息（带上下文）
+  sendMessage: (paperId, message, userId, sessionId) =>
+    apiClient.post(`/papers/${paperId}/chat`, {
+      message,
+      user_id: userId,
+      session_id: sessionId
+    }),
 
   // 流式响应 (返回EventSource) - 注意: EventSource不支持自定义headers，API key通过query传递
   streamMessage: (paperId, message) => {
     const apiKey = localStorage.getItem('api_key') || 'dev-api-key'
     return new EventSource(`${API_BASE_URL}/papers/${paperId}/chat/stream?message=${encodeURIComponent(message)}&api_key=${encodeURIComponent(apiKey)}`)
   },
+
+  // 获取聊天历史
+  getChatHistory: (paperId, userId, sessionId) =>
+    apiClient.get(`/papers/${paperId}/chat/history`, {
+      params: { user_id: userId, session_id: sessionId }
+    }),
 }
 
 // 用户设置API
@@ -101,9 +118,37 @@ export const settingsAPI = {
   updateSettings: (settings) => apiClient.put('/settings', settings),
 }
 
+// 学术资讯快报API
+export const reportsAPI = {
+  // 获取资讯列表
+  getReports: (params) => apiClient.get('/reports', { params }),
+
+  // 获取资讯详情
+  getReport: (id) => apiClient.get(`/reports/${id}`),
+
+  // 生成新资讯
+  createReport: (data) => apiClient.post('/reports', data),
+
+  // 更新资讯(如重新生成)
+  updateReport: (id, data) => apiClient.put(`/reports/${id}`, data),
+
+  // 删除资讯
+  deleteReport: (id) => apiClient.delete(`/reports/${id}`),
+
+  // 获取日报列表
+  getDailyReports: (params) => apiClient.get('/reports/daily', { params }),
+
+  // 获取周报列表
+  getWeeklyReports: (params) => apiClient.get('/reports/weekly', { params }),
+
+  // 获取月报列表
+  getMonthlyReports: (params) => apiClient.get('/reports/monthly', { params }),
+}
+
 export default {
   paperAPI,
   literatureAPI,
   aiAPI,
   settingsAPI,
+  reportsAPI,
 }

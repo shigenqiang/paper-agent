@@ -508,6 +508,10 @@ def create_app() -> web.Application:
     from src.agents_v2.api.paper_api import setup_paper_routes
     setup_paper_routes(app)
 
+    # Reports API
+    from src.agents_v2.api.reports_api import setup_reports_routes
+    setup_reports_routes(app)
+
     return app
 
 

@@ -1,8 +1,8 @@
 # Paper Agent API 完整参考文档
 
-**文档版本**: v2.0
-**更新日期**: 2026-04-26
-**综合评分**: 9.0/10
+**文档版本**: v2.1
+**更新日期**: 2026-04-28
+**综合评分**: 9.2/10
 
 ---
 
@@ -75,6 +75,14 @@ export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
 export REDIS_HOST=localhost
 export REDIS_PORT=6379
+
+# 学术搜索API (可选)
+export SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_key  # https://api.semanticscholar.org/
+export TRINKA_API_KEY=your_trinka_key                        # https://www.trinka.ai/ (学术语法检查)
+
+# Zotero引用管理 (可选)
+export ZOTERO_API_KEY=your_zotero_api_key                  # https://www.zotero.org/settings/keys
+export ZOTERO_USER_ID=your_zotero_user_id                   # https://api.zotero.org/keys/self
 ```
 
 ### 2.3 基本使用
@@ -1033,6 +1041,111 @@ python -m pytest tests/test_error_handler.py -v
 
 ---
 
+## 十三、外部API服务集成
+
+### 13.1 Semantic Scholar API
+
+论文搜索增强，支持AI驱动的学术搜索、TLDR摘要、引用图谱。
+
+**申请地址**: https://api.semanticscholar.org/
+
+**环境变量**:
+```bash
+export SEMANTIC_SCHOLAR_API_KEY=your_api_key
+```
+
+**功能**:
+- 论文搜索 (`/paper/search`)
+- 论文详情 (`/paper/{paperId}`)
+- 引用列表 (`/paper/{paperId}/citations`)
+- 参考文献 (`/paper/{paperId}/references`)
+- 相似论文 (`/paper/{paperId}/similar`)
+
+**速率限制**:
+| 级别 | 限制 |
+|------|------|
+| 免费 | 100请求/5分钟 |
+| 付费 | 10000请求/5分钟 |
+
+**使用示例**:
+```python
+from src.agents_v2.search import SemanticScholarSearcher
+
+searcher = SemanticScholarSearcher()
+result = await searcher.search("machine learning", max_results=10)
+```
+
+---
+
+### 13.2 OpenAlex API
+
+免费开源的跨学科学术论文API，覆盖2亿+论文。
+
+**申请地址**: https://docs.openalex.org/ (无需API Key)
+
+**环境变量**: 无需配置
+
+**功能**:
+- 论文搜索 (`/works`)
+- 作者论文 (`/authors/{author_id}/works`)
+- 期刊论文 (`/venues`)
+- 机构论文 (`/institutions`)
+
+**速率限制**: 10请求/秒
+
+**使用示例**:
+```python
+from src.agents_v2.search import OpenAlexSearcher
+
+searcher = OpenAlexSearcher()
+result = await searcher.search("causal inference", year_filter="2024")
+```
+
+---
+
+### 13.3 Trinka AI API
+
+专业学术语法检查API，适用于英文论文润色。
+
+**申请地址**: https://www.trinka.ai/
+
+**环境变量**:
+```bash
+export TRINKA_API_KEY=your_api_key
+```
+
+**功能**:
+- 学术语法检查
+- 技术术语校验
+- 学术写作规范检查
+- 多种错误类型识别
+
+**使用示例**:
+```python
+from src.agents_v2.writing import LanguagePolisherAgent
+
+agent = LanguagePolisherAgent()
+result = await agent.execute({
+    "text": "Your paper abstract here...",
+    "language": "en",
+    "polish_level": "medium"
+})
+```
+
+---
+
+### 13.4 API Key配置汇总
+
+| 服务 | 环境变量 | 必填 | 说明 |
+|------|---------|------|------|
+| OpenAI | `OPENAI_API_KEY` | 是 | LLM调用 |
+| MiniMax | `MINIMAX_API_KEY` | 否 | 备选LLM |
+| Semantic Scholar | `SEMANTIC_SCHOLAR_API_KEY` | 否 | 学术搜索增强 |
+| Trinka AI | `TRINKA_API_KEY` | 否 | 学术语法检查 |
+| arXiv | 无 | 否 | 直接调用 |
+| PubMed | 无 | 否 | 直接调用 |
+| OpenAlex | 无 | 否 | 免费直接调用 |
+
 **文档版本**: v2.0
 **创建日期**: 2026-04-26
-**最后更新**: 2026-04-26
+**最后更新**: 2026-04-28

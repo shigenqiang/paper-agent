@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "data": {
+    "message": "你好，我叫王五",
+    "response": "你好，王五！很高兴认识你！😊\n\n有什么我可以帮你的吗？比如写作建议、创意灵感、或者任何其他问题都可以问我。",
+    "agent": "SimpleChatAgent"
+  }
+}

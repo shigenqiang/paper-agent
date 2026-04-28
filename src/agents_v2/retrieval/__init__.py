@@ -7,6 +7,9 @@ Retrieval模块 - 智能检索相关组件
 - SELF-RAGController: 自我反思RAG控制器
 - CrossEncoderReranker: 交叉编码器重排序
 - IterativeRetriever: 迭代式检索引擎
+- ResultFuser: 多源结果融合
+- Deduplicator: 检索结果去重
+- AdaptiveRetrieval: 自适应检索
 """
 from .query_classifier import QueryType, QueryTypeClassifier, classify_query
 from .dynamic_planner import (
@@ -34,6 +37,24 @@ from .iterative_retriever import (
     RetrievalResult,
     RetrievalStep,
     iterative_retrieve
+)
+from .result_fuser import (
+    ResultFuser,
+    FusionStrategy,
+    FusionConfig,
+    ScoredItem,
+    fuse_results
+)
+from .deduplicator import (
+    Deduplicator,
+    DeduplicationStrategy,
+    DedupConfig,
+    deduplicate
+)
+from .adaptive_retrieval import (
+    AdaptiveRetrievalPlanner,
+    RetrievalStrategy as AdaptiveRetrievalStrategy,
+    adaptive_retrieve
 )
 
 __all__ = [
@@ -66,5 +87,22 @@ __all__ = [
     "AdaptiveRetriever",
     "RetrievalResult",
     "RetrievalStep",
-    "iterative_retrieve"
+    "iterative_retrieve",
+
+    # 结果融合
+    "ResultFuser",
+    "FusionStrategy",
+    "FusionConfig",
+    "ScoredItem",
+    "fuse_results",
+
+    # 去重
+    "Deduplicator",
+    "DeduplicationStrategy",
+    "DedupConfig",
+    "deduplicate",
+
+    # 自适应检索
+    "AdaptiveRetrievalPlanner",
+    "adaptive_retrieve"
 ]

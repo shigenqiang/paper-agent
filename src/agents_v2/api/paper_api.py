@@ -5,13 +5,25 @@ Provides CRUD operations for papers, literature, and writing sessions.
 """
 import time
 import logging
+import os
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from aiohttp import web
 import uuid
 import json
 
+# 加载 .env 文件
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
+
+# 读取环境变量
+DEFAULT_API_KEY = os.getenv("OPENAI_API_KEY", "dev-api-key")
+DEFAULT_BASE_URL = os.getenv("OPENAI_BASE_URL", None)
 
 # In-memory storage for demo (replace with database in production)
 PAPERS_STORAGE: Dict[str, Dict] = {}
@@ -23,7 +35,18 @@ SETTINGS_STORAGE: Dict[str, Any] = {
     "autoSaveInterval": 30,
     "defaultCitationStyle": "apa",
     "defaultModel": "gpt-4",
+    "keywords": [
+        "machine learning",
+        "deep learning",
+        "natural language processing",
+        "computer vision",
+        "artificial intelligence"
+    ],
 }
+
+# Chat session context storage: {(user_id, session_id): [messages]}
+# Each message: {"role": "user"/"assistant", "content": "...", "reasoning": "..." (optional)}
+CHAT_SESSIONS: Dict[tuple, List[Dict]] = {}
 
 
 def get_paper_or_404(paper_id: str) -> Optional[Dict]:
@@ -71,7 +94,14 @@ async def list_papers(request: web.Request) -> web.Response:
 async def create_paper(request: web.Request) -> web.Response:
     """POST /papers - Create a new paper"""
     try:
-        data = await request.json()
+        # Always read content first to handle encoding issues
+        body = await request.content.read()
+        body_text = body.decode('utf-8', errors='ignore')
+        import json
+        try:
+            data = json.loads(body_text) if body_text else {}
+        except json.JSONDecodeError:
+            data = {}
         paper_id = str(uuid.uuid4())
 
         paper = {
@@ -236,8 +266,10 @@ async def generate_outline(request: web.Request) -> web.Response:
 
         llm_config = LLMConfig(
             provider="openai",
-            model_name="minimax",
-            temperature=0.7
+            model_name=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+            temperature=0.7,
+            api_key=DEFAULT_API_KEY,
+            base_url=DEFAULT_BASE_URL
         )
 
         agent = TopicAgent(llm_config)
@@ -299,8 +331,10 @@ async def generate_content(request: web.Request) -> web.Response:
 
         llm_config = LLMConfig(
             provider="openai",
-            model_name="minimax",
-            temperature=0.7
+            model_name=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+            temperature=0.7,
+            api_key=DEFAULT_API_KEY,
+            base_url=DEFAULT_BASE_URL
         )
 
         agent = DraftWriterAgent(llm_config)
@@ -470,70 +504,258 @@ async def get_citation(request: web.Request) -> web.Response:
         }, status=500)
 
 
-# Chat endpoint
-async def chat(request: web.Request) -> web.Response:
-    """POST /papers/{paperId}/chat - Send chat message"""
+# Literature file upload endpoint
+async def upload_literature_file(request: web.Request) -> web.Response:
+    """POST /api/literature/upload - Upload and extract metadata from a literature file"""
     try:
-        paper_id = request.match_info["paperId"]
-        paper = get_paper_or_404(paper_id)
+        # 获取上传的文件
+        reader = await request.multipart()
+        field = await reader.next()
 
-        if not paper:
+        if not field or field.name != 'file':
             return web.json_response({
                 "success": False,
-                "error": "Paper not found"
-            }, status=404)
+                "error": "No file field found"
+            }, status=400)
 
-        data = await request.json()
+        filename = field.filename
+        file_content = await field.read()
+
+        # 根据文件扩展名处理
+        file_ext = os.path.splitext(filename)[1].lower() if filename else ""
+
+        # 提取文件名的基本信息作为提示
+        name_from_file = os.path.splitext(filename)[0] if filename else ""
+
+        # 使用LLM从文件名和内容提取元数据
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(
+                api_key=DEFAULT_API_KEY,
+                base_url=DEFAULT_BASE_URL if DEFAULT_BASE_URL else "https://api.minimax.chat/v1"
+            )
+
+            # 构建提示
+            prompt = f"""请从以下论文信息中提取元数据，返回JSON格式：
+文件名: {filename or '未知'}
+文件内容摘要: {file_content[:500] if file_content else '无内容'}
+
+请提取以下信息（如果无法提取则返回空字符串）：
+- title: 论文标题
+- authors: 作者（多个作者用逗号分隔）
+- year: 年份（4位数字）
+- journal: 期刊/会议名称
+- abstract: 摘要（如果有）
+
+只返回JSON，不要其他内容。"""
+
+            response = client.chat.completions.create(
+                model=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+                messages=[{"role": "user", "content": prompt}],
+                extra_body={"reasoning_split": True}
+            )
+
+            content = response.choices[0].message.content or ""
+
+            # 尝试解析JSON
+            import re
+            json_match = re.search(r'\{[^}]+\}', content, re.DOTALL)
+            if json_match:
+                metadata = json.loads(json_match.group())
+            else:
+                metadata = {}
+
+        except Exception as llm_error:
+            logger.warning(f"LLM extraction failed: {llm_error}, using filename only")
+            metadata = {"title": name_from_file or "未命名论文"}
+
+        # 创建文献记录
+        lit_id = str(uuid.uuid4())
+        literature = {
+            "id": lit_id,
+            "title": metadata.get("title", name_from_file or "未命名论文"),
+            "authors": metadata.get("authors", ""),
+            "year": metadata.get("year", ""),
+            "journal": metadata.get("journal", ""),
+            "abstract": metadata.get("abstract", ""),
+            "cited": False,
+            "added_at": datetime.now().isoformat(),
+            "file_name": filename,
+            "file_size": len(file_content),
+        }
+
+        LITERATURE_STORAGE[lit_id] = literature
+
+        return web.json_response({
+            "success": True,
+            "data": literature,
+        }, status=201)
+
+    except Exception as e:
+        logger.error(f"Upload literature error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+# Chat endpoint
+async def chat(request: web.Request) -> web.Response:
+    """POST /papers/{paperId}/chat - Send chat message with context maintenance
+
+    Request body:
+    {
+        "user_id": "string",
+        "session_id": "string",
+        "message": "string"
+    }
+    """
+    data = None
+    try:
+        # 手动解析JSON，避免aiohttp的编码问题
+        body = await request.content.read()
+        body_text = body.decode('utf-8', errors='ignore')
+        import json
+        data = json.loads(body_text) if body_text else {}
         message = data.get("message", "")
+        user_id = data.get("user_id", "default_user")
+        session_id = data.get("session_id", "default_session")
 
-        # Use LiteratureAgent for chat
-        from src.agents_v2.paper_agents import LiteratureAgent
-        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+        if not message:
+            return web.json_response({
+                "success": False,
+                "error": "Message is required"
+            }, status=400)
 
-        llm_config = LLMConfig(
-            provider="openai",
-            model_name="minimax",
-            temperature=0.7
-        )
+        # 获取或创建会话上下文
+        session_key = (user_id, session_id)
+        if session_key not in CHAT_SESSIONS:
+            CHAT_SESSIONS[session_key] = []
 
-        agent = LiteratureAgent(llm_config)
-        result = await agent.execute({
-            "topic": paper.get("topic", ""),
-            "question": message,
-            "literature_ids": paper.get("literature_ids", []),
+        messages_context = CHAT_SESSIONS[session_key]
+
+        # 添加用户消息到上下文
+        messages_context.append({
+            "role": "user",
+            "content": message
         })
 
-        if result.success:
-            response_text = result.result.get("answer", "") if isinstance(result.result, dict) else str(result.result)
+        # 直接调用LLM，使用reasoning_split=True
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(
+                api_key=DEFAULT_API_KEY,
+                base_url=DEFAULT_BASE_URL if DEFAULT_BASE_URL else "https://api.minimax.chat/v1"
+            )
+
+            # 构建消息历史
+            system_prompt = "你是一个友好的AI写作助手。请用中文回答用户的问题。"
+            api_messages = [{"role": "system", "content": system_prompt}] + messages_context
+
+            # 调用API，启用reasoning_split
+            response = client.chat.completions.create(
+                model=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+                messages=api_messages,
+                extra_body={"reasoning_split": True}
+            )
+
+            # 提取回复内容（不含think）
+            reasoning_details = ""
+            content = response.choices[0].message.content or ""
+
+            if hasattr(response.choices[0].message, 'reasoning_details') and \
+               response.choices[0].message.reasoning_details:
+                reasoning_details = response.choices[0].message.reasoning_details[0].get('text', '')
+
+            # 保存完整上下文（包含reasoning）
+            messages_context.append({
+                "role": "assistant",
+                "content": content,
+                "reasoning": reasoning_details
+            })
+
+            # 限制上下文长度（最多保存20条）
+            if len(messages_context) > 20:
+                CHAT_SESSIONS[session_key] = messages_context[-20:]
 
             return web.json_response({
                 "success": True,
                 "data": {
                     "message": message,
-                    "response": response_text,
-                    "agent": "LiteratureAgent",
+                    "response": content,
+                    "agent": "SimpleChatAgent",
+                    "messages": [{"role": m["role"], "content": m["content"]} for m in messages_context],
                 },
             })
-        else:
+
+        except Exception as llm_error:
+            # 调用失败时移除刚添加的用户消息
+            if messages_context and messages_context[-1].get("role") == "user":
+                messages_context.pop()
+
+            logger.warning(f"LLM call failed: {llm_error}, returning friendly response")
             return web.json_response({
                 "success": True,
                 "data": {
                     "message": message,
-                    "response": "抱歉，我现在无法回答这个问题。请稍后再试。",
-                    "agent": "LiteratureAgent",
+                    "response": f"收到您的消息！\n\n当前AI服务暂时不可用（{type(llm_error).__name__}），请稍后再试。",
+                    "agent": "SimpleChatAgent",
                 },
             })
+
+    except (UnicodeDecodeError, UnicodeEncodeError) as decode_err:
+        import traceback
+        logger.error(f"Unicode error in chat: {decode_err}\n{traceback.format_exc()}")
+        return web.json_response({
+            "success": True,
+            "data": {
+                "message": data.get("message", "") if data else "",
+                "response": "收到您的消息！当前AI服务暂时不可用，请稍后再试。",
+                "agent": "SimpleChatAgent",
+            },
+        })
 
     except Exception as e:
         logger.error(f"Chat error: {e}")
         return web.json_response({
             "success": True,
             "data": {
-                "message": data.get("message", "") if 'data' in dir() else "",
-                "response": "抱歉，我现在无法回答这个问题。请稍后再试。",
-                "agent": "LiteratureAgent",
+                "message": data.get("message", "") if data else "",
+                "response": "抱歉，发生了未知错误。请刷新页面重试。",
+                "agent": "SimpleChatAgent",
             },
         })
+
+
+# Chat history endpoint
+async def get_chat_history(request: web.Request) -> web.Response:
+    """GET /papers/{paperId}/chat/history?user_id=xxx&session_id=xxx - Get chat history"""
+    try:
+        paper_id = request.match_info["paperId"]
+        user_id = request.query.get("user_id", "default_user")
+        session_id = request.query.get("session_id", paper_id or "default_session")
+
+        session_key = (user_id, session_id)
+        messages = CHAT_SESSIONS.get(session_key, [])
+
+        # 返回不含reasoning的消息
+        clean_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+
+        return web.json_response({
+            "success": True,
+            "data": {
+                "messages": clean_messages,
+                "count": len(clean_messages),
+            },
+        })
+    except Exception as e:
+        logger.error(f"Get chat history error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
 
 
 # Settings endpoints
@@ -586,8 +808,12 @@ def setup_paper_routes(app: web.Application):
     app.router.add_post('/api/papers/{paperId}/literature', add_literature)
     app.router.add_get('/api/literature/{id}/citation', get_citation)
 
+    # Literature file upload
+    app.router.add_post('/api/literature/upload', upload_literature_file)
+
     # Chat
     app.router.add_post('/api/papers/{paperId}/chat', chat)
+    app.router.add_get('/api/papers/{paperId}/chat/history', get_chat_history)
 
     # Settings
     app.router.add_get('/api/settings', get_settings)

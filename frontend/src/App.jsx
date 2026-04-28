@@ -5,6 +5,9 @@ import HomePage from './pages/HomePage'
 import WritingPage from './pages/WritingPage'
 import LiteraturePage from './pages/LiteraturePage'
 import SettingsPage from './pages/SettingsPage'
+import AIAssistantPage from './pages/AIAssistantPage'
+import ReportsPage from './pages/ReportsPage'
+import FeaturesPage from './pages/FeaturesPage'
 
 function App() {
   return (
@@ -14,6 +17,9 @@ function App() {
         <Route path="writing" element={<WritingPage />} />
         <Route path="literature" element={<LiteraturePage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="ai-assistant" element={<AIAssistantPage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="features" element={<FeaturesPage />} />
       </Route>
     </Routes>
   )
