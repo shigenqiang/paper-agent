@@ -1,0 +1,17 @@
+{
+  "profiles": [
+    {
+      "user_id": "memory_test_user",
+      "name": "",
+      "email": "",
+      "role": "researcher",
+      "institution": "",
+      "research_fields": [],
+      "preferences": {},
+      "created_at": 1777282062.614531,
+      "last_active": 1777282062.614531,
+      "session_count": 0,
+      "metadata": {}
+    }
+  ]
+}
