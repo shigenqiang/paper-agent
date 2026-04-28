@@ -174,7 +174,7 @@ const HomePage = () => {
               今天是学习的好日子，让AI助你一臂之力完成论文
             </Text>
           </div>
-          <Space>
+          <Space size="middle">
             <Button
               type="primary"
               size="large"
@@ -183,6 +183,14 @@ const HomePage = () => {
               onClick={handleCreatePaper}
             >
               新建论文
+            </Button>
+            <Button
+              size="large"
+              icon={<PlayCircleOutlined />}
+              className="!bg-white/20 !text-white !border-white/40 hover:!bg-white/30"
+              onClick={() => navigate('/literature')}
+            >
+              快速开始
             </Button>
           </Space>
         </div>
