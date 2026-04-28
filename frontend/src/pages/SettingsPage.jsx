@@ -12,6 +12,7 @@ import {
   KeyOutlined,
   SafetyOutlined,
   InfoCircleOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import { settingsAPI } from '../services/api'
 
@@ -24,6 +25,14 @@ const DEFAULT_KEYWORDS = [
   'natural language processing',
   'computer vision',
   'artificial intelligence'
+]
+
+// 数据来源配置
+const SOURCE_CONFIG = [
+  { key: 'arxiv', label: 'arXiv', desc: 'AI/ML/物理预印本', color: '#e84a25' },
+  { key: 'pubmed', label: 'PubMed', desc: '生物医学文献', color: '#3e84c8' },
+  { key: 'semantic_scholar', label: 'Semantic Scholar', desc: 'AI论文引用数据', color: '#5c7fdd' },
+  { key: 'openalex', label: 'OpenAlex', desc: '跨学科覆盖', color: '#ff6b35' },
 ]
 
 // 关键词分类颜色
@@ -39,6 +48,7 @@ const SettingsPage = () => {
   const [keywords, setKeywords] = useState(DEFAULT_KEYWORDS)
   const [inputKeyword, setInputKeyword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sources, setSources] = useState(['arxiv', 'pubmed', 'semantic_scholar', 'openalex'])
 
   // 加载设置
   useEffect(() => {
@@ -52,6 +62,9 @@ const SettingsPage = () => {
         const data = response.data
         if (data.keywords && data.keywords.length > 0) {
           setKeywords(data.keywords)
+        }
+        if (data.sources && data.sources.length > 0) {
+          setSources(data.sources)
         }
         form.setFieldsValue({
           language: data.language || 'zh-CN',
@@ -70,10 +83,11 @@ const SettingsPage = () => {
   const handleSave = async (values) => {
     setLoading(true)
     try {
-      // 合并关键词和设置
+      // 合并关键词、来源和设置
       const settings = {
         ...values,
-        keywords: keywords
+        keywords: keywords,
+        sources: sources
       }
       await settingsAPI.updateSettings(settings)
       message.success('设置已保存')
@@ -81,6 +95,17 @@ const SettingsPage = () => {
       message.error('保存失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 切换数据来源
+  const toggleSource = (sourceKey) => {
+    if (sources.includes(sourceKey)) {
+      if (sources.length > 1) {  // 至少保留一个
+        setSources(sources.filter(s => s !== sourceKey))
+      }
+    } else {
+      setSources([...sources, sourceKey])
     }
   }
 
@@ -280,6 +305,79 @@ const SettingsPage = () => {
             <Button disabled icon={<SyncOutlined />}>连接</Button>
           </Space>
         </Form.Item>
+      </Card>
+
+      {/* 数据来源 */}
+      <Card
+        title={
+          <Space>
+            <DatabaseOutlined className="text-blue-500" />
+            <span>学术数据来源</span>
+          </Space>
+        }
+        extra={
+          <Tooltip title="选择要使用的学术数据库来源">
+            <InfoCircleOutlined className="text-gray-400" />
+          </Tooltip>
+        }
+        className="!rounded-lg"
+      >
+        <Alert
+          message="数据来源设置"
+          description="选择系统从哪些学术数据库搜索论文。不同来源涵盖不同领域，建议全部启用以获得最全面的搜索结果。"
+          type="info"
+          showIcon
+          icon={<DatabaseOutlined />}
+          className="!mb-4"
+        />
+
+        <Text type="secondary" className="block mb-3">
+          当前启用的数据来源（共 {sources.length} 个）:
+        </Text>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {SOURCE_CONFIG.map(source => {
+            const isEnabled = sources.includes(source.key)
+            return (
+              <div
+                key={source.key}
+                onClick={() => toggleSource(source.key)}
+                className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                  isEnabled
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: source.color }}
+                    ></div>
+                    <Text strong className={isEnabled ? 'text-blue-700' : 'text-gray-600'}>
+                      {source.label}
+                    </Text>
+                  </div>
+                  <Switch size="small" checked={isEnabled} onChange={() => toggleSource(source.key)} />
+                </div>
+                <Text type="secondary" className="text-xs">{source.desc}</Text>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg">
+          <Text type="secondary" className="text-xs mr-2">快速选择:</Text>
+          <Button size="small" onClick={() => setSources(['arxiv', 'pubmed', 'semantic_scholar', 'openalex'])}>
+            全选
+          </Button>
+          <Button size="small" onClick={() => setSources(['arxiv', 'pubmed'])}>
+            AI/生物医学
+          </Button>
+          <Button size="small" onClick={() => setSources(['openalex'])}>
+            跨学科
+          </Button>
+        </div>
       </Card>
 
       {/* 保存按钮 */}
