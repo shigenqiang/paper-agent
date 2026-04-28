@@ -112,7 +112,7 @@ class OpenAlexSearcher(BaseSearcher):
         source = primary_loc.get("source", {}) or {}
         venue = source.get("display_name", "")
 
-        doi = work.get("doi", "")
+        doi = work.get("doi") or ""
         if doi:
             doi = doi.split("/")[-1] if "/" in doi else doi
 
@@ -123,7 +123,7 @@ class OpenAlexSearcher(BaseSearcher):
             authors=authors,
             year=work.get("publication_year", 0) or 0,
             venue=venue,
-            url=doi if doi.startswith("10.") else f"https://openalex.org/{work_id}",
+            url=doi if doi and doi.startswith("10.") else f"https://openalex.org/{work_id}",
             citations=work.get("cited_by_count", 0) or 0,
             doi=doi,
             raw_data={

@@ -112,113 +112,174 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
 
 def generate_digest_summary(papers: List[Dict], digest_type: str) -> str:
     """
-    Generate report with citation markers and reference list
+    Generate analytical report summarizing paper content using LLM
 
     Args:
         papers: List of papers
         digest_type: daily, weekly, monthly
 
     Returns:
-        Generated summary text with [1], [2] citations and references
+        Generated analytical summary with citations and references
     """
     from datetime import datetime
     if not papers:
         return "本期资讯暂无相关论文。"
 
     total_count = len(papers)
-    venues = {}
-    sources = {}
-
-    for paper in papers:
-        for src in paper.get("sources", []):
-            sources[src] = sources.get(src, 0) + 1
-        if paper.get("venue"):
-            venues[paper["venue"]] = venues.get(paper["venue"], 0) + 1
-
     type_name = {"daily": "今日", "weekly": "本周", "monthly": "本月"}.get(digest_type, "本期")
     from src.agents_v2.api.paper_api import SETTINGS_STORAGE
     user_keywords = SETTINGS_STORAGE.get("keywords", [])
     date_str = datetime.now().strftime('%Y-%m-%d')
 
-    # 按引用排序所有论文
+    # 按引用排序
     sorted_papers = sorted(papers, key=lambda x: x.get("citations", 0), reverse=True)
-
-    # 为所有论文分配引用编号
     for idx, paper in enumerate(sorted_papers, 1):
         paper["citation_index"] = idx
 
-    # ===== 报告正文 =====
-    summary = f"# {type_name}学术资讯快报 - {date_str}\n\n"
+    # 尝试使用 LLM 生成综合报告
+    try:
+        llm_summary = _generate_llm_report(sorted_papers, type_name, date_str, user_keywords)
+        if llm_summary:
+            # LLM 生成成功，添加参考文献列表
+            llm_summary += "\n\n## 参考文献\n\n"
+            for paper in sorted_papers:
+                idx = paper.get("citation_index", 0)
+                authors = ', '.join(paper.get('authors', [])[:3])
+                if len(paper.get('authors', [])) > 3:
+                    authors += ' et al.'
+                title = paper.get('title', '未知标题')
+                year = paper.get('year', '未知')
+                venue = paper.get('venue', '')
+                url = paper.get('url', '')
+                source = paper.get('sources', ['未知'])[0] if paper.get('sources') else '未知'
 
-    # 概览
-    summary += "## 概览\n"
-    summary += f"- 收录论文: {total_count} 篇\n"
-    summary += f"- 数据来源: {', '.join(sources.keys()) if sources else '未知'}\n"
-    summary += f"- 监测关键词: {', '.join(user_keywords) if user_keywords else '全部'}\n\n"
+                if url:
+                    llm_summary += f"[{idx}] {authors}. \"{title}\". {venue}, {year}. [{source}]({url})\n\n"
+                else:
+                    llm_summary += f"[{idx}] {authors}. \"{title}\". {venue}, {year}. {source}\n\n"
 
-    # 热门发表场所
-    if venues:
-        summary += "## 热门发表场所\n"
-        for k, v in sorted(venues.items(), key=lambda x: x[1], reverse=True)[:5]:
-            summary += f"- {k}: {v}篇\n"
-        summary += "\n"
+            llm_summary += f"---\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            return llm_summary
+    except Exception as e:
+        logger.warning(f"LLM 报告生成失败，使用模板生成: {e}")
 
-    # 高影响力论文
-    high_impact = [p for p in sorted_papers if p.get("citations", 0) > 0][:5]
-    if high_impact:
-        summary += "## 高影响力论文\n\n"
-        for paper in high_impact:
-            title = paper.get('title', '未知标题')
-            authors = ', '.join(paper.get('authors', [])[:3])
-            if len(paper.get('authors', [])) > 3:
-                authors += ' 等'
-            year = paper.get('year', '未知')
-            venue = paper.get('venue', '未知')
-            citations = paper.get('citations', 0)
-            cite_idx = paper.get("citation_index")
-            summary += f"- **{title}** [{cite_idx}] ({citations}次引用)\n"
-            summary += f"  - {authors} · {venue} ({year})\n\n"
+    # Fallback: 使用模板生成
+    return _generate_template_report(sorted_papers, type_name, date_str, user_keywords)
 
-    # 新发表论文
-    recent_papers = [p for p in sorted_papers if p.get("year", 0) >= 2024][:5]
-    if recent_papers:
-        summary += "## 最新研究进展\n\n"
-        for paper in recent_papers:
-            title = paper.get('title', '未知标题')
-            authors = ', '.join(paper.get('authors', [])[:3])
-            if len(paper.get('authors', [])) > 3:
-                authors += ' 等'
-            year = paper.get('year', '未知')
-            cite_idx = paper.get("citation_index")
-            abstract = paper.get('abstract', '')
-            summary += f"- **{title}** [{cite_idx}]\n"
-            summary += f"  - 作者: {authors} ({year})\n"
-            if abstract:
-                summary += f"  - 摘要: {abstract[:200]}{'...' if len(abstract) > 200 else ''}\n"
-            summary += "\n"
 
-    # 全部论文列表
-    summary += "## 论文列表\n\n"
-    for paper in sorted_papers:
+def _generate_llm_report(papers: List[Dict], type_name: str, date_str: str, user_keywords: List[str]) -> Optional[str]:
+    """使用 LLM 生成综合学术报告"""
+    import os
+    from openai import OpenAI
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key or api_key == "your_api_key_here":
+        logger.info("未配置 LLM API Key，跳过 LLM 报告生成")
+        return None
+
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
+    model = os.getenv("LLM_MODEL", "MiniMax-M2.7")
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+
+    # 构建论文信息摘要供 LLM 分析
+    papers_text = ""
+    for i, paper in enumerate(papers[:20], 1):  # 最多20篇，避免 token 过多
         title = paper.get('title', '未知标题')
         authors = ', '.join(paper.get('authors', [])[:3])
         if len(paper.get('authors', [])) > 3:
             authors += ' 等'
+        abstract = paper.get('abstract', '无摘要')
+        if abstract and len(abstract) > 500:
+            abstract = abstract[:500] + "..."
         year = paper.get('year', '未知')
-        venue = paper.get('venue', '')
-        citations = paper.get('citations', 0)
-        cite_idx = paper.get("citation_index")
-        source = paper.get('sources', ['未知'])[0] if paper.get('sources') else '未知'
+        venue = paper.get('venue', '未知')
+        papers_text += f"[{i}] {title}\n作者: {authors}\n来源: {venue} ({year})\n摘要: {abstract}\n\n"
 
-        summary += f"{cite_idx}. **{title}**\n"
-        summary += f"   - {authors} · {venue} ({year}) · {source}"
-        if citations > 0:
-            summary += f" · {citations}次引用"
-        summary += "\n\n"
+    kw_str = '、'.join(user_keywords) if user_keywords else '学术领域'
+
+    prompt = f"""你是一位资深学术分析师。请根据以下 {len(papers[:20])} 篇论文，撰写一篇{type_name}学术资讯报告。
+
+要求：
+1. 这不是论文列表，而是一篇**综合分析报告**，需要将多篇论文的内容融会贯通
+2. 开头简要概述本期收录论文的整体情况和主要发现
+3. 按研究主题/方向进行分组，每个主题下综合多篇论文的内容进行分析和比较
+4. 在分析中引用论文时使用 [{type_name}编号] 格式，如 [1]、[2] 等
+5. 分析论文之间的关联、对比不同方法的优劣、指出研究趋势
+6. 最后给出对研究前沿的展望
+7. 语言使用中文，专业术语可保留英文
+8. 报告长度约1500-2500字
+
+监测关键词: {kw_str}
+
+论文列表:
+{papers_text}
+
+请直接输出 Markdown 格式的报告内容，不要包含参考文献列表（参考文献会自动添加）。"""
+
+    logger.info(f"Using LLM ({model}) to generate report...")
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        extra_body={"reasoning_split": True}
+    )
+
+    content = response.choices[0].message.content or ""
+    if not content.strip():
+        return None
+
+    # 添加标题
+    title = f"# {type_name}学术资讯报告 - {date_str}\n\n"
+    return title + content
+
+
+def _generate_template_report(papers: List[Dict], type_name: str, date_str: str, user_keywords: List[str]) -> str:
+    """模板方式生成报告（fallback）"""
+    from datetime import datetime
+    total_count = len(papers)
+    sources = {}
+    for paper in papers:
+        for src in paper.get("sources", []):
+            sources[src] = sources.get(src, 0) + 1
+
+    kw_str = '、'.join(user_keywords) if user_keywords else '学术领域'
+    source_str = '、'.join(sources.keys()) if sources else '未知'
+
+    summary = f"# {type_name}学术资讯报告 - {date_str}\n\n"
+
+    # 整体概述
+    summary += "## 概述\n\n"
+    summary += (
+        f"本期从 {source_str} 收录了 {total_count} 篇与 {kw_str} 相关的最新研究论文。"
+        f"以下按研究方向对本期论文进行综合分析。\n\n"
+    )
+
+    # 研究主题聚类
+    research_themes = _extract_research_themes(papers)
+    if research_themes:
+        summary += "## 研究方向分析\n\n"
+        for i, theme in enumerate(research_themes, 1):
+            theme_papers = theme["papers"]
+            summary += f"### {i}. {theme['name']}\n\n"
+            summary += f"{theme['description']}\n\n"
+
+            # 综合分析该主题下的论文
+            for paper in theme_papers:
+                title = paper.get('title', '未知标题')
+                abstract = paper.get('abstract', '')
+                cite_idx = paper.get("citation_index")
+                authors = ', '.join(paper.get('authors', [])[:2])
+
+                if abstract:
+                    contribution = _extract_contribution(abstract)
+                    summary += f"- **{title}** [{cite_idx}]：{contribution}\n"
+                else:
+                    summary += f"- **{title}** [{cite_idx}]（{authors}）\n"
+            summary += "\n"
 
     # 参考文献列表
     summary += "## 参考文献\n\n"
-    for paper in sorted_papers:
+    for paper in papers:
         idx = paper.get("citation_index", 0)
         authors = ', '.join(paper.get('authors', [])[:3])
         if len(paper.get('authors', [])) > 3:
@@ -235,8 +296,87 @@ def generate_digest_summary(papers: List[Dict], digest_type: str) -> str:
             summary += f"[{idx}] {authors}. \"{title}\". {venue}, {year}. {source}\n\n"
 
     summary += f"---\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-
     return summary
+
+
+def _extract_research_themes(papers: List[Dict]) -> List[Dict]:
+    """从论文中提取研究主题聚类"""
+    themes = []
+
+    keyword_papers = {}
+    for paper in papers:
+        abstract = (paper.get('abstract', '') + ' ' + paper.get('title', '')).lower()
+        direction_keywords = {
+            "大语言模型与对话AI": ["large language model", "llm", "chatgpt", "gpt", "dialogue", "conversational", "text generation"],
+            "深度学习与神经网络": ["neural network", "deep learning", "transformer", "attention", "convolutional", "residual"],
+            "计算机视觉与图像识别": ["image", "vision", "object detection", "segmentation", "classification", "visual"],
+            "自然语言处理": ["natural language", "nlp", "sentiment", "text", "language understanding", "translation"],
+            "强化学习与决策": ["reinforcement learning", "policy", "reward", "agent", "decision making", "markov"],
+            "图神经网络": ["graph neural", "gcn", "graph attention", "knowledge graph", "network embedding"],
+            "联邦学习与隐私": ["federated", "privacy", "secure", "distributed learning", "differential privacy"],
+            "医学与生物信息学": ["medical", "clinical", "diagnosis", "biomarker", "genomic", "protein", "drug"],
+            "机器学习优化方法": ["optimization", "gradient", "convergence", "training", "loss function", "regularization"],
+            "可解释性与公平性": ["interpretable", "explainable", "fairness", "bias", "transparency", "trustworthy"],
+        }
+
+        matched_themes = []
+        for theme_name, keywords in direction_keywords.items():
+            for kw in keywords:
+                if kw in abstract:
+                    matched_themes.append(theme_name)
+                    break
+
+        if matched_themes:
+            theme = matched_themes[0]
+        else:
+            theme = "其他研究方向"
+
+        if theme not in keyword_papers:
+            keyword_papers[theme] = []
+        keyword_papers[theme].append(paper)
+
+    theme_descriptions = {
+        "大语言模型与对话AI": "大语言模型在对话理解、文本生成和指令跟随方面的最新进展",
+        "深度学习与神经网络": "新型网络架构和训练方法的研究",
+        "计算机视觉与图像识别": "图像理解、目标检测和视觉生成的新方法",
+        "自然语言处理": "文本分析、情感理解和机器翻译的技术突破",
+        "强化学习与决策": "智能体在复杂环境中的学习和决策策略",
+        "图神经网络": "图结构数据的表示学习和推理方法",
+        "联邦学习与隐私": "分布式机器学习中的隐私保护和数据安全",
+        "医学与生物信息学": "AI在医学诊断、基因组学和药物发现中的应用",
+        "机器学习优化方法": "提升模型训练效率和收敛性的优化技术",
+        "可解释性与公平性": "提高AI系统透明度、公平性和可信度的研究",
+    }
+
+    for theme_name, theme_papers in sorted(keyword_papers.items(), key=lambda x: len(x[1]), reverse=True):
+        if len(theme_papers) >= 1:
+            themes.append({
+                "name": theme_name,
+                "description": f"共 {len(theme_papers)} 篇论文涉及该方向。{theme_descriptions.get(theme_name, '')}",
+                "papers": theme_papers[:5]
+            })
+
+    return themes[:5]
+
+
+def _extract_contribution(abstract: str) -> str:
+    """从摘要中提取论文的研究贡献"""
+    if not abstract:
+        return "本文介绍了相关领域的研究进展。"
+
+    text = abstract[:300]
+    sentences = text.replace('. ', '.|||').replace('。', '。|||').split('|||')
+    for sent in sentences:
+        sent = sent.strip()
+        if not sent:
+            continue
+        lower = sent.lower()
+        if any(kw in lower for kw in ['propose', 'introduce', 'present', 'develop', 'novel', 'new',
+                                        '提出', '开发', '设计', '新方法', '首次']):
+            return sent
+
+    first_sentence = sentences[0].strip() if sentences else text[:150]
+    return first_sentence
 
 
 # Digest CRUD endpoints
