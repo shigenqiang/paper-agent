@@ -84,6 +84,21 @@ export const usePaperStore = create((set) => ({
     literature: state.literature.filter(item => item.id !== id)
   })),
 
+  setLiterature: (items) => set({ literature: items }),
+
+  updateLiterature: (id, updates) => set((state) => ({
+    literature: state.literature.map(l =>
+      l.id === id ? { ...l, ...updates } : l
+    )
+  })),
+
+  removeCitation: (id) => set((state) => ({
+    project: {
+      ...state.project,
+      citations: state.project.citations.filter(c => c.id !== id)
+    }
+  })),
+
   toggleSidebar: () => set((state) => ({
     sidebarCollapsed: !state.sidebarCollapsed
   })),

@@ -22,7 +22,6 @@ apiClient.interceptors.request.use(
       config.headers = {}
     }
     config.headers['X-API-Key'] = apiKey
-    console.log('API Request:', config.method?.toUpperCase(), config.url, 'Headers:', config.headers)
     return config
   },
   (error) => Promise.reject(error)
@@ -84,6 +83,12 @@ export const literatureAPI = {
 
   // 获取引用格式
   getCitation: (id, style) => apiClient.get(`/literature/${id}/citation`, { params: { style } }),
+
+  // 上传文献文件
+  uploadFile: (formData) => apiClient.post('/literature/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  }),
 }
 
 // AI助手API

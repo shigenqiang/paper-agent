@@ -137,13 +137,15 @@ const HomePage = () => {
 
   const handleCreatePaper = async () => {
     try {
-      await paperAPI.createPaper({
+      const response = await paperAPI.createPaper({
         title: '新论文-' + new Date().toLocaleDateString(),
         topic: '待定'
       })
-      navigate('/writing')
+      const paperId = response?.data?.id || response?.id
+      navigate('/writing', { state: { paperId } })
     } catch (error) {
       console.error('创建论文失败:', error)
+      message.error('创建论文失败')
     }
   }
 
@@ -188,7 +190,7 @@ const HomePage = () => {
               size="large"
               icon={<PlayCircleOutlined />}
               className="!bg-white/20 !text-white !border-white/40 hover:!bg-white/30"
-              onClick={() => navigate('/literature')}
+              onClick={() => navigate('/features')}
             >
               快速开始
             </Button>
@@ -282,7 +284,7 @@ const HomePage = () => {
                     renderItem={(paper, index) => (
                       <List.Item
                         className="cursor-pointer hover:bg-gray-50 -mx-2 px-3 py-3 rounded-lg transition-all"
-                        onClick={() => navigate('/writing')}
+                        onClick={() => navigate('/writing', { state: { paperId: paper.id } })}
                       >
                         <List.Item.Meta
                           avatar={

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Layout, Menu, Button, Dropdown, Space, Avatar, Badge, Tooltip, Typography } from 'antd'
+import { Layout, Menu, Button, Dropdown, Space, Avatar, Badge, Tooltip, Typography, Input, message } from 'antd'
 import {
   HomeOutlined,
   EditOutlined,
@@ -83,6 +83,30 @@ const MainLayout = () => {
     const menu = [...MAIN_MENU, ...QUICK_MENU].find(m => m.path === path)
     return menu?.key || 'home'
   })
+  const [headerSearch, setHeaderSearch] = useState('')
+
+  // 应用主题
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
+  // Header 搜索
+  const handleHeaderSearch = (value) => {
+    if (value.trim()) {
+      navigate('/literature', { state: { searchQuery: value } })
+    }
+  }
+
+  // 用户菜单
+  const handleUserMenu = ({ key }) => {
+    if (key === 'help') {
+      navigate('/features')
+    } else if (key === 'profile') {
+      message.info('个人中心暂未开放')
+    } else if (key === 'logout') {
+      message.success('退出成功')
+    }
+  }
 
   // 当路径变化时自动更新选中状态
   useEffect(() => {
@@ -241,19 +265,17 @@ const MainLayout = () => {
 
           <Space size="middle">
             {/* 搜索框 */}
-            <div className="flex items-center bg-gray-50 rounded-lg px-3 py-1.5 w-48">
-              <SearchOutlined className="text-gray-400 mr-2" />
-              <input
-                type="text"
-                placeholder="搜索..."
-                className="bg-transparent border-none outline-none text-sm w-full"
-              />
-            </div>
+            <Input.Search
+              placeholder="搜索文献..."
+              className="w-48"
+              value={headerSearch}
+              onChange={(e) => setHeaderSearch(e.target.value)}
+              onSearch={handleHeaderSearch}
+              allowClear
+            />
 
             {/* 通知 */}
-            <Badge count={3} size="small">
-              <Button type="text" icon={<BellOutlined />} />
-            </Badge>
+            <Button type="text" icon={<BellOutlined />} />
 
             {/* 主题切换 */}
             <Dropdown
@@ -272,6 +294,7 @@ const MainLayout = () => {
             <Dropdown
               menu={{
                 items: userMenuItems,
+                onClick: handleUserMenu,
               }}
               placement="bottomRight"
             >

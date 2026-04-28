@@ -1,30 +1,97 @@
-import React, { useState, useMemo } from 'react'
-import { Card, Input, Table, Tag, Button, Space, Typography, Modal, Form, Select, message, Tooltip, Row, Col, Empty, Upload, Spin } from 'antd'
-import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined } from '@ant-design/icons'
+import React, { useState, useMemo, useEffect } from 'react'
+import { Card, Input, Table, Tag, Button, Space, Typography, Modal, Form, Select, message, Tooltip, Row, Col, Empty, Upload, Spin, Tabs } from 'antd'
+import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined, GlobalOutlined, ExperimentOutlined, RobotOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { usePaperStore } from '../store/paperStore'
 import { literatureAPI } from '../services/api'
+import { useLocation } from 'react-router-dom'
 
 const { Title, Text } = Typography
 
+const SOURCE_CONFIG = {
+  arxiv: { icon: <GlobalOutlined />, color: '#e84a25', label: 'arXiv' },
+  pubmed: { icon: <ExperimentOutlined />, color: '#3e84c8', label: 'PubMed' },
+  semantic: { icon: <RobotOutlined />, color: '#5c7fdd', label: 'Semantic' },
+  openalex: { icon: <DatabaseOutlined />, color: '#ff6b35', label: 'OpenAlex' },
+}
+
 const LiteraturePage = () => {
-  const { literature, addLiterature, deleteLiterature } = usePaperStore()
+  const location = useLocation()
+  const { literature, addLiterature, deleteLiterature, updateLiterature } = usePaperStore()
   const [searchText, setSearchText] = useState('')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [form] = Form.useForm()
 
-  const displayLiterature = literature
+  // 多源搜索状态
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState('library')
 
-  const filteredLiterature = useMemo(() => {
-    if (!searchText.trim()) return displayLiterature
-    const lower = searchText.toLowerCase()
-    return displayLiterature.filter(item =>
-      item.title?.toLowerCase().includes(lower) ||
-      item.authors?.toLowerCase().includes(lower) ||
-      item.journal?.toLowerCase().includes(lower)
-    )
-  }, [displayLiterature, searchText])
+  // 从 header 搜索跳转过来时自动触发搜索
+  useEffect(() => {
+    if (location.state?.searchQuery) {
+      setSearchQuery(location.state.searchQuery)
+      handleSearch(location.state.searchQuery)
+      setActiveTab('search')
+    }
+  }, [location.state])
+
+  // 多源学术搜索
+  const handleSearch = async (query) => {
+    const q = query || searchQuery
+    if (!q.trim()) {
+      message.warning('请输入搜索关键词')
+      return
+    }
+    setSearchLoading(true)
+    try {
+      const result = await literatureAPI.search(q, { max_results: 10 })
+      if (result.success && result.data) {
+        setSearchResults(result.data.map(item => ({
+          id: item.paper_id || item.id || Date.now() + Math.random(),
+          title: item.title || '',
+          authors: Array.isArray(item.authors) ? item.authors.join(', ') : (item.authors || ''),
+          year: item.year || '',
+          journal: item.venue || item.journal || '',
+          abstract: item.abstract || '',
+          url: item.url || '',
+          source: item.source || 'unknown',
+          citations: item.citations || 0,
+          doi: item.doi || '',
+        })))
+        setActiveTab('search')
+      } else {
+        message.warning('未找到相关文献')
+        setSearchResults([])
+      }
+    } catch (e) {
+      message.error('搜索失败: ' + (e.message || '网络错误'))
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  // 添加搜索结果到文献库
+  const handleAddToLibrary = async (record) => {
+    try {
+      addLiterature({
+        ...record,
+        status: 'pending',
+      })
+      message.success('已添加到文献库')
+    } catch (e) {
+      message.error('添加失败')
+    }
+  }
+
+  // 修复引用按钮
+  const handleCiteLiterature = (id) => {
+    updateLiterature(id, { status: 'cited' })
+    message.success('文献已引用')
+  }
 
   const handleDeleteLiterature = (id) => {
     Modal.confirm({
@@ -37,10 +104,6 @@ const LiteraturePage = () => {
         message.success('文献已删除')
       }
     })
-  }
-
-  const handleCiteLiterature = (id) => {
-    message.success('文献已引用')
   }
 
   const handleAddLiterature = (values) => {
@@ -62,58 +125,58 @@ const LiteraturePage = () => {
     try {
       const formData = new FormData()
       formData.append('file', file)
-
-      const response = await fetch('/api/literature/upload', {
-        method: 'POST',
-        headers: {
-          'X-API-Key': localStorage.getItem('api_key') || 'dev-api-key'
-        },
-        body: formData
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        addLiterature(result.data)
+      const result = await literatureAPI.uploadFile(formData)
+      if (result.success && result.data) {
+        addLiterature({
+          ...result.data,
+          id: result.data.id || Date.now(),
+          status: 'pending',
+        })
         message.success('文献上传成功！已自动提取元数据')
         setIsUploadModalOpen(false)
       } else {
-        throw new Error(result.error)
+        throw new Error(result.error || '上传失败')
       }
     } catch (error) {
-      message.error('上传失败：' + error.message)
+      message.error('上传失败：' + (error.message || '未知错误'))
     } finally {
       setUploading(false)
     }
-    return false // 阻止默认上传行为
+    return false
   }
 
-  // 上传前的验证
   const beforeUpload = (file) => {
     const isPdf = file.type === 'application/pdf'
     const isDocx = file.name.endsWith('.docx') || file.name.endsWith('.doc')
     const isText = file.type.startsWith('text/')
-
     if (!isPdf && !isDocx && !isText) {
       message.error('只支持 PDF、Word 或文本文件！')
       return false
     }
-
     const isLt50M = file.size / 1024 / 1024 < 50
     if (!isLt50M) {
       message.error('文件大小不能超过 50MB！')
       return false
     }
-
     handleUpload(file)
     return false
   }
+
+  const filteredLiterature = useMemo(() => {
+    if (!searchText.trim()) return literature
+    const lower = searchText.toLowerCase()
+    return literature.filter(item =>
+      item.title?.toLowerCase().includes(lower) ||
+      item.authors?.toLowerCase().includes(lower) ||
+      item.journal?.toLowerCase().includes(lower)
+    )
+  }, [literature, searchText])
 
   const totalCount = filteredLiterature.length
   const citedCount = filteredLiterature.filter(l => l.status === 'cited').length
   const pendingCount = filteredLiterature.filter(l => l.status === 'pending').length
 
-  const columns = [
+  const libraryColumns = [
     {
       title: '标题',
       dataIndex: 'title',
@@ -122,31 +185,10 @@ const LiteraturePage = () => {
       ellipsis: true,
       render: (text) => <Text strong>{text}</Text>,
     },
-    {
-      title: '作者',
-      dataIndex: 'authors',
-      key: 'authors',
-      width: 180,
-    },
-    {
-      title: '年份',
-      dataIndex: 'year',
-      key: 'year',
-      width: 80,
-    },
-    {
-      title: '期刊',
-      dataIndex: 'journal',
-      key: 'journal',
-      width: 150,
-      ellipsis: true,
-    },
-    {
-      title: '引用',
-      dataIndex: 'citations',
-      key: 'citations',
-      width: 80,
-    },
+    { title: '作者', dataIndex: 'authors', key: 'authors', width: 180, ellipsis: true },
+    { title: '年份', dataIndex: 'year', key: 'year', width: 80 },
+    { title: '期刊', dataIndex: 'journal', key: 'journal', width: 150, ellipsis: true },
+    { title: '引用', dataIndex: 'citations', key: 'citations', width: 80 },
     {
       title: '状态',
       dataIndex: 'status',
@@ -179,82 +221,186 @@ const LiteraturePage = () => {
     },
   ]
 
+  const searchResultColumns = [
+    {
+      title: '标题',
+      dataIndex: 'title',
+      key: 'title',
+      width: 300,
+      ellipsis: true,
+      render: (text, record) => (
+        <div>
+          <Text strong>{text}</Text>
+          {record.url && (
+            <div><a href={record.url} target="_blank" rel="noreferrer" className="text-xs text-blue-500">{record.url.substring(0, 60)}...</a></div>
+          )}
+        </div>
+      ),
+    },
+    { title: '作者', dataIndex: 'authors', key: 'authors', width: 180, ellipsis: true },
+    { title: '年份', dataIndex: 'year', key: 'year', width: 80 },
+    {
+      title: '来源',
+      dataIndex: 'source',
+      key: 'source',
+      width: 100,
+      render: (source) => {
+        const config = SOURCE_CONFIG[source] || { label: source, color: '#999' }
+        return <Tag color={config.color}>{config.label}</Tag>
+      },
+    },
+    { title: '引用数', dataIndex: 'citations', key: 'citations', width: 80 },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      render: (_, record) => (
+        <Tooltip title="添加到文献库">
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusCircleOutlined />}
+            onClick={() => handleAddToLibrary(record)}
+          >
+            添加
+          </Button>
+        </Tooltip>
+      ),
+    },
+  ]
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <Space>
-          <Input
-            placeholder="搜索文献..."
-            prefix={<SearchOutlined />}
-            className="w-64"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-          />
-          <Select
-            placeholder="筛选状态"
-            className="w-32"
-            allowClear
-            options={[
-              { label: '已引用', value: 'cited' },
-              { label: '待引用', value: 'pending' },
-              { label: '未引用', value: 'not_cited' },
-            ]}
-          />
-        </Space>
+      {/* 搜索栏 */}
+      <Card size="small" className="!rounded-lg">
+        <div className="flex justify-between items-center">
+          <Space>
+            <Input.Search
+              placeholder="搜索学术文献 (arXiv, PubMed, Semantic Scholar...)"
+              prefix={<SearchOutlined />}
+              className="w-96"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onSearch={(value) => handleSearch(value)}
+              enterButton="学术搜索"
+              loading={searchLoading}
+            />
+          </Space>
+          <Space>
+            <Button type="primary" icon={<UploadOutlined />} onClick={() => setIsUploadModalOpen(true)}>
+              上传文件
+            </Button>
+            <Button icon={<PlusOutlined />} onClick={() => setIsAddModalOpen(true)}>
+              手动添加
+            </Button>
+          </Space>
+        </div>
+      </Card>
 
-        <Space>
-          <Button type="primary" icon={<UploadOutlined />} onClick={() => setIsUploadModalOpen(true)}>
-            上传文件
-          </Button>
-          <Button icon={<PlusOutlined />} onClick={() => setIsAddModalOpen(true)}>
-            手动添加
-          </Button>
-        </Space>
-      </div>
-
+      {/* 统计卡片 */}
       <Row gutter={16}>
         <Col span={6}>
-          <Card className="text-center">
+          <Card className="text-center !rounded-lg">
             <Title level={3} className="!mb-0">{totalCount}</Title>
             <Text type="secondary">总文献数</Text>
           </Card>
         </Col>
         <Col span={6}>
-          <Card className="text-center">
-            <Title level={3} className="!mb-0 text-green">{citedCount}</Title>
+          <Card className="text-center !rounded-lg">
+            <Title level={3} className="!mb-0 !text-green-500">{citedCount}</Title>
             <Text type="secondary">已引用</Text>
           </Card>
         </Col>
         <Col span={6}>
-          <Card className="text-center">
-            <Title level={3} className="!mb-0 text-orange">{pendingCount}</Title>
+          <Card className="text-center !rounded-lg">
+            <Title level={3} className="!mb-0 !text-orange-500">{pendingCount}</Title>
             <Text type="secondary">待引用</Text>
           </Card>
         </Col>
         <Col span={6}>
-          <Card className="text-center">
-            <Title level={3} className="!mb-0 text-gray">{totalCount - citedCount - pendingCount}</Title>
+          <Card className="text-center !rounded-lg">
+            <Title level={3} className="!mb-0 !text-gray-400">{totalCount - citedCount - pendingCount}</Title>
             <Text type="secondary">未引用</Text>
           </Card>
         </Col>
       </Row>
 
-      <Card>
-        {filteredLiterature.length === 0 ? (
-          <div className="text-center py-8">
-            <Empty description="暂无文献" />
-          </div>
-        ) : (
-          <Table
-            dataSource={filteredLiterature}
-            columns={columns}
-            rowKey="id"
-            pagination={{ pageSize: 10 }}
-            size="middle"
-          />
-        )}
+      {/* 选项卡：搜索结果 / 我的文献库 */}
+      <Card className="!rounded-lg">
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'search',
+              label: (
+                <span>
+                  <SearchOutlined /> 搜索结果
+                  {searchResults.length > 0 && <Tag color="blue" className="ml-2">{searchResults.length}</Tag>}
+                </span>
+              ),
+              children: searchLoading ? (
+                <div className="text-center py-12"><Spin size="large" tip="正在搜索 arXiv, PubMed, Semantic Scholar..." /></div>
+              ) : searchResults.length === 0 ? (
+                <Empty description="请输入关键词进行学术搜索" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+                  <Text type="secondary">支持搜索 arXiv、PubMed、Semantic Scholar 等多个学术数据库</Text>
+                </Empty>
+              ) : (
+                <Table
+                  dataSource={searchResults}
+                  columns={searchResultColumns}
+                  rowKey="id"
+                  pagination={{ pageSize: 10 }}
+                  size="middle"
+                  expandable={{
+                    rowExpandable: (record) => !!record.abstract,
+                    expandedRowRender: (record) => (
+                      <div className="py-2 px-4">
+                        <Text type="secondary" className="text-sm">{record.abstract}</Text>
+                      </div>
+                    ),
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'library',
+              label: (
+                <span>
+                  <FileTextOutlined /> 我的文献库
+                  {literature.length > 0 && <Tag color="green" className="ml-2">{literature.length}</Tag>}
+                </span>
+              ),
+              children: (
+                <>
+                  <div className="mb-3">
+                    <Input
+                      placeholder="在文献库中筛选..."
+                      prefix={<SearchOutlined />}
+                      className="w-64"
+                      value={searchText}
+                      onChange={(e) => setSearchText(e.target.value)}
+                    />
+                  </div>
+                  {filteredLiterature.length === 0 ? (
+                    <Empty description="暂无文献，请搜索添加或上传文件" />
+                  ) : (
+                    <Table
+                      dataSource={filteredLiterature}
+                      columns={libraryColumns}
+                      rowKey="id"
+                      pagination={{ pageSize: 10 }}
+                      size="middle"
+                    />
+                  )}
+                </>
+              ),
+            },
+          ]}
+        />
       </Card>
 
+      {/* 添加文献弹窗 */}
       <Modal
         title="添加文献"
         open={isAddModalOpen}
@@ -266,11 +412,9 @@ const LiteraturePage = () => {
           <Form.Item label="标题" name="title" rules={[{ required: true, message: '请输入论文标题' }]}>
             <Input placeholder="请输入论文标题" />
           </Form.Item>
-
           <Form.Item label="作者" name="authors" rules={[{ required: true, message: '请输入作者' }]}>
             <Input placeholder="请输入作者，多个作者用逗号分隔" />
           </Form.Item>
-
           <Space className="w-full" size="large">
             <Form.Item label="年份" name="year" className="flex-1">
               <Input type="number" placeholder="年份" />
@@ -279,15 +423,12 @@ const LiteraturePage = () => {
               <Input placeholder="期刊名称" />
             </Form.Item>
           </Space>
-
           <Form.Item label="DOI" name="doi">
             <Input placeholder="论文DOI (可选)" />
           </Form.Item>
-
           <Form.Item label="标签" name="tags">
             <Select mode="tags" placeholder="添加标签" />
           </Form.Item>
-
           <Form.Item className="!mb-0">
             <Space className="w-full justify-end">
               <Button onClick={() => setIsAddModalOpen(false)}>取消</Button>

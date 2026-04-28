@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { Card, Button, Space, Typography, Tree, Input, Divider, Tag, Tooltip, message, Modal, Progress, Badge, Empty, Spin, Avatar, notification } from 'antd'
+import { Card, Button, Space, Typography, Tree, Input, Divider, Tag, Tooltip, message, Modal, Progress, Badge, Empty, Spin, Avatar, notification, List, Select } from 'antd'
 import {
   PlusOutlined,
   SaveOutlined,
@@ -21,9 +21,10 @@ import {
   KeyOutlined,
   UndoOutlined,
   RedoOutlined,
+  CopyOutlined,
 } from '@ant-design/icons'
 import { usePaperStore } from '../store/paperStore'
-import { paperAPI } from '../services/api'
+import { paperAPI, literatureAPI } from '../services/api'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 const { Title, Text } = Typography
@@ -56,7 +57,7 @@ const SHORTCUTS = [
 const WritingPage = () => {
   const location = useLocation()
   const navigate = useNavigate()
-  const { project, updateSection, addSection, deleteSection, setProject, setTitle } = usePaperStore()
+  const { project, updateSection, addSection, deleteSection, setProject, setTitle, literature, addCitation, removeCitation } = usePaperStore()
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [selectedSection, setSelectedSection] = useState('1-1')
   const [sectionContent, setSectionContent] = useState('')
@@ -66,6 +67,8 @@ const WritingPage = () => {
   const [saveStatus, setSaveStatus] = useState('saved') // saved, saving, unsaved
   const [lastSaved, setLastSaved] = useState(null)
   const autoSaveTimer = useRef(null)
+  const [showCiteModal, setShowCiteModal] = useState(false)
+  const [citeStyle, setCiteStyle] = useState('APA')
 
   // 从导航状态获取论文ID并加载论文
   useEffect(() => {
@@ -140,7 +143,6 @@ const WritingPage = () => {
     }
   }
 
-  const currentPaperId = project?.id || 'test-paper-id'
   const sections = project?.sections?.length > 0 ? project.sections : DEFAULT_SECTIONS
 
   // 大纲树形结构
@@ -226,21 +228,59 @@ const WritingPage = () => {
       message.warning('请先设置论文标题')
       return
     }
+    if (!project?.id) {
+      message.warning('请先创建或选择论文')
+      return
+    }
     setGeneratingOutline(true)
     try {
-      const response = await fetch(`http://localhost:8000/api/papers/${currentPaperId}/outline/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': 'dev-api-key' },
-        body: JSON.stringify({ topic: paperTitle })
-      })
-      const result = await response.json()
-      if (result.success) {
+      const result = await paperAPI.generateOutline(project.id, paperTitle)
+      if (result.success && result.data) {
+        let newSections = []
+        const outlineData = result.data.outline || result.data
+        if (Array.isArray(outlineData)) {
+          outlineData.forEach(item => {
+            newSections.push({
+              id: String(item.id || item.key || newSections.length + 1),
+              title: item.title || item.name || '',
+              parentId: null,
+              content: ''
+            })
+            if (item.children && item.children.length > 0) {
+              const parentId = newSections[newSections.length - 1].id
+              item.children.forEach((child, idx) => {
+                newSections.push({
+                  id: `${parentId}-${idx + 1}`,
+                  title: child.title || child.name || '',
+                  parentId: parentId,
+                  content: ''
+                })
+              })
+            }
+            if (item.subsections && item.subsections.length > 0) {
+              const parentId = newSections[newSections.length - 1].id
+              item.subsections.forEach((child, idx) => {
+                newSections.push({
+                  id: `${parentId}-${idx + 1}`,
+                  title: child.title || child.name || '',
+                  parentId: parentId,
+                  content: ''
+                })
+              })
+            }
+          })
+        }
+        if (newSections.length > 0) {
+          setProject({ ...project, sections: newSections })
+          setSelectedSection(newSections[0].id)
+          setSectionContent('')
+        }
         message.success('大纲已生成！')
       } else {
-        throw new Error(result.error)
+        message.error(result.error || '生成大纲失败')
       }
     } catch (e) {
-      message.error('生成大纲失败')
+      message.error('生成大纲失败: ' + (e.message || '网络错误'))
     } finally {
       setGeneratingOutline(false)
     }
@@ -251,26 +291,57 @@ const WritingPage = () => {
       message.warning('请先选择要生成的章节')
       return
     }
+    if (!project?.id) {
+      message.warning('请先创建或选择论文')
+      return
+    }
     setGeneratingContent(true)
     try {
-      const response = await fetch(`http://localhost:8000/api/papers/${currentPaperId}/sections/${selectedSection}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': 'dev-api-key' },
-        body: JSON.stringify({ prompt: `为"${selectedSection}"章节生成内容` })
-      })
-      const result = await response.json()
-      if (result.success) {
-        const content = result.data?.content || ''
+      const prompt = `为"${currentSectionTitle}"章节生成学术内容`
+      const result = await paperAPI.generateContent(project.id, selectedSection, prompt)
+      if (result.success && result.data) {
+        const content = result.data.content || ''
         setSectionContent(content)
         updateSection(selectedSection, content)
         message.success('内容已生成！')
       } else {
-        throw new Error(result.error)
+        message.error(result.error || '生成内容失败')
       }
     } catch (e) {
-      message.error('生成内容失败')
+      message.error('生成内容失败: ' + (e.message || '网络错误'))
     } finally {
       setGeneratingContent(false)
+    }
+  }
+
+  // 引用管理功能
+  const handleAddCitation = (record) => {
+    addCitation({
+      id: record.id,
+      title: record.title,
+      authors: record.authors,
+      year: record.year,
+      journal: record.journal,
+    })
+    message.success(`已引用: ${record.title}`)
+  }
+
+  const handleRemoveCitation = (id) => {
+    removeCitation(id)
+    message.success('引用已移除')
+  }
+
+  const handleCopyCitation = async (record) => {
+    try {
+      const result = await literatureAPI.getCitation(record.id, citeStyle)
+      if (result.success && result.data?.citation) {
+        navigator.clipboard.writeText(result.data.citation)
+        message.success('引用格式已复制')
+      }
+    } catch (e) {
+      const fallback = `${record.authors}. (${record.year || 'n.d.'}). ${record.title}. ${record.journal || ''}`.trim()
+      navigator.clipboard.writeText(fallback)
+      message.success('引用已复制')
     }
   }
 
@@ -466,24 +537,131 @@ const WritingPage = () => {
           }
           bodyStyle={{ padding: 0 }}
         >
-          <div className="p-3">
-            <Empty
-              description="暂无引用"
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              className="py-6"
+          <div className="flex justify-between items-center px-3 pt-3 pb-2">
+            <Select
+              size="small"
+              value={citeStyle}
+              onChange={setCiteStyle}
+              options={[
+                { label: 'APA', value: 'APA' },
+                { label: 'MLA', value: 'MLA' },
+                { label: 'IEEE', value: 'IEEE' },
+                { label: 'GB/T 7714', value: 'GB/T 7714' },
+              ]}
+              className="w-28"
             />
           </div>
           <Divider className="my-0" />
+          {project?.citations?.length > 0 ? (
+            <div className="max-h-64 overflow-auto">
+              <List
+                size="small"
+                dataSource={project.citations}
+                renderItem={(cite) => (
+                  <List.Item
+                    className="px-3 py-2"
+                    actions={[
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CopyOutlined />}
+                        onClick={() => handleCopyCitation(cite)}
+                      />,
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => handleRemoveCitation(cite.id)}
+                      />,
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={<Text strong className="text-xs">{cite.title}</Text>}
+                      description={
+                        <Space direction="vertical" size={0}>
+                          <Text type="secondary" className="text-xs" ellipsis>{cite.authors}</Text>
+                          <Tag color="blue" className="!m-0 !text-xs">{cite.year || 'n.d.'}</Tag>
+                        </Space>
+                      }
+                    />
+                  </List.Item>
+                )}
+              />
+            </div>
+          ) : (
+            <div className="p-3">
+              <Empty
+                description="暂无引用"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                className="py-6"
+              />
+            </div>
+          )}
+          <Divider className="my-0" />
           <div className="p-2">
-            <Button block icon={<PlusOutlined />} className="mb-2">
+            <Button
+              block
+              icon={<PlusOutlined />}
+              className="mb-2"
+              onClick={() => setShowCiteModal(true)}
+            >
               添加引用
             </Button>
-            <Button block icon={<CloudUploadOutlined />} type="dashed">
-              导入文献
+            <Button
+              block
+              icon={<SearchOutlined />}
+              type="dashed"
+              onClick={() => navigate('/literature')}
+            >
+              搜索文献
             </Button>
           </div>
         </Card>
       </div>
+
+      {/* 添加引用弹窗 */}
+      <Modal
+        title="添加引用"
+        open={showCiteModal}
+        onCancel={() => setShowCiteModal(false)}
+        footer={null}
+        width={500}
+      >
+        <Text type="secondary" className="mb-3 block">选择文献库中的论文进行引用：</Text>
+        {literature.length === 0 ? (
+          <Empty description="暂无可用文献" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+            <Button type="primary" icon={<SearchOutlined />} onClick={() => { setShowCiteModal(false); navigate('/literature') }}>
+              前往搜索
+            </Button>
+          </Empty>
+        ) : (
+          <List
+            dataSource={literature}
+            className="max-h-80 overflow-auto"
+            renderItem={(item) => (
+              <List.Item
+                actions={[
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => { handleAddCitation(item); setShowCiteModal(false) }}
+                  >
+                    引用
+                  </Button>,
+                ]}
+              >
+                <List.Item.Meta
+                  title={<Text strong className="text-sm">{item.title}</Text>}
+                  description={
+                    <Text type="secondary" className="text-xs" ellipsis>{item.authors}</Text>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        )}
+      </Modal>
     </div>
   )
 }
