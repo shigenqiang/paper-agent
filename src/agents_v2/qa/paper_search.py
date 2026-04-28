@@ -169,6 +169,12 @@ class PaperSearchAgent(BaseQAAgent):
             import urllib.request
             import urllib.parse
             import xml.etree.ElementTree as ET
+            import ssl
+
+            # 创建SSL上下文（忽略证书验证）
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
 
             # 构建arXiv API查询
             base_url = "http://export.arxiv.org/api/query"
@@ -187,7 +193,7 @@ class PaperSearchAgent(BaseQAAgent):
             self.logger.debug(f"arXiv URL: {url}")
 
             # 发起请求
-            with urllib.request.urlopen(url, timeout=30) as response:
+            with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
                 data = response.read().decode("utf-8")
 
             # 解析XML
@@ -210,6 +216,12 @@ class PaperSearchAgent(BaseQAAgent):
             import urllib.request
             import urllib.parse
             import xml.etree.ElementTree as ET
+            import ssl
+
+            # 创建SSL上下文（忽略证书验证）
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
 
             # PubMed E-utilities
             base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
@@ -231,7 +243,7 @@ class PaperSearchAgent(BaseQAAgent):
             self.logger.debug(f"PubMed Search URL: {url}")
 
             # 获取ID列表
-            with urllib.request.urlopen(url, timeout=30) as response:
+            with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
                 import json as json_lib
                 search_data = json_lib.loads(response.read().decode("utf-8"))
 
@@ -247,7 +259,7 @@ class PaperSearchAgent(BaseQAAgent):
                 "retmode": "json"
             })
 
-            with urllib.request.urlopen(f"{summary_url}?{summary_params}", timeout=30) as response:
+            with urllib.request.urlopen(f"{summary_url}?{summary_params}", timeout=30, context=ssl_context) as response:
                 summary_data = json_lib.loads(response.read().decode("utf-8"))
 
             # 解析结果
