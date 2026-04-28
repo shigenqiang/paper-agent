@@ -164,24 +164,29 @@ const HomePage = () => {
     : 0
 
   return (
-    <div className="space-y-4">
-      {/* 欢迎横幅 */}
-      <Card className="!bg-gradient-to-r from-blue-500 via-blue-600 to-purple-600 text-white border-0 !rounded-xl">
+    <div className="space-y-5">
+      {/* 欢迎横幅 - 优化渐变和视觉层次 */}
+      <Card className="!bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 text-white border-0 !rounded-2xl shadow-lg" bodyStyle={{ padding: '28px 32px' }}>
         <div className="flex justify-between items-center">
-          <div>
-            <Title level={3} className="!text-white !mb-1 flex items-center gap-2">
-              <StarOutlined /> 你好，学术研究者
-            </Title>
-            <Text className="text-white/90 text-sm">
-              今天是学习的好日子，让AI助你一臂之力完成论文
-            </Text>
+          <div className="flex items-center gap-5">
+            <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur">
+              <StarOutlined className="text-3xl text-white" />
+            </div>
+            <div>
+              <Title level={2} className="!text-white !mb-1 flex items-center gap-2">
+                你好，学术研究者
+              </Title>
+              <Text className="text-white/90 text-base">
+                今天是学习的好日子，让AI助你一臂之力
+              </Text>
+            </div>
           </div>
-          <Space size="middle">
+          <Space size="middle" className="mr-4">
             <Button
               type="primary"
               size="large"
               icon={<PlusOutlined />}
-              className="!bg-white !text-blue-600 !border-0"
+              className="!bg-white !text-indigo-600 !border-0 !font-semibold !shadow-lg"
               onClick={handleCreatePaper}
             >
               新建论文
@@ -189,7 +194,7 @@ const HomePage = () => {
             <Button
               size="large"
               icon={<PlayCircleOutlined />}
-              className="!bg-white/20 !text-white !border-white/40 hover:!bg-white/30"
+              className="!bg-white/20 !text-white !border-white/40 hover:!bg-white/30 !font-semibold"
               onClick={() => navigate('/features')}
             >
               快速开始
@@ -198,185 +203,205 @@ const HomePage = () => {
         </div>
       </Card>
 
-      {loading ? (
-        <div className="text-center py-12"><Spin size="large" tip="加载中..." /></div>
-      ) : (
-        <>
-          {/* 快捷入口 */}
-          <Row gutter={16}>
-            {QUICK_ENTRIES.map(entry => (
-              <Col xs={12} sm={12} md={6} key={entry.key}>
-                <Card
-                  hoverable
-                  className="cursor-pointer h-full transition-all hover:shadow-lg !rounded-xl overflow-hidden"
-                  onClick={() => navigate(entry.path)}
-                  bodyStyle={{ padding: 0 }}
-                >
-                  <div
-                    className="h-24 flex items-center justify-center"
-                    style={{ background: entry.bgGradient }}
-                  >
-                    <div className="text-white text-4xl">{entry.icon}</div>
-                  </div>
-                  <div className="px-4 py-3">
-                    <Text strong className="text-base block">{entry.label}</Text>
-                    <Text type="secondary" className="text-xs">{entry.description}</Text>
-                  </div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
+      {/* 快捷入口 - 卡片式设计 */}
+      <Row gutter={[20, 20]}>
+        {QUICK_ENTRIES.map((entry, index) => (
+          <Col xs={12} sm={12} md={6} key={entry.key}>
+            <Card
+              hoverable
+              className="cursor-pointer h-full transition-all duration-300 hover:shadow-xl hover:-translate-y-1 !rounded-2xl overflow-hidden group"
+              onClick={() => navigate(entry.path)}
+              bodyStyle={{ padding: 0 }}
+              style={{ animationDelay: `${index * 0.1}s` }}
+            >
+              <div
+                className="h-28 flex items-center justify-center relative overflow-hidden"
+                style={{ background: entry.bgGradient }}
+              >
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all" />
+                <div className="text-white text-5xl transform group-hover:scale-110 transition-transform duration-300">{entry.icon}</div>
+              </div>
+              <div className="px-5 py-4">
+                <Text strong className="text-base block text-gray-800">{entry.label}</Text>
+                <Text type="secondary" className="text-sm mt-1">{entry.description}</Text>
+              </div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
 
-          {/* 统计和进度 */}
-          <Row gutter={16}>
-            {/* 论文统计 */}
-            <Col xs={24} md={16}>
-              <Card className="!rounded-xl" title={<Space><FileTextOutlined /><span>论文概览</span></Space>} extra={<Button type="link" onClick={() => navigate('/writing')}>查看全部 <RightOutlined /></Button>}>
-                <Row gutter={16}>
-                  <Col span={6}>
-                    <Statistic
-                      title={<Text type="secondary" className="text-xs">论文总数</Text>}
-                      value={stats.totalPapers}
-                      prefix={<FileTextOutlined className="text-blue-500" />}
-                      valueStyle={{ fontSize: '28px', color: '#1890ff' }}
-                    />
-                  </Col>
-                  <Col span={6}>
-                    <Statistic
-                      title={<Text type="secondary" className="text-xs">已完成</Text>}
-                      value={stats.completedPapers}
-                      valueStyle={{ fontSize: '28px', color: '#52c41a' }}
-                      prefix={<CheckCircleOutlined />}
-                    />
-                  </Col>
-                  <Col span={6}>
-                    <Statistic
-                      title={<Text type="secondary" className="text-xs">进行中</Text>}
-                      value={stats.totalPapers - stats.completedPapers}
-                      valueStyle={{ fontSize: '28px', color: '#1890ff' }}
-                      prefix={<EditOutlined />}
-                    />
-                  </Col>
-                  <Col span={6}>
-                    <Statistic
-                      title={<Text type="secondary" className="text-xs">总字数</Text>}
-                      value={stats.totalWords}
-                      suffix="字"
-                      valueStyle={{ fontSize: '28px', color: '#722ed1' }}
-                      prefix={<EditOutlined />}
-                    />
-                  </Col>
-                </Row>
-
-                <Divider />
-
-                {/* 论文列表 */}
-                {papers.length === 0 ? (
-                  <Empty description="暂无论文" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={handleCreatePaper}>
-                      创建第一篇论文
-                    </Button>
-                  </Empty>
-                ) : (
-                  <List
-                    size="small"
-                    dataSource={papers}
-                    renderItem={(paper, index) => (
-                      <List.Item
-                        className="cursor-pointer hover:bg-gray-50 -mx-2 px-3 py-3 rounded-lg transition-all"
-                        onClick={() => navigate('/writing', { state: { paperId: paper.id } })}
-                      >
-                        <List.Item.Meta
-                          avatar={
-                            <Avatar
-                              size={40}
-                              style={{
-                                background: index === 0 ? '#1890ff' : index === 1 ? '#52c41a' : index === 2 ? '#fa8c16' : '#722ed1',
-                              }}
-                              icon={<FileTextOutlined />}
-                            />
-                          }
-                          title={<Text strong>{paper.title || '无标题论文'}</Text>}
-                          description={
-                            <Space>
-                              <Tag color={paper.status === 'completed' ? 'success' : 'processing'} className="!m-0">
-                                {paper.status === 'completed' ? '已完成' : '进行中'}
-                              </Tag>
-                              <Text type="secondary" className="text-xs">
-                                更新于 {paper.updated_at ? new Date(paper.updated_at).toLocaleDateString() : '未知'}
-                              </Text>
-                            </Space>
-                          }
-                        />
-                        <Progress
-                          percent={paper.status === 'completed' ? 100 : 30}
-                          size="small"
-                          className="w-24"
-                          strokeColor={paper.status === 'completed' ? '#52c41a' : '#1890ff'}
-                        />
-                      </List.Item>
-                    )}
-                  />
-                )}
-              </Card>
-            </Col>
-
-            {/* 右侧面板 */}
-            <Col xs={24} md={8}>
-              <Space direction="vertical" className="w-full" size={16}>
-                {/* 整体进度 */}
-                <Card size="small" className="!rounded-xl">
-                  <div className="flex items-center justify-between mb-2">
-                    <Text strong>整体进度</Text>
-                    <Text type="secondary" className="text-sm">{completionRate}%</Text>
-                  </div>
-                  <Progress percent={completionRate} showInfo={false} strokeColor="#1890ff" size="small" />
-                  <div className="flex justify-between mt-2 text-xs text-gray-400">
-                    <span>已完成 {stats.completedPapers} 篇</span>
-                    <span>总计 {stats.totalPapers} 篇</span>
-                  </div>
-                </Card>
-
-                {/* 最近活动 */}
-                <Card size="small" className="!rounded-xl" title={<Space><ClockCircleOutlined /><span>最近活动</span></Space>}>
-                  <List
-                    size="small"
-                    dataSource={RECENT_ACTIVITIES}
-                    renderItem={(item) => (
-                      <List.Item className="!py-2">
-                        <Space>
-                          <Avatar size="small" style={{ backgroundColor: item.color }} icon={item.icon} />
-                          <div>
-                            <Text className="text-sm">{item.action}</Text>
-                            <div className="text-xs text-gray-400">{item.time}</div>
-                          </div>
-                        </Space>
-                      </List.Item>
-                    )}
-                  />
-                </Card>
-
-                {/* 数据来源 */}
-                <Card size="small" className="!rounded-xl" title={<Space><GlobalOutlined /><span>数据来源</span></Space>}>
-                  <Row gutter={8}>
-                    {SOURCE_STATS.map(source => (
-                      <Col span={12} key={source.label} className="mb-2">
-                        <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                          <span style={{ color: source.color, fontSize: '18px' }}>{source.icon}</span>
-                          <div>
-                            <Text className="text-sm font-medium">{source.label}</Text>
-                            <div className="text-xs text-gray-400">{source.description}</div>
-                          </div>
-                        </div>
-                      </Col>
-                    ))}
-                  </Row>
-                </Card>
+      {/* 统计和进度 */}
+      <Row gutter={[20, 20]} className="mt-5">
+        {/* 论文统计 */}
+        <Col xs={24} lg={16}>
+          <Card
+            className="!rounded-2xl shadow-sm"
+            title={
+              <Space className="!text-base">
+                <FileTextOutlined className="!text-blue-500" />
+                <span className="font-semibold">论文概览</span>
               </Space>
-            </Col>
-          </Row>
-        </>
-      )}
+            }
+            extra={<Button type="link" onClick={() => navigate('/writing')} className="!text-blue-500">查看全部 <RightOutlined /></Button>}
+          >
+            <Row gutter={24}>
+              <Col span={6}>
+                <Statistic
+                  title={<Text type="secondary" className="text-xs">论文总数</Text>}
+                  value={stats.totalPapers}
+                  prefix={<FileTextOutlined className="text-blue-500 text-lg" />}
+                  valueStyle={{ fontSize: '32px', color: '#1890ff', fontWeight: 600 }}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title={<Text type="secondary" className="text-xs">已完成</Text>}
+                  value={stats.completedPapers}
+                  valueStyle={{ fontSize: '32px', color: '#52c41a', fontWeight: 600 }}
+                  prefix={<CheckCircleOutlined className="text-green-500" />}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title={<Text type="secondary" className="text-xs">进行中</Text>}
+                  value={stats.totalPapers - stats.completedPapers}
+                  valueStyle={{ fontSize: '32px', color: '#1890ff', fontWeight: 600 }}
+                  prefix={<EditOutlined className="text-blue-400" />}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title={<Text type="secondary" className="text-xs">总字数</Text>}
+                  value={stats.totalWords}
+                  suffix="字"
+                  valueStyle={{ fontSize: '32px', color: '#722ed1', fontWeight: 600 }}
+                  prefix={<FileTextOutlined className="text-purple-500" />}
+                />
+              </Col>
+            </Row>
+
+            <Divider className="my-4" />
+
+            {/* 论文列表 */}
+            {papers.length === 0 ? (
+              <Empty description="暂无论文" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+                <Button type="primary" icon={<PlusOutlined />} onClick={handleCreatePaper}>
+                  创建第一篇论文
+                </Button>
+              </Empty>
+            ) : (
+              <List
+                size="small"
+                dataSource={papers}
+                renderItem={(paper, index) => (
+                  <List.Item
+                    className="cursor-pointer hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 -mx-3 px-4 py-4 rounded-xl transition-all border-b border-gray-50"
+                    onClick={() => navigate('/writing', { state: { paperId: paper.id } })}
+                  >
+                    <List.Item.Meta
+                      avatar={
+                        <Avatar
+                          size={44}
+                          style={{
+                            background: index === 0 ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : index === 1 ? 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' : index === 2 ? 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' : 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                          }}
+                          icon={<FileTextOutlined />}
+                        />
+                      }
+                      title={<Text strong className="text-sm">{paper.title || '无标题论文'}</Text>}
+                      description={
+                        <Space className="mt-1">
+                          <Tag color={paper.status === 'completed' ? 'success' : 'processing'} className="!m-0 text-xs">
+                            {paper.status === 'completed' ? '已完成' : '进行中'}
+                          </Tag>
+                          <Text type="secondary" className="text-xs">
+                            更新于 {paper.updated_at ? new Date(paper.updated_at).toLocaleDateString() : '未知'}
+                          </Text>
+                        </Space>
+                      }
+                    />
+                    <Progress
+                      percent={paper.status === 'completed' ? 100 : 30}
+                      size="small"
+                      className="w-28"
+                      strokeColor={paper.status === 'completed' ? '#52c41a' : '#1890ff'}
+                    />
+                  </List.Item>
+                )}
+              />
+            )}
+          </Card>
+        </Col>
+
+        {/* 右侧面板 */}
+        <Col xs={24} lg={8}>
+          <Space direction="vertical" className="w-full" size={16}>
+            {/* 整体进度 */}
+            <Card size="small" className="!rounded-2xl shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <Space>
+                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <RiseOutlined className="text-blue-500" />
+                  </div>
+                  <Text strong className="text-sm">整体进度</Text>
+                </Space>
+                <Text type="secondary" className="text-sm">{completionRate}%</Text>
+              </div>
+              <Progress percent={completionRate} showInfo={false} strokeColor="#1890ff" size="small" />
+              <div className="flex justify-between mt-3 text-xs text-gray-400">
+                <span>已完成 {stats.completedPapers} 篇</span>
+                <span>总计 {stats.totalPapers} 篇</span>
+              </div>
+            </Card>
+
+            {/* 最近活动 */}
+            <Card size="small" className="!rounded-2xl shadow-sm" title={
+              <Space className="!text-sm">
+                <ClockCircleOutlined className="!text-orange-500" />
+                <span className="font-semibold">最近活动</span>
+              </Space>
+            }>
+              <List
+                size="small"
+                dataSource={RECENT_ACTIVITIES}
+                renderItem={(item) => (
+                  <List.Item className="!py-3">
+                    <Space className="w-full">
+                      <Avatar size="small" style={{ backgroundColor: item.color }} icon={item.icon} />
+                      <div className="flex-1">
+                        <Text className="text-sm">{item.action}</Text>
+                        <div className="text-xs text-gray-400">{item.time}</div>
+                      </div>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            </Card>
+
+            {/* 数据来源 */}
+            <Card size="small" className="!rounded-2xl shadow-sm" title={
+              <Space className="!text-sm">
+                <GlobalOutlined className="!text-indigo-500" />
+                <span className="font-semibold">数据来源</span>
+              </Space>
+            }>
+              <Row gutter={[12, 12]}>
+                {SOURCE_STATS.map(source => (
+                  <Col span={12} key={source.label}>
+                    <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl">
+                      <span style={{ color: source.color, fontSize: '20px' }}>{source.icon}</span>
+                      <div>
+                        <Text className="text-sm font-medium block">{source.label}</Text>
+                        <Text type="secondary" className="text-xs">{source.description}</Text>
+                      </div>
+                    </div>
+                  </Col>
+                ))}
+              </Row>
+            </Card>
+          </Space>
+        </Col>
+      </Row>
     </div>
   )
 }
