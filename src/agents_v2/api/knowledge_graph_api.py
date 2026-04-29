@@ -136,6 +136,8 @@ def _build_graph_from_papers(papers: List[Dict[str, Any]]) -> Dict[str, Any]:
         "nodes": nodes,
         "edges": edges,
         "stats": {
+            "totalEntities": len(nodes),
+            "totalRelations": len(edges),
             "total_nodes": len(nodes),
             "total_edges": len(edges),
             "paper_count": len(papers),
@@ -169,7 +171,14 @@ async def handle_get_literature_graph(request: web.Request) -> web.Response:
             graph_data = _graph_storage.copy() if _graph_storage["nodes"] else {
                 "nodes": [],
                 "edges": [],
-                "stats": {"total_nodes": 0, "total_edges": 0, "paper_count": 0, "method_count": 0}
+                "stats": {
+                    "totalEntities": 0,
+                    "totalRelations": 0,
+                    "total_nodes": 0,
+                    "total_edges": 0,
+                    "paper_count": 0,
+                    "method_count": 0
+                }
             }
 
         execution_time = time.time() - start_time
@@ -230,6 +239,8 @@ async def handle_generate_graph(request: web.Request) -> web.Response:
                 "nodes": [{"id": lid, "label": f"Paper {lid}", "type": "paper"} for lid in literature_ids],
                 "edges": [],
                 "stats": {
+                    "totalEntities": len(literature_ids),
+                    "totalRelations": 0,
                     "total_nodes": len(literature_ids),
                     "total_edges": 0,
                     "literature_count": len(literature_ids),
