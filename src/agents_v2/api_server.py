@@ -488,6 +488,51 @@ def create_app() -> web.Application:
     # 添加认证中间件
     app.middlewares.append(api_key_auth_middleware)
 
+    # 启动时创建默认定时任务
+    async def on_startup(app):
+        # 启动报告调度器
+        from src.agents_v2.scheduler import get_report_scheduler
+        scheduler = get_report_scheduler()
+        # 创建每日报告默认任务（每天早上8点）
+        settings = await _get_settings()
+        keywords = settings.get("keywords", ["machine learning", "deep learning"])
+        scheduler.create_task(
+            name="每日学术资讯",
+            task_type="daily_report",
+            schedule="0 8 * * *",
+            keywords=keywords,
+            schedule_type="cron"
+        )
+        # 创建每周报告默认任务（每周一早上9点）
+        scheduler.create_task(
+            name="每周学术资讯",
+            task_type="weekly_report",
+            schedule="0 9 * * 1",
+            keywords=keywords,
+            schedule_type="cron"
+        )
+        # 创建每月报告默认任务（每月1号早上10点）
+        scheduler.create_task(
+            name="每月学术资讯",
+            task_type="monthly_report",
+            schedule="0 10 1 * *",
+            keywords=keywords,
+            schedule_type="cron"
+        )
+        # 后台启动调度器
+        scheduler.start_background()
+        logger.info("报告调度器已启动")
+
+    async def _get_settings():
+        """获取设置"""
+        try:
+            from src.agents_v2.config import get_settings
+            return get_settings()
+        except:
+            return {"keywords": ["machine learning", "deep learning"]}
+
+    app.on_startup.append(on_startup)
+
     # 路由
     app.router.add_get('/health', health_check)
     app.router.add_post('/api/topic', handle_topic)

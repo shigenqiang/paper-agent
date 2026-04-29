@@ -12,4 +12,6 @@
 
 知识图谱：Neo4jStore模块构建论文引用关系图谱，提取引用关系、作者合作网络、主题关联强度，帮助理解研究脉络。
 
+---
+
 订阅推送：SubscriptionManager管理订阅配置，ReportScheduler基于Cron表达式（日报`0 9 * * *`、周报`0 9 * * 1`、月报`0 9 1 * *`）定时触发；PaperFlash生成快讯（HOT热点、TRENDING趋势、CONFERENCE顶会）。

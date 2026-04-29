@@ -8,6 +8,7 @@ from datetime import datetime
 import logging
 import json
 import asyncio
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -143,22 +144,31 @@ class PaperAgentBase(ABC):
             self._llm = None
 
     async def _llm_call(self, prompt: str) -> str:
-        """LLM调用封装"""
-        if not self._llm:
-            raise RuntimeError("LLM未初始化")
-
+        """LLM调用封装 - 使用原生 OpenAI 客户端"""
         try:
-            from langchain_core.messages import HumanMessage, SystemMessage
+            from openai import OpenAI
 
-            messages = [
-                SystemMessage(content=self.system_prompt or "你是一个专业的AI助手。"),
-                HumanMessage(content=prompt)
-            ]
+            api_key = self.llm_config.api_key or os.getenv("OPENAI_API_KEY", "")
+            base_url = self.llm_config.base_url or os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
+            model = self.llm_config.model_name or os.getenv("LLM_MODEL", "MiniMax-M2.7")
 
-            response = await self._llm.ainvoke(messages)
-            content = response.content if hasattr(response, 'content') else str(response)
+            client = OpenAI(api_key=api_key, base_url=base_url)
 
-            # 清理MiniMax模型的思考块
+            # 构建消息
+            messages = []
+            if self.system_prompt:
+                messages.append({"role": "system", "content": self.system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                extra_body={"reasoning_split": False}
+            )
+
+            content = response.choices[0].message.content or ""
+
+            # 清理思考块
             content = self._clean_thinking_blocks(content)
 
             return content

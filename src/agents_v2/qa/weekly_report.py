@@ -202,6 +202,7 @@ class WeeklyReportGenerator(BaseQAAgent):
                 "topic": ", ".join(keywords),
                 "papers_found": 0,
                 "summary": "本周未找到相关论文",
+                "content": "# 每周学术资讯\n\n本周未找到相关论文",
                 "method_breakdown": {},
                 "top_papers": [],
                 "emerging_trends": [],
@@ -210,13 +211,13 @@ class WeeklyReportGenerator(BaseQAAgent):
 
         # 构建论文信息摘要
         papers_info = []
-        for p in papers[:50]:  # 最多处理50篇
+        for p in papers[:30]:  # 最多处理30篇
             papers_info.append({
                 "title": p.get("title", ""),
                 "year": p.get("year", ""),
                 "source": p.get("source", ""),
                 "methodology": p.get("methodology", ""),
-                "abstract": p.get("abstract", "")[:300]
+                "abstract": p.get("abstract", "")[:200]
             })
 
         # 分析方法分布
@@ -244,57 +245,53 @@ class WeeklyReportGenerator(BaseQAAgent):
 ## 搜索关键词
 {', '.join(keywords)}
 
-## 论文列表（共{len(papers)}篇，列出前{len(papers_info)}篇）
-{json.dumps(papers_info, ensure_ascii=False, indent=2)}
-
-## 方法分布统计
-{json.dumps(method_breakdown, ensure_ascii=False, indent=2)}
+## 论文列表（共{len(papers)}篇）
 
 ## 报告要求
-请生成JSON格式的周报：
 
-{{
-    "week_start": "开始日期 (YYYY-MM-DD)",
-    "week_end": "结束日期 (YYYY-MM-DD)",
-    "topic": "主题概括",
-    "papers_found": 论文总数,
-    "summary": "本周总体摘要 (400字以内)",
-    "method_breakdown": {{"方法名": 数量}},
-    "top_papers": [
-        {{
-            "title": "论文标题",
-            "authors": "作者",
-            "source": "来源",
-            "key_contribution": "主要贡献"
-        }}
-    ],
-    "emerging_trends": ["趋势1", "趋势2", "趋势3"],
-    "references": ["引用格式1", "引用格式2"]
-}}
+请生成Markdown格式的周报，包含以下部分：
+
+1. **# 每周学术资讯** - 标题，包含周日期范围
+2. **## 本周概览** - 论文总数、关键词
+3. **## 主要研究进展** - 概述本周最重要的研究发现
+4. **## 方法分类统计** - 按研究方法分类统计
+5. **## 重点论文推荐** - 3-5篇重要论文及其亮点
+6. **## 研究趋势分析** - 本周研究趋势
+
+注意：
+- 使用中文撰写
+- Markdown格式规范
+- 内容专业简洁
+- 不包含参考文献链接（单独列出）
 """
         response = await self._llm_call(prompt, self.system_prompt)
 
-        try:
-            report = json.loads(response)
-            report["papers_found"] = len(papers)
-            report["method_breakdown"] = method_breakdown
-            return report
-        except json.JSONDecodeError:
-            # 降级处理
-            return {
-                "week_start": week_start.strftime("%Y-%m-%d"),
-                "week_end": week_end.strftime("%Y-%m-%d"),
-                "topic": ", ".join(keywords),
-                "papers_found": len(papers),
-                "summary": response[:500] if response else "周报生成失败",
-                "method_breakdown": method_breakdown,
-                "top_papers": [
-                    {"title": p.get("title", ""), "key_contribution": ""}
-                    for p in papers[:5]
-                ],
-                "emerging_trends": [],
-                "references": []
-            }
+        # 构建参考文献
+        references = []
+        for i, p in enumerate(papers[:10], 1):
+            title = p.get('title', 'Unknown')
+            url = p.get('url', '')
+            source = p.get('source', '')
+            if url:
+                references.append(f"[{i}]: {url}")
+            else:
+                references.append(f"[{i}]: {source}")
+
+        return {
+            "week_start": week_start.strftime("%Y-%m-%d"),
+            "week_end": week_end.strftime("%Y-%m-%d"),
+            "topic": ", ".join(keywords),
+            "papers_found": len(papers),
+            "summary": response,
+            "content": f"{response}\n\n---\n\n## 参考文献\n\n" + "\n".join(references) if references else response,
+            "method_breakdown": method_breakdown,
+            "top_papers": [
+                {"title": p.get("title", ""), "key_contribution": ""}
+                for p in papers[:5]
+            ],
+            "emerging_trends": [],
+            "references": references
+        }
 
     def run_sync(
         self,

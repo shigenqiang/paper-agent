@@ -47,6 +47,19 @@ export const paperAPI = {
   // 创建新论文
   createPaper: (data) => apiClient.post('/papers', data),
 
+  // 上传论文文件 - 使用原生fetch避免axios拦截器干扰
+  uploadPaper: async (formData) => {
+    const apiKey = localStorage.getItem('api_key') || 'dev-api-key'
+    const response = await fetch(`${API_BASE_URL}/papers/upload`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+      },
+      body: formData,
+    })
+    return response.json()
+  },
+
   // 获取论文列表
   getPapers: (params) => apiClient.get('/papers', { params }),
 
@@ -68,6 +81,10 @@ export const paperAPI = {
   // 生成内容
   generateContent: (id, sectionId, prompt) =>
     apiClient.post(`/papers/${id}/sections/${sectionId}/generate`, { prompt }),
+
+  // 修正格式（公式和格式）
+  formatContent: (id, sectionId, content) =>
+    apiClient.post(`/papers/${id}/sections/${sectionId}/format`, { content }),
 }
 
 // 文献相关API
@@ -85,11 +102,18 @@ export const literatureAPI = {
   // 获取引用格式
   getCitation: (id, style) => apiClient.get(`/literature/${id}/citation`, { params: { style } }),
 
-  // 上传文献文件
-  uploadFile: (formData) => apiClient.post('/literature/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
-  }),
+  // 上传文献文件 - 使用原生fetch
+  uploadFile: async (formData) => {
+    const apiKey = localStorage.getItem('api_key') || 'dev-api-key'
+    const response = await fetch(`${API_BASE_URL}/literature/upload`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+      },
+      body: formData,
+    })
+    return response.json()
+  },
 }
 
 // AI助手API
@@ -167,6 +191,26 @@ export const knowledgeGraphAPI = {
 
   // 获取实体关联
   getEntityRelations: (entityId) => apiClient.get(`/knowledge-graph/entity/${entityId}`),
+
+  // 社区检测
+  detectCommunities: (algorithm = 'leiden') =>
+    apiClient.get(`/knowledge-graph/communities`, { params: { algorithm } }),
+
+  // 获取社区内的论文
+  getCommunityPapers: (communityId, level = 0) =>
+    apiClient.get(`/knowledge-graph/communities/${communityId}/papers`, { params: { level } }),
+
+  // 节点中心性分析
+  getCentrality: (algorithm = 'degree') =>
+    apiClient.get(`/knowledge-graph/centrality`, { params: { algorithm } }),
+
+  // 路径查找
+  findPaths: (source, target, maxDepth = 4) =>
+    apiClient.get(`/knowledge-graph/paths`, { params: { source, target, max_depth: maxDepth } }),
+
+  // 邻居分析
+  getNeighbors: (entityId, depth = 1) =>
+    apiClient.get(`/knowledge-graph/entity/${entityId}/neighbors`, { params: { depth } }),
 }
 
 export default {

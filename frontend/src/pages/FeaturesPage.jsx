@@ -122,7 +122,7 @@ const FeaturesPage = () => {
         <Card
           key={category.key}
           className="!rounded-xl !overflow-hidden"
-          bodyStyle={{ padding: 0 }}
+          styles={{ body: { padding: 0 }}}
         >
           {/* 分类头部 */}
           <div
@@ -142,7 +142,7 @@ const FeaturesPage = () => {
                     hoverable
                     className="h-full transition-all hover:shadow-lg hover:-translate-y-1"
                     onClick={() => handleFeatureClick(category.key, feature.key)}
-                    bodyStyle={{ padding: '16px' }}
+                    styles={{ body: { padding: '16px' }}}
                   >
                     <div className="flex items-start gap-3">
                       <div

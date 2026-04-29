@@ -16,6 +16,7 @@ import {
   BulbOutlined,
   LeftOutlined,
   RightOutlined,
+  NodeIndexOutlined,
 } from '@ant-design/icons'
 import { usePaperStore } from '../../store/paperStore'
 
@@ -47,7 +48,7 @@ const MAIN_MENU = [
     key: 'literature',
     path: '/literature',
     icon: <BookOutlined />,
-    label: '文献管理',
+    label: '文献搜索',
   },
   {
     key: 'ai',
@@ -62,15 +63,21 @@ const MAIN_MENU = [
     label: '学术资讯',
   },
   {
+    key: 'knowledge-graph',
+    path: '/knowledge-graph',
+    icon: <NodeIndexOutlined />,
+    label: '知识图谱',
+  },
+]
+
+// 快捷操作菜单 - 放在底部
+const QUICK_MENU = [
+  {
     key: 'features',
     path: '/features',
     icon: <ThunderboltOutlined />,
     label: '功能导航',
   },
-]
-
-// 快捷操作菜单
-const QUICK_MENU = [
   {
     key: 'settings',
     path: '/settings',
@@ -257,6 +264,7 @@ const MainLayout = () => {
               {location.pathname === '/reports' && '学术资讯'}
               {location.pathname === '/features' && '功能导航'}
               {location.pathname === '/settings' && '设置中心'}
+              {location.pathname === '/knowledge-graph' && '知识图谱'}
             </Text>
           </Space>
 

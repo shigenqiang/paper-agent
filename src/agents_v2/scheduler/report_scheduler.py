@@ -39,7 +39,7 @@ class ScheduledTask:
     schedule_type: ScheduleType
     schedule: str    # cron表达式或间隔秒数
     keywords: List[str]
-    subscription_id: Optional[str]
+    subscription_id: Optional[str] = None
     enabled: bool = True
     last_run: Optional[datetime] = None
     next_run: Optional[datetime] = None

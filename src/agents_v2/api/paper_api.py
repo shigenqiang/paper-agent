@@ -42,7 +42,7 @@ SETTINGS_STORAGE: Dict[str, Any] = {
         "computer vision",
         "artificial intelligence"
     ],
-    "sources": ["arxiv", "pubmed", "semantic_scholar", "openalex"],  # 默认全部启用
+    "sources": ["arxiv", "pubmed", "semantic_scholar", "openalex", "crossref", "base"],  # 默认全部启用
 }
 
 # Chat session context storage: {(user_id, session_id): [messages]}
@@ -331,7 +331,18 @@ async def generate_content(request: web.Request) -> web.Response:
         data = await request.json()
         prompt = data.get("prompt", "")
 
-        # Use DraftWriter to generate content
+        # 获取章节信息
+        sections = paper.get("sections", []) or paper.get("outline", [])
+        section_title = section_id
+        section_content = ""
+
+        for s in sections:
+            if s.get("id") == section_id:
+                section_title = s.get("title", section_id)
+                section_content = s.get("content", "")
+                break
+
+        # 使用 DraftWriterAgent 生成内容
         from src.agents_v2.paper_agents import DraftWriterAgent
         from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
 
@@ -344,33 +355,153 @@ async def generate_content(request: web.Request) -> web.Response:
         )
 
         agent = DraftWriterAgent(llm_config)
-        result = await agent.execute({
-            "title": paper.get("title", ""),
-            "section": section_id,
-            "outline": paper.get("outline", []),
-            "prompt": prompt,
-        })
+
+        # 构建 outline 格式（按照 Agent 期望的格式）
+        chapters = []
+        for s in sections:
+            chapters.append({
+                "name": s.get("title", "未命名章节"),
+                "main_points": [],
+                "citations_needed": [],
+                "depends_on": None
+            })
+
+        outline = {"chapters": chapters}
+
+        # 调用 Agent（使用 context 传递参数）
+        result = await agent.execute(
+            input_data={"outline": outline, "section": section_title},
+            context={
+                "outline": outline,
+                "thesis_statement": paper.get("title", ""),
+                "literature_result": {}
+            }
+        )
 
         if result.success:
-            content = result.result.get("content", "") if isinstance(result.result, dict) else str(result.result)
+            # 从 result 中提取内容
+            content = ""
+            if isinstance(result.result, dict):
+                if "full_draft" in result.result:
+                    content = result.result.get("full_draft", "")
+                elif "content" in result.result:
+                    content = result.result.get("content", "")
+                else:
+                    content = str(result.result)
+            else:
+                content = str(result.result)
 
             return web.json_response({
                 "success": True,
                 "data": {"content": content, "section_id": section_id},
             })
         else:
+            logger.error(f"Agent execution failed: {result.error}")
             return web.json_response({
                 "success": False,
-                "error": result.error
+                "error": result.error or "Agent执行失败"
             }, status=500)
 
     except Exception as e:
         logger.error(f"Generate content error: {e}")
-        # Return placeholder content on error
         return web.json_response({
-            "success": True,
-            "data": {"content": f"[Auto-generated content for section {section_id}]", "section_id": section_id},
-        })
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+async def format_content(request: web.Request) -> web.Response:
+    """POST /papers/{id}/sections/{sectionId}/format - 修正格式（公式和格式）"""
+    try:
+        paper_id = request.match_info["id"]
+        section_id = request.match_info["sectionId"]
+
+        paper = get_paper_or_404(paper_id)
+        if not paper:
+            return web.json_response({
+                "success": False,
+                "error": "Paper not found"
+            }, status=404)
+
+        # 获取章节信息
+        sections = paper.get("sections", []) or paper.get("outline", [])
+        section_title = section_id
+        section_content = ""
+
+        for s in sections:
+            if s.get("id") == section_id:
+                section_title = s.get("title", section_id)
+                section_content = s.get("content", "")
+                break
+
+        if not section_content:
+            return web.json_response({
+                "success": False,
+                "error": "章节内容为空"
+            }, status=400)
+
+        # 使用 LLM 直接修正格式
+        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+
+        llm_config = LLMConfig(
+            provider="openai",
+            model_name=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+            temperature=0.3,
+            api_key=DEFAULT_API_KEY,
+            base_url=DEFAULT_BASE_URL
+        )
+
+        # 构建修正 prompt
+        prompt = f"""请修正以下学术论文内容中的公式和格式问题：
+
+## 章节标题
+{section_title}
+
+## 当前内容
+{section_content}
+
+## 修正要求
+1. 修正公式格式，确保 LaTeX 公式语法正确
+2. 统一格式风格（标题层级、段落间距等）
+3. 保持学术写作规范
+4. 只返回修正后的内容，不要解释
+
+请直接返回修正后的 Markdown 格式内容："""
+
+        try:
+            from src.agents_v2.base_agent import get_llm_client
+            client = get_llm_client(llm_config)
+            response = client.chat.completions.create(
+                model=llm_config.model_name or "MiniMax-M2.7",
+                messages=[
+                    {"role": "system", "content": "你是一个专业的学术论文格式修正助手。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=llm_config.temperature or 0.3,
+                max_tokens=4000
+            )
+            corrected_content = response.choices[0].message.content.strip()
+
+            return web.json_response({
+                "success": True,
+                "data": {
+                    "content": corrected_content,
+                    "section_id": section_id
+                },
+            })
+        except Exception as llm_error:
+            logger.error(f"LLM format correction failed: {llm_error}")
+            return web.json_response({
+                "success": False,
+                "error": f"格式修正失败: {str(llm_error)}"
+            }, status=500)
+
+    except Exception as e:
+        logger.error(f"Format content error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
 
 
 # Literature endpoints
@@ -969,6 +1100,114 @@ async def update_settings(request: web.Request) -> web.Response:
         }, status=500)
 
 
+# Paper file upload endpoint
+async def upload_paper_file(request: web.Request) -> web.Response:
+    """POST /api/papers/upload - Upload and parse an existing paper file"""
+    try:
+        reader = await request.multipart()
+        field = await reader.next()
+
+        if not field:
+            return web.json_response({
+                "success": False,
+                "error": "No file field found"
+            }, status=400)
+
+        filename = field.filename
+        file_content = await field.read()
+        file_ext = os.path.splitext(filename)[1].lower() if filename else ""
+
+        # Parse content based on file type
+        content = ""
+        title = os.path.splitext(filename)[0] if filename else "未命名论文"
+        outline = []
+
+        if file_ext == '.md':
+            # Markdown: try to extract title from first heading and outline from subsequent headings
+            try:
+                text = file_content.decode('utf-8', errors='ignore')
+                content = text
+                # Extract title from first # heading
+                import re
+                match = re.search(r'^#\s+(.+)$', text, re.MULTILINE)
+                if match:
+                    title = match.group(1).strip()
+
+                # Extract outline from ## and ### headings
+                heading_pattern = re.compile(r'^(#{2,3})\s+(.+)$', re.MULTILINE)
+                for match in heading_pattern.finditer(text):
+                    level = len(match.group(1))
+                    heading_text = match.group(2).strip()
+                    section_id = str(uuid.uuid4())[:8]
+                    outline.append({
+                        "id": section_id,
+                        "title": heading_text,
+                        "level": level,
+                        "content": ""
+                    })
+            except Exception:
+                content = file_content.decode('utf-8', errors='ignore')
+
+        elif file_ext == '.txt':
+            content = file_content.decode('utf-8', errors='ignore')
+            # First line as title
+            lines = content.split('\n')
+            if lines:
+                title = lines[0].strip()[:100]
+                content = '\n'.join(lines[1:])
+
+        elif file_ext in ['.pdf', '.docx']:
+            # For binary formats, store as base64 or just indicate file exists
+            # In production, use proper parsers like PyPDF2 or python-docx
+            content = f"[文件已上传: {filename}]"
+            try:
+                # Try to extract text (basic approach)
+                if file_ext == '.pdf':
+                    # Basic PDF text extraction - in production use PyPDF2
+                    content = f"[PDF文件已上传: {filename}, 大小: {len(file_content)} bytes]\n\n建议使用Markdown格式上传以获得更好的编辑体验。"
+            except Exception:
+                pass
+
+        else:
+            # Default: try UTF-8 decode
+            try:
+                content = file_content.decode('utf-8', errors='ignore')
+            except Exception:
+                content = f"[文件已上传: {filename}]"
+
+        # Create paper with parsed content
+        paper_id = str(uuid.uuid4())
+        paper = {
+            "id": paper_id,
+            "title": title,
+            "topic": "",
+            "outline": outline,
+            "sections": outline,
+            "content": content,
+            "status": "draft",
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat(),
+            "literature_ids": [],
+            "versions": [],
+            "file_name": filename,
+            "file_size": len(file_content),
+        }
+
+        PAPERS_STORAGE[paper_id] = paper
+
+        return web.json_response({
+            "success": True,
+            "data": paper,
+        }, status=201)
+
+    except Exception as e:
+        logger.error(f"Upload paper error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 def setup_paper_routes(app: web.Application):
     """Setup all paper-related routes"""
     # Paper CRUD
@@ -978,12 +1217,18 @@ def setup_paper_routes(app: web.Application):
     app.router.add_put('/api/papers/{id}', update_paper)
     app.router.add_delete('/api/papers/{id}', delete_paper)
 
+    # Paper file upload
+    app.router.add_post('/api/papers/upload', upload_paper_file)
+
     # Paper outline
     app.router.add_get('/api/papers/{id}/outline', get_outline)
     app.router.add_post('/api/papers/{id}/outline/generate', generate_outline)
 
     # Content generation
     app.router.add_post('/api/papers/{id}/sections/{sectionId}/generate', generate_content)
+
+    # Format correction (修正格式)
+    app.router.add_post('/api/papers/{id}/sections/{sectionId}/format', format_content)
 
     # Literature
     app.router.add_post('/api/literature/search', search_literature)

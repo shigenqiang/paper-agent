@@ -345,7 +345,7 @@ const AIAssistantPage = () => {
         extra={
           <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)} />
         }
-        bodyStyle={{ padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}
+        styles={{ body: { padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}
       >
         {papers.length === 0 ? (
           <div className="p-4 text-center">
@@ -371,7 +371,7 @@ const AIAssistantPage = () => {
       {/* 中间主对话区 */}
       <Card
         className="flex-1 !rounded-lg"
-        bodyStyle={{ display: 'flex', flexDirection: 'column', padding: 0, height: 'calc(100vh - 120px)' }}
+        styles={{ body: { display: 'flex', flexDirection: 'column', padding: 0, height: 'calc(100vh - 120px)' }}
       >
         {/* 模式切换 */}
         <div className="px-4 py-3 border-b bg-gradient-to-r from-blue-50 to-purple-50 flex-shrink-0">
@@ -485,7 +485,7 @@ const AIAssistantPage = () => {
             <span className="text-sm">当前论文</span>
           </Space>
         }
-        bodyStyle={{ padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}
+        styles={{ body: { padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}
       >
         {selectedPaper ? (
           <div className="p-3">

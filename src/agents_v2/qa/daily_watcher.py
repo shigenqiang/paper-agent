@@ -195,20 +195,21 @@ class DailyWatcher(BaseQAAgent):
                 "keywords": keywords,
                 "papers_found": 0,
                 "summary": "未找到相关论文",
+                "content": "# 每日学术资讯\n\n未找到相关论文",
                 "new_methods": [],
                 "trends": [],
                 "top_papers": [],
                 "references": []
             }
 
-        # 构建prompt
+        # 构建prompt - 输出Markdown格式
         top_papers = papers[:20]  # 最多分析20篇
         papers_info = "\n".join([
-            f"- {p['title']} ({p.get('year', '')}, {p.get('source', '')})"
+            f"- **{p.get('title', 'Unknown')}** ({p.get('year', '')}, {p.get('source', '')})"
             for p in top_papers
         ])
 
-        prompt = f"""请分析以下最近{days}天内的统计学论文列表，生成每日摘要报告。
+        prompt = f"""请分析以下最近{days}天内的学术论文列表，生成每日摘要报告。
 
 ## 搜索关键词
 {', '.join(keywords)}
@@ -218,44 +219,52 @@ class DailyWatcher(BaseQAAgent):
 
 ## 报告要求
 
-请生成JSON格式的每日报告：
+请生成Markdown格式的每日报告，标题格式为：
+`# 每日学术资讯报告 - YYYY-MM-DD 主题名称`
 
-{{
-    "date": "报告日期 (YYYY-MM-DD)",
-    "topic": "主题概括",
-    "summary": "总体摘要 (300字以内)",
-    "new_methods": ["新方法1", "新方法2"],
-    "trends": ["趋势1", "趋势2"],
-    "top_papers": [
-        {{
-            "title": "论文标题",
-            "reason": "入选原因"
-        }}
-    ],
-    "references": ["引用格式1", "引用格式2"]
-}}
+报告包含以下部分：
+1. **## 最新研究进展** - 简要概述最重要的发现
+2. **## 新方法新技术** - 列出出现的新方法
+3. **## 研究趋势** - 分析当前研究趋势
+4. **## 重点论文推荐** - 列出3-5篇最重要的论文及其亮点
+
+注意：
+- 报告使用中文撰写
+- Markdown格式要规范
+- 内容要简洁专业
+- 不要包含参考文献链接（在下方单独列出）
 """
         response = await self._llm_call(prompt, self.system_prompt)
 
-        # 解析响应
-        try:
-            report = json.loads(response)
-            report["papers_found"] = len(papers)
-            report["keywords"] = keywords
-            return report
-        except json.JSONError:
-            # 降级处理
-            return {
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "topic": ", ".join(keywords),
-                "keywords": keywords,
-                "papers_found": len(papers),
-                "summary": response[:500] if response else "报告生成失败",
-                "new_methods": [],
-                "trends": [],
-                "top_papers": [{"title": p["title"], "reason": ""} for p in papers[:5]],
-                "references": []
-            }
+        # 构建参考文献
+        references = []
+        for i, p in enumerate(top_papers[:10], 1):
+            title = p.get('title', 'Unknown')
+            url = p.get('url', '')
+            source = p.get('source', '')
+            if url:
+                references.append(f"[{i}]: {url}")
+            else:
+                references.append(f"[{i}]: {source}")
+
+        # 返回结构化报告
+        # 从响应中提取标题（第一行）
+        title_lines = response.strip().split('\n')
+        title = title_lines[0].lstrip('# ').strip() if title_lines else f"每日学术资讯报告 - {datetime.now().strftime('%Y-%m-%d')}"
+
+        return {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "title": title,
+            "topic": title,
+            "keywords": keywords,
+            "papers_found": len(papers),
+            "summary": response,
+            "content": f"{response}\n\n---\n\n## 参考文献\n\n" + "\n".join(references) if references else response,
+            "new_methods": [],
+            "trends": [],
+            "top_papers": [{"title": p.get("title", ""), "reason": ""} for p in papers[:5]],
+            "references": references
+        }
 
     def run_sync(
         self,

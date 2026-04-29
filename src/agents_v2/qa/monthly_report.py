@@ -208,6 +208,7 @@ class MonthlyReportGenerator(BaseQAAgent):
                 "topic": ", ".join(keywords),
                 "papers_found": 0,
                 "summary": "本月未找到相关论文",
+                "content": "# 每月学术资讯\n\n本月未找到相关论文",
                 "method_distribution": {},
                 "weekly_breakdown": {},
                 "top_papers": [],
@@ -252,18 +253,6 @@ class MonthlyReportGenerator(BaseQAAgent):
             )[:10]
         ]
 
-        # 构建论文信息摘要
-        papers_info = []
-        for p in papers[:100]:  # 最多处理100篇
-            papers_info.append({
-                "title": p.get("title", ""),
-                "authors": p.get("authors", [])[:3],
-                "year": p.get("year", ""),
-                "source": p.get("source", ""),
-                "methodology": p.get("methodology", ""),
-                "abstract": p.get("abstract", "")[:200]
-            })
-
         prompt = f"""请分析以下本月论文列表，生成深度月度分析报告。
 
 ## 月份
@@ -276,65 +265,54 @@ class MonthlyReportGenerator(BaseQAAgent):
 - 总数: {len(papers)}篇
 - 每周分布: {json.dumps(weekly_breakdown, ensure_ascii=False)}
 
-## 方法分布（Top 15）
-{json.dumps(method_distribution, ensure_ascii=False, indent=2)}
-
-## 高影响力作者（按论文数量排序）
-{influential_authors}
-
-## 论文列表（前{len(papers_info)}篇）
-{json.dumps(papers_info, ensure_ascii=False, indent=2)}
-
 ## 报告要求
-请生成JSON格式的月度深度报告：
 
-{{
-    "month": "月份 (YYYY-MM)",
-    "topic": "主题概括",
-    "papers_found": 论文总数,
-    "summary": "本月总体摘要 (500字以内)",
-    "method_distribution": {{"方法名": 数量}},
-    "weekly_breakdown": {{"周起始日": 论文数}},
-    "top_papers": [
-        {{
-            "title": "论文标题",
-            "authors": ["作者列表"],
-            "source": "来源",
-            "key_contribution": "主要贡献",
-            "citations": 引用数
-        }}
-    ],
-    "influential_authors": ["作者1", "作者2", ...],
-    "key_themes": ["主题1", "主题2", "主题3"],
-    "research_gaps": ["研究空白1", "研究空白2", "研究空白3"],
-    "references": ["引用格式1", "引用格式2"]
-}}
+请生成Markdown格式的月度深度报告，包含以下部分：
+
+1. **# 每月学术资讯** - 标题，包含年月
+2. **## 本月概览** - 论文总数、关键词、本月特点
+3. **## 主要研究进展** - 本月最重要的研究发现
+4. **## 方法分类统计** - 按研究方法分类统计（列出前10）
+5. **## 重点论文推荐** - 5-8篇重要论文及其亮点
+6. **## 高影响力作者** - 本月最活跃的研究者
+7. **## 研究趋势与空白** - 分析研究趋势和潜在研究空白
+
+注意：
+- 使用中文撰写
+- Markdown格式规范
+- 内容专业深度
+- 不包含参考文献链接（单独列出）
 """
         response = await self._llm_call(prompt, self.system_prompt)
 
-        try:
-            report = json.loads(response)
-            report["papers_found"] = len(papers)
-            report["method_distribution"] = method_distribution
-            report["weekly_breakdown"] = weekly_breakdown
-            return report
-        except json.JSONDecodeError:
-            return {
-                "month": f"{year}-{month:02d}",
-                "topic": ", ".join(keywords),
-                "papers_found": len(papers),
-                "summary": response[:500] if response else "月报生成失败",
-                "method_distribution": method_distribution,
-                "weekly_breakdown": weekly_breakdown,
-                "top_papers": [
-                    {"title": p.get("title", ""), "key_contribution": ""}
-                    for p in papers[:10]
-                ],
-                "influential_authors": influential_authors,
-                "key_themes": [],
-                "research_gaps": [],
-                "references": []
-            }
+        # 构建参考文献
+        references = []
+        for i, p in enumerate(papers[:10], 1):
+            title = p.get('title', 'Unknown')
+            url = p.get('url', '')
+            source = p.get('source', '')
+            if url:
+                references.append(f"[{i}]: {url}")
+            else:
+                references.append(f"[{i}]: {source}")
+
+        return {
+            "month": f"{year}-{month:02d}",
+            "topic": ", ".join(keywords),
+            "papers_found": len(papers),
+            "summary": response,
+            "content": f"{response}\n\n---\n\n## 参考文献\n\n" + "\n".join(references) if references else response,
+            "method_distribution": method_distribution,
+            "weekly_breakdown": weekly_breakdown,
+            "top_papers": [
+                {"title": p.get("title", ""), "key_contribution": ""}
+                for p in papers[:10]
+            ],
+            "influential_authors": influential_authors,
+            "key_themes": [],
+            "research_gaps": [],
+            "references": references
+        }
 
     def run_sync(
         self,

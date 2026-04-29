@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { Card, Input, Table, Tag, Button, Space, Typography, Modal, Form, Select, message, Tooltip, Row, Col, Empty, Upload, Spin, Tabs, Switch, Alert, Drawer, Popover, Badge } from 'antd'
-import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined, GlobalOutlined, ExperimentOutlined, RobotOutlined, DatabaseOutlined, SettingOutlined, InfoCircleOutlined, NodeIndexOutlined, ReloadOutlined, ZoomInOutlined, ZoomOutOutlined, AimOutlined } from '@ant-design/icons'
+import { Card, Input, Table, Tag, Button, Space, Typography, Modal, Form, Select, message, Tooltip, Row, Col, Empty, Upload, Spin, Tabs, Switch, Alert, Drawer, Popover, Badge, Divider } from 'antd'
+import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined, GlobalOutlined, ExperimentOutlined, RobotOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { usePaperStore } from '../store/paperStore'
 import { literatureAPI, settingsAPI, knowledgeGraphAPI } from '../services/api'
 import { useLocation } from 'react-router-dom'
@@ -43,12 +43,20 @@ const LiteraturePage = () => {
   const [activeTab, setActiveTab] = useState('library')
   const [isSourceSettingsOpen, setIsSourceSettingsOpen] = useState(false)
   const [sources, setSources] = useState(['arxiv', 'pubmed', 'semantic_scholar', 'openalex'])
+  const [expandedAuthors, setExpandedAuthors] = useState([])
 
   // 知识图谱状态
   const [graphVisible, setGraphVisible] = useState(false)
   const [graphLoading, setGraphLoading] = useState(false)
   const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
   const [selectedNode, setSelectedNode] = useState(null)
+  const [communityMode, setCommunityMode] = useState(false)
+  const [communityData, setCommunityData] = useState({ communities: [], stats: {} })
+  const [communityLoading, setCommunityLoading] = useState(false)
+  const [centralityData, setCentralityData] = useState({ top_hub_nodes: [], centrality: [] })
+  const [pathData, setPathData] = useState({ paths: [], path_count: 0 })
+  const [neighborData, setNeighborData] = useState({ neighbors: [], total_neighbors: 0 })
+  const [analysisMode, setAnalysisMode] = useState('none') // none, centrality, paths, neighbors
   const graphRef = useRef(null)
   const graphContainerRef = useRef(null)
 
@@ -313,6 +321,89 @@ const LiteraturePage = () => {
     }
   }
 
+  // 社区检测
+  const detectCommunities = async (algorithm = 'leiden') => {
+    setCommunityLoading(true)
+    try {
+      const response = await fetch(`/api/knowledge-graph/communities?algorithm=${algorithm}`)
+      const data = await response.json()
+      if (data.success && data.data) {
+        setCommunityData(data.data)
+        message.success(`检测到 ${data.data.stats.total_communities} 个社区`)
+      }
+    } catch (e) {
+      console.error('Community detection error:', e)
+      message.error('社区检测失败')
+    } finally {
+      setCommunityLoading(false)
+    }
+  }
+
+  // 节点中心性分析
+  const analyzeCentrality = async (algorithm = 'degree') => {
+    setCommunityLoading(true)
+    setAnalysisMode('centrality')
+    try {
+      const response = await fetch(`/api/knowledge-graph/centrality?algorithm=${algorithm}`)
+      const data = await response.json()
+      if (data.success && data.data) {
+        setCentralityData(data.data)
+        message.success(`分析完成，中心性节点: ${data.data.top_hub_nodes?.join(', ')}`)
+      }
+    } catch (e) {
+      console.error('Centrality analysis error:', e)
+      message.error('中心性分析失败')
+    } finally {
+      setCommunityLoading(false)
+    }
+  }
+
+  // 路径查找
+  const findPaths = async (source, target) => {
+    if (!source || !target) {
+      message.warning('请选择起止节点')
+      return
+    }
+    setCommunityLoading(true)
+    setAnalysisMode('paths')
+    try {
+      const response = await fetch(`/api/knowledge-graph/paths?source=${source}&target=${target}&max_depth=4`)
+      const data = await response.json()
+      if (data.success && data.data) {
+        setPathData(data.data)
+        message.success(`找到 ${data.data.path_count} 条路径`)
+      }
+    } catch (e) {
+      console.error('Path finding error:', e)
+      message.error('路径查找失败')
+    } finally {
+      setCommunityLoading(false)
+    }
+  }
+
+  // 邻居分析
+  const analyzeNeighbors = async (nodeId, depth = 1) => {
+    if (!nodeId) {
+      message.warning('请先选择节点')
+      return
+    }
+    setCommunityLoading(true)
+    setAnalysisMode('neighbors')
+    try {
+      const response = await fetch(`/api/knowledge-graph/entity/${nodeId}/neighbors?depth=${depth}`)
+      const data = await response.json()
+      if (data.success && data.data) {
+        setNeighborData(data.data)
+        message.success(`找到 ${data.data.total_neighbors} 个邻居节点`)
+      }
+    } catch (e) {
+      console.error('Neighbor analysis error:', e)
+      message.error('邻居分析失败')
+    } finally {
+      setCommunityLoading(false)
+    }
+  }
+
   // 初始化G6图谱
   const initGraph = (data) => {
     if (!graphContainerRef.current || !data?.nodes?.length) return
@@ -326,34 +417,57 @@ const LiteraturePage = () => {
     const width = container.offsetWidth || 650
     const height = container.offsetHeight || 380
 
+    // 构建节点到社区的映射
+    const nodeToCommunity = {}
+    if (communityMode && communityData.communities) {
+      communityData.communities.forEach((comm, idx) => {
+        comm.members.forEach(memberId => {
+          nodeToCommunity[memberId] = idx
+        })
+      })
+    }
+
+    // 社区颜色
+    const communityColors = [
+      '#1890ff', '#722ed1', '#52c41a', '#fa8c16',
+      '#eb2f96', '#13c2c2', '#faad14', '#2f54ed',
+      '#a0d911', '#ff6b6b', '#4ecdc4', '#45b7d1'
+    ]
+
     // 转换数据为G6格式
     const g6Data = {
-      nodes: data.nodes.map(n => ({
-        id: n.id,
-        label: n.label,
-        type: n.type,
-        size: n.type === 'paper' ? 40 : n.type === 'method' ? 30 : 25,
-        color: n.type === 'paper' ? '#1890ff' :
-               n.type === 'method' ? '#722ed1' :
-               n.type === 'dataset' ? '#52c41a' :
-               n.type === 'task' ? '#fa8c16' :
-               n.type === 'metric' ? '#eb2f96' :
-               n.type === 'author' ? '#13c2c2' : '#d9d9d9',
-        style: {
-          fill: n.type === 'paper' ? '#e6f7ff' :
-                n.type === 'method' ? '#f9f0ff' :
-                n.type === 'dataset' ? '#d9f7be' :
-                n.type === 'task' ? '#fff7e6' :
-                n.type === 'metric' ? '#fff0f0' :
-                n.type === 'author' ? '#e6fff7' : '#f5f5f5',
-          stroke: n.type === 'paper' ? '#1890ff' :
-                  n.type === 'method' ? '#722ed1' :
-                  n.type === 'dataset' ? '#52c41a' :
-                  n.type === 'task' ? '#fa8c16' :
-                  n.type === 'metric' ? '#eb2f96' :
-                  n.type === 'author' ? '#13c2c2' : '#d9d9d9',
+      nodes: data.nodes.map(n => {
+        // 根据模式选择颜色
+        const isCommunityMode = communityMode && communityData.communities?.length > 0
+        const communityIdx = nodeToCommunity[n.id]
+        const baseType = n.type
+
+        let color, fill, stroke
+        if (isCommunityMode && communityIdx !== undefined) {
+          color = communityColors[communityIdx % communityColors.length]
+          fill = color + '20'
+          stroke = color
+        } else {
+          color = baseType === 'paper' ? '#1890ff' :
+                  baseType === 'method' ? '#722ed1' :
+                  baseType === 'dataset' ? '#52c41a' :
+                  baseType === 'task' ? '#fa8c16' :
+                  baseType === 'metric' ? '#eb2f96' :
+                  baseType === 'author' ? '#13c2c2' : '#d9d9d9'
+          fill = color + '33'
+          stroke = color
         }
-      })),
+
+        return {
+          id: n.id,
+          label: n.label,
+          type: baseType,
+          community: communityIdx,
+          size: baseType === 'paper' ? 40 : baseType === 'method' ? 30 : 25,
+          color,
+          style: { fill, stroke }
+        }
+      }),
       edges: data.edges?.map((e, i) => ({
         id: `edge-${i}`,
         source: e.source,
@@ -504,7 +618,40 @@ const LiteraturePage = () => {
         </div>
       ),
     },
-    { title: '作者', dataIndex: 'authors', key: 'authors', width: 180, ellipsis: true },
+    {
+      title: '作者',
+      dataIndex: 'authors',
+      key: 'authors',
+      width: 220,
+      ellipsis: true,
+      render: (authors, record) => {
+        const authorList = authors ? authors.split(',').map(a => a.trim()) : []
+        const isLong = authorList.length > 3
+        const displayAuthors = expandedAuthors.includes(record.id)
+          ? authorList
+          : authorList.slice(0, 3)
+        return (
+          <div>
+            <span>{displayAuthors.join(', ')}{isLong && !expandedAuthors.includes(record.id) ? '...' : ''}</span>
+            {isLong && (
+              <a
+                className="ml-1 text-blue-500"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setExpandedAuthors(prev =>
+                    prev.includes(record.id)
+                      ? prev.filter(id => id !== record.id)
+                      : [...prev, record.id]
+                  )
+                }}
+              >
+                {expandedAuthors.includes(record.id) ? '收起' : '展开'}
+              </a>
+            )}
+          </div>
+        )
+      }
+    },
     { title: '年份', dataIndex: 'year', key: 'year', width: 80 },
     {
       title: '来源',
@@ -529,211 +676,97 @@ const LiteraturePage = () => {
 
   return (
     <div className="space-y-4">
-      {/* 搜索栏 */}
-      <Card size="small" className="!rounded-lg">
-        <div className="flex justify-between items-center">
-          <Space>
-            <Input.Search
-              placeholder="搜索学术文献 (arXiv, PubMed, Semantic Scholar...)"
-              prefix={<SearchOutlined />}
-              className="w-96"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onSearch={(value) => handleSearch(value)}
-              enterButton="学术搜索"
-              loading={searchLoading}
-            />
-          </Space>
-          <Space>
-            <Button
-              icon={<NodeIndexOutlined />}
-              onClick={() => setGraphVisible(true)}
-              className={literature.length > 0 ? '!text-purple-500' : ''}
-            >
-              知识图谱
-              {literature.length > 0 && <Badge count={literature.length} size="small" className="ml-1" />}
-            </Button>
-            <Button type="primary" icon={<UploadOutlined />} onClick={() => setIsUploadModalOpen(true)}>
-              上传文件
-            </Button>
-            <Button icon={<PlusOutlined />} onClick={() => setIsAddModalOpen(true)}>
-              手动添加
-            </Button>
-            <Button icon={<SettingOutlined />} onClick={() => setIsSourceSettingsOpen(true)}>
-              数据来源
-            </Button>
-          </Space>
+      {/* 搜索区域 */}
+      <Card className="!rounded-lg">
+        <div className="text-center py-8">
+          <Title level={2} className="!mb-6">学术文献搜索</Title>
+          <div className="max-w-2xl mx-auto">
+            <Space direction="vertical" size="middle" className="w-full">
+              <Input.Search
+                placeholder="输入关键词搜索学术文献，如: machine learning, deep learning..."
+                prefix={<SearchOutlined />}
+                size="large"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onSearch={(value) => handleSearch(value)}
+                enterButton={
+                  <Button type="primary" size="large" loading={searchLoading}>
+                    搜索
+                  </Button>
+                }
+                loading={searchLoading}
+                className="!text-lg"
+              />
+              <div className="flex justify-center gap-2 flex-wrap">
+                {SOURCE_CONFIG_LIST.map(source => (
+                  <Tag
+                    key={source.key}
+                    color={sources.includes(source.key) ? source.color : 'default'}
+                    className="!px-3 !py-1 !text-sm cursor-pointer"
+                    onClick={() => toggleSource(source.key)}
+                  >
+                    {source.label}
+                  </Tag>
+                ))}
+              </div>
+            </Space>
+          </div>
         </div>
       </Card>
 
-      {/* 统计卡片 */}
-      <Row gutter={16}>
-        <Col span={6}>
-          <Card className="text-center !rounded-lg">
-            <Title level={3} className="!mb-0">{totalCount}</Title>
-            <Text type="secondary">总文献数</Text>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card className="text-center !rounded-lg">
-            <Title level={3} className="!mb-0 !text-green-500">{citedCount}</Title>
-            <Text type="secondary">已引用</Text>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card className="text-center !rounded-lg">
-            <Title level={3} className="!mb-0 !text-orange-500">{pendingCount}</Title>
-            <Text type="secondary">待引用</Text>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card className="text-center !rounded-lg">
-            <Title level={3} className="!mb-0 !text-gray-400">{totalCount - citedCount - pendingCount}</Title>
-            <Text type="secondary">未引用</Text>
-          </Card>
-        </Col>
-      </Row>
+      {/* 搜索结果区域 */}
+      {searchLoading ? (
+        <Card className="!rounded-lg">
+          <div className="text-center py-16">
+            <Spin size="large" tip="正在搜索 arXiv, PubMed, Semantic Scholar, OpenAlex..." />
+          </div>
+        </Card>
+      ) : searchResults.length === 0 ? (
+        <Card className="!rounded-lg">
+          <Empty
+            description={
+              <Space direction="vertical">
+                <Text>请输入关键词进行学术搜索</Text>
+                <Text type="secondary" className="text-sm">支持搜索 arXiv、PubMed、Semantic Scholar、OpenAlex 等多个学术数据库</Text>
+              </Space>
+            }
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        </Card>
+      ) : (
+        <Card className="!rounded-lg">
+          {/* 结果统计 */}
+          <div className="flex justify-between items-center mb-4">
+            <Text type="secondary">
+              找到 <Text strong>{searchResults.length}</Text> 篇相关文献
+              {hasMore && `+更多`}
+            </Text>
+            {selectedRowKeys.length > 0 && (
+              <Button type="primary" icon={<PlusCircleOutlined />} onClick={handleBatchAddSelected}>
+                添加到文献库 ({selectedRowKeys.length})
+              </Button>
+            )}
+          </div>
 
-      {/* 选项卡：搜索结果 / 我的文献库 */}
-      <Card className="!rounded-lg">
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={[
-            {
-              key: 'search',
-              label: (
-                <span>
-                  <SearchOutlined /> 搜索结果
-                  {searchResults.length > 0 && <Tag color="blue" className="ml-2">{searchResults.length}</Tag>}
-                </span>
-              ),
-              children: searchLoading ? (
-                <div className="text-center py-12"><Spin size="large" tip="正在搜索 arXiv, PubMed..." /></div>
-              ) : searchResults.length === 0 ? (
-                <Empty description="请输入关键词进行学术搜索" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                  <Text type="secondary">支持搜索 arXiv、PubMed 等多个学术数据库</Text>
-                </Empty>
-              ) : (
-                <div>
-                  {/* 批量操作栏 */}
-                  {selectedRowKeys.length > 0 && (
-                    <div className="flex justify-between items-center mb-3 p-2 bg-blue-50 rounded-lg">
-                      <Text>已选择 <strong className="text-blue-600">{selectedRowKeys.length}</strong> 篇</Text>
-                      <Button type="primary" icon={<PlusCircleOutlined />} onClick={handleBatchAddSelected}>
-                        批量添加到文献库
-                      </Button>
-                    </div>
-                  )}
-                  {/* 搜索结果表格 - 带滚动加载 */}
-                  <div
-                    className="max-h-[600px] overflow-auto"
-                    onScroll={(e) => {
-                      const { scrollTop, scrollHeight, clientHeight } = e.target
-                      if (scrollHeight - scrollTop - clientHeight < 100 && hasMore && !searchLoadingMore) {
-                        handleLoadMore()
-                      }
-                    }}
-                  >
-                    <Table
-                      dataSource={searchResults}
-                      columns={searchResultColumns}
-                      rowKey="id"
-                      rowSelection={rowSelection}
-                      pagination={false}
-                      size="middle"
-                      expandable={{
-                        rowExpandable: (record) => !!record.abstract,
-                        expandedRowRender: (record) => (
-                          <div className="py-2 px-4">
-                            <Text type="secondary" className="text-sm">{record.abstract}</Text>
-                          </div>
-                        ),
-                      }}
-                    />
-                    {/* 加载更多提示 */}
-                    {hasMore && (
-                      <div className="text-center py-4">
-                        {searchLoadingMore ? (
-                          <Spin size="small" tip="加载更多..." />
-                        ) : (
-                          <Text type="secondary" className="text-sm">滚动加载更多</Text>
-                        )}
-                      </div>
-                    )}
-                  </div>
+          {/* 搜索结果表格 */}
+          <Table
+            dataSource={searchResults}
+            columns={searchResultColumns}
+            rowKey="id"
+            rowSelection={rowSelection}
+            pagination={{ pageSize: 10 }}
+            size="middle"
+            expandable={{
+              rowExpandable: (record) => !!record.abstract,
+              expandedRowRender: (record) => (
+                <div className="py-2">
+                  <Text type="secondary" className="text-sm">{record.abstract}</Text>
                 </div>
               ),
-            },
-            {
-              key: 'library',
-              label: (
-                <span>
-                  <FileTextOutlined /> 我的文献库
-                  {literature.length > 0 && <Tag color="green" className="ml-2">{literature.length}</Tag>}
-                </span>
-              ),
-              children: (
-                <>
-                  <div className="mb-3">
-                    <Input
-                      placeholder="在文献库中筛选..."
-                      prefix={<SearchOutlined />}
-                      className="w-64"
-                      value={searchText}
-                      onChange={(e) => setSearchText(e.target.value)}
-                    />
-                  </div>
-                  {filteredLiterature.length === 0 ? (
-                    <Empty description="暂无文献，请搜索添加或上传文件" />
-                  ) : (
-                    <Table
-                      dataSource={filteredLiterature}
-                      columns={libraryColumns}
-                      rowKey="id"
-                      pagination={{ pageSize: 10 }}
-                      size="middle"
-                    />
-                  )}
-                </>
-              ),
-            },
-          ]}
-        />
-      </Card>
-
-      {/* 关键词论文索引统计 */}
-      <Card size="small" className="!rounded-lg">
-        <div className="flex justify-between items-center mb-3">
-          <Text strong>搜索统计</Text>
-        </div>
-        <Row gutter={16}>
-          <Col span={6}>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <Text type="secondary" className="text-xs">当前搜索</Text>
-              <Title level={4} className="!mb-0 mt-1">{searchQuery || '-'}</Title>
-            </div>
-          </Col>
-          <Col span={6}>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <Text type="secondary" className="text-xs">搜索结果</Text>
-              <Title level={4} className="!mb-0 mt-1">{searchResults.length}</Title>
-            </div>
-          </Col>
-          <Col span={6}>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <Text type="secondary" className="text-xs">文献库</Text>
-              <Title level={4} className="!mb-0 mt-1">{literature.length}</Title>
-            </div>
-          </Col>
-          <Col span={6}>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <Text type="secondary" className="text-xs">已引用</Text>
-              <Title level={4} className="!mb-0 mt-1">{citedCount}</Title>
-            </div>
-          </Col>
-        </Row>
-      </Card>
+            }}
+          />
+        </Card>
+      )}
 
       {/* 添加文献弹窗 */}
       <Modal
@@ -873,125 +906,6 @@ const LiteraturePage = () => {
         </div>
       </Modal>
 
-      {/* 知识图谱抽屉 */}
-      <Drawer
-        title={
-          <Space>
-            <NodeIndexOutlined className="text-purple-500" />
-            <span>文献知识图谱</span>
-            <Badge count={graphData.nodes?.length || 0} size="small" />
-          </Space>
-        }
-        placement="right"
-        width={720}
-        open={graphVisible}
-        onClose={() => setGraphVisible(false)}
-        extra={
-          <Space>
-            <Button
-              icon={<ReloadOutlined />}
-              size="small"
-              onClick={loadKnowledgeGraph}
-              loading={graphLoading}
-            >
-              刷新
-            </Button>
-          </Space>
-        }
-      >
-        {graphLoading ? (
-          <div className="flex items-center justify-center h-96">
-            <Spin tip="加载知识图谱..." />
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* 图谱统计 */}
-            {graphData.stats && (
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Card size="small" className="text-center !rounded-lg">
-                    <Statistic
-                      title={<Text type="secondary" className="text-xs">节点数</Text>}
-                      value={graphData.stats.totalEntities || 0}
-                      valueStyle={{ fontSize: '24px', color: '#722ed1' }}
-                    />
-                  </Card>
-                </Col>
-                <Col span={8}>
-                  <Card size="small" className="text-center !rounded-lg">
-                    <Statistic
-                      title={<Text type="secondary" className="text-xs">边数</Text>}
-                      value={graphData.stats.totalRelations || 0}
-                      valueStyle={{ fontSize: '24px', color: '#1890ff' }}
-                    />
-                  </Card>
-                </Col>
-                <Col span={8}>
-                  <Card size="small" className="text-center !rounded-lg">
-                    <Statistic
-                      title={<Text type="secondary" className="text-xs">文献数</Text>}
-                      value={graphData.nodes?.filter(n => n.type === 'paper').length || 0}
-                      valueStyle={{ fontSize: '24px', color: '#52c41a' }}
-                    />
-                  </Card>
-                </Col>
-              </Row>
-            )}
-
-            {/* 图谱容器 */}
-            <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
-              <div
-                ref={graphContainerRef}
-                className="w-full h-96 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg"
-                style={{ position: 'relative' }}
-              />
-            </Card>
-
-            {/* 节点详情 */}
-            {selectedNode && (
-              <Card
-                size="small"
-                className="!rounded-lg"
-                title={
-                  <Space>
-                    <AimOutlined className="text-blue-500" />
-                    <span>选中节点</span>
-                  </Space>
-                }
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Tag color={selectedNode.type === 'paper' ? 'blue' : selectedNode.type === 'keyword' ? 'purple' : 'green'}>
-                      {selectedNode.type}
-                    </Tag>
-                    <Text strong>{selectedNode.label}</Text>
-                  </div>
-                  {selectedNode.data && (
-                    <div className="text-sm text-gray-600">
-                      {selectedNode.data.authors && <div>作者: {selectedNode.data.authors}</div>}
-                      {selectedNode.data.year && <div>年份: {selectedNode.data.year}</div>}
-                      {selectedNode.data.journal && <div>期刊: {selectedNode.data.journal}</div>}
-                    </div>
-                  )}
-                </div>
-              </Card>
-            )}
-
-            {/* 图例 */}
-            <Card size="small" className="!rounded-lg">
-              <Space wrap>
-                <Text type="secondary" className="text-xs">图例:</Text>
-                <Tag color="blue">论文</Tag>
-                <Tag color="purple">方法</Tag>
-                <Tag color="green">数据集</Tag>
-                <Tag color="orange">任务</Tag>
-                <Tag color="red">指标</Tag>
-                <Tag color="cyan">作者</Tag>
-              </Space>
-            </Card>
-          </div>
-        )}
-      </Drawer>
     </div>
   )
 }

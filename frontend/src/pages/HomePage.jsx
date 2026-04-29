@@ -166,7 +166,7 @@ const HomePage = () => {
   return (
     <div className="space-y-5">
       {/* 欢迎横幅 - 优化渐变和视觉层次 */}
-      <Card className="!bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 text-white border-0 !rounded-2xl shadow-lg" bodyStyle={{ padding: '28px 32px' }}>
+      <Card className="!bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 text-white border-0 !rounded-2xl shadow-lg" styles={{ body: { padding: '28px 32px' }}}>
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-5">
             <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur">
@@ -211,7 +211,7 @@ const HomePage = () => {
               hoverable
               className="cursor-pointer h-full transition-all duration-300 hover:shadow-xl hover:-translate-y-1 !rounded-2xl overflow-hidden group"
               onClick={() => navigate(entry.path)}
-              bodyStyle={{ padding: 0 }}
+              styles={{ body: { padding: 0 }}}}
               style={{ animationDelay: `${index * 0.1}s` }}
             >
               <div

@@ -9,6 +9,7 @@ import SettingsPage from './pages/SettingsPage'
 import AIAssistantPage from './pages/AIAssistantPage'
 import ReportsPage from './pages/ReportsPage'
 import FeaturesPage from './pages/FeaturesPage'
+import KnowledgeGraphPage from './pages/KnowledgeGraphPage'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Route path="ai-assistant" element={<AIAssistantPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="features" element={<FeaturesPage />} />
+        <Route path="knowledge-graph" element={<KnowledgeGraphPage />} />
       </Route>
     </Routes>
   )

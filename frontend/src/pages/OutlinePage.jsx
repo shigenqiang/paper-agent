@@ -51,7 +51,13 @@ const OutlinePage = () => {
     }
     setGenerating(true)
     try {
-      const result = await paperAPI.generateOutline(null, paperTitle)
+      const paperId = project?.id
+      if (!paperId) {
+        message.error('请先在写作页面创建或选择论文')
+        setGenerating(false)
+        return
+      }
+      const result = await paperAPI.generateOutline(paperId, paperTitle)
       if (result.success && result.data) {
         let newSections = []
         const outlineData = result.data.outline || result.data

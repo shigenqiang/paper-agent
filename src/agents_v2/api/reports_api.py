@@ -13,6 +13,8 @@ from aiohttp import web
 import uuid
 import asyncio
 
+from src.agents_v2.api.paper_api import DEFAULT_API_KEY, DEFAULT_BASE_URL
+
 logger = logging.getLogger(__name__)
 
 # 持久化存储路径
@@ -85,13 +87,16 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
 
         # 从设置获取用户关键词和选择的来源
         from src.agents_v2.api.paper_api import SETTINGS_STORAGE
-        keywords = SETTINGS_STORAGE.get("keywords", [
-            "machine learning",
-            "deep learning",
-            "natural language processing",
-            "computer vision",
-            "artificial intelligence"
-        ])
+        keywords = SETTINGS_STORAGE.get("keywords", None)
+        # 如果关键词为空或None，使用默认关键词
+        if not keywords:
+            keywords = [
+                "machine learning",
+                "deep learning",
+                "natural language processing",
+                "computer vision",
+                "artificial intelligence"
+            ]
         enabled_sources = SETTINGS_STORAGE.get("sources", ["arxiv", "pubmed", "semantic_scholar", "openalex"])
 
         all_papers = []
@@ -156,9 +161,9 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
         return []
 
 
-def generate_digest_summary(papers: List[Dict], digest_type: str) -> str:
+async def generate_digest_summary(papers: List[Dict], digest_type: str) -> str:
     """
-    Generate analytical report summarizing paper content using LLM
+    Generate analytical report summarizing paper content using DigestReportAgent
 
     Args:
         papers: List of papers
@@ -169,117 +174,64 @@ def generate_digest_summary(papers: List[Dict], digest_type: str) -> str:
     """
     from datetime import datetime
     if not papers:
-        return "本期资讯暂无相关论文。"
+        return "# 本期资讯暂无相关论文\n\n请稍后重试或调整关键词。"
 
-    total_count = len(papers)
-    type_name = {"daily": "今日", "weekly": "本周", "monthly": "本月"}.get(digest_type, "本期")
     from src.agents_v2.api.paper_api import SETTINGS_STORAGE
-    user_keywords = SETTINGS_STORAGE.get("keywords", [])
+    user_keywords = SETTINGS_STORAGE.get("keywords", None) or []
     date_str = datetime.now().strftime('%Y-%m-%d')
 
-    # 按引用排序
-    sorted_papers = sorted(papers, key=lambda x: x.get("citations", 0), reverse=True)
-    for idx, paper in enumerate(sorted_papers, 1):
-        paper["citation_index"] = idx
+    # 计算日期范围
+    now = datetime.now()
+    if digest_type == "daily":
+        date_range = now.strftime('%Y-%m-%d')
+    elif digest_type == "weekly":
+        start_of_week = now - timedelta(days=now.weekday())
+        end_of_week = start_of_week + timedelta(days=6)
+        date_range = f"{start_of_week.strftime('%Y-%m-%d')} 至 {end_of_week.strftime('%Y-%m-%d')}"
+    else:
+        date_range = f"{now.strftime('%Y年%m月')}"
 
-    # 尝试使用 LLM 生成综合报告
+    # 使用 DigestReportAgent 生成报告
     try:
-        llm_summary = _generate_llm_report(sorted_papers, type_name, date_str, user_keywords)
-        if llm_summary:
-            # LLM 生成成功，添加参考文献列表
-            llm_summary += "\n\n## 参考文献\n\n"
-            for paper in sorted_papers:
-                idx = paper.get("citation_index", 0)
-                authors = ', '.join(paper.get('authors', [])[:3])
-                if len(paper.get('authors', [])) > 3:
-                    authors += ' et al.'
-                title = paper.get('title', '未知标题')
-                year = paper.get('year', '未知')
-                venue = paper.get('venue', '')
-                url = paper.get('url', '')
-                source = paper.get('sources', ['未知'])[0] if paper.get('sources') else '未知'
+        from src.agents_v2.paper_agents import DigestReportAgent
+        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
 
-                if url:
-                    llm_summary += f"[{idx}] {authors}. \"{title}\". {venue}, {year}. [{source}]({url})\n\n"
-                else:
-                    llm_summary += f"[{idx}] {authors}. \"{title}\". {venue}, {year}. {source}\n\n"
+        llm_config = LLMConfig(
+            provider="openai",
+            model_name=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+            temperature=0.7,
+            api_key=DEFAULT_API_KEY,
+            base_url=DEFAULT_BASE_URL
+        )
 
-            llm_summary += f"---\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            return llm_summary
+        agent = DigestReportAgent(llm_config)
+
+        result = await agent.execute({
+            "papers": papers,
+            "keywords": user_keywords,
+            "digest_type": digest_type,
+            "date_range": date_range,
+            "sources": SETTINGS_STORAGE.get("sources", [])
+        })
+
+        if result.success:
+            report = result.result.get("report", "")
+            report += f"\n\n---\n**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            report += f"**质量评分**: {result.quality_score:.2f}\n"
+            report += f"**报告类型**: {digest_type}\n"
+            logger.info(f"DigestReportAgent 生成成功，质量评分: {result.quality_score}")
+            return report
+        else:
+            logger.warning(f"DigestReportAgent 执行失败: {result.error}")
+
     except Exception as e:
-        logger.warning(f"LLM 报告生成失败，使用模板生成: {e}")
+        logger.error(f"使用 DigestReportAgent 生成报告时出错: {e}")
 
     # Fallback: 使用模板生成
-    return _generate_template_report(sorted_papers, type_name, date_str, user_keywords)
+    return _generate_template_report(papers, digest_type, date_str, user_keywords)
 
 
-def _generate_llm_report(papers: List[Dict], type_name: str, date_str: str, user_keywords: List[str]) -> Optional[str]:
-    """使用 LLM 生成综合学术报告"""
-    import os
-    from openai import OpenAI
-
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    if not api_key or api_key == "your_api_key_here":
-        logger.info("未配置 LLM API Key，跳过 LLM 报告生成")
-        return None
-
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
-    model = os.getenv("LLM_MODEL", "MiniMax-M2.7")
-
-    client = OpenAI(api_key=api_key, base_url=base_url)
-
-    # 构建论文信息摘要供 LLM 分析
-    papers_text = ""
-    for i, paper in enumerate(papers[:20], 1):  # 最多20篇，避免 token 过多
-        title = paper.get('title', '未知标题')
-        authors = ', '.join(paper.get('authors', [])[:3])
-        if len(paper.get('authors', [])) > 3:
-            authors += ' 等'
-        abstract = paper.get('abstract', '无摘要')
-        if abstract and len(abstract) > 500:
-            abstract = abstract[:500] + "..."
-        year = paper.get('year', '未知')
-        venue = paper.get('venue', '未知')
-        papers_text += f"[{i}] {title}\n作者: {authors}\n来源: {venue} ({year})\n摘要: {abstract}\n\n"
-
-    kw_str = '、'.join(user_keywords) if user_keywords else '学术领域'
-
-    prompt = f"""你是一位资深学术分析师。请根据以下 {len(papers[:20])} 篇论文，撰写一篇{type_name}学术资讯报告。
-
-要求：
-1. 这不是论文列表，而是一篇**综合分析报告**，需要将多篇论文的内容融会贯通
-2. 开头简要概述本期收录论文的整体情况和主要发现
-3. 按研究主题/方向进行分组，每个主题下综合多篇论文的内容进行分析和比较
-4. 在分析中引用论文时使用 [{type_name}编号] 格式，如 [1]、[2] 等
-5. 分析论文之间的关联、对比不同方法的优劣、指出研究趋势
-6. 最后给出对研究前沿的展望
-7. 语言使用中文，专业术语可保留英文
-8. 报告长度约1500-2500字
-
-监测关键词: {kw_str}
-
-论文列表:
-{papers_text}
-
-请直接输出 Markdown 格式的报告内容，不要包含参考文献列表（参考文献会自动添加）。"""
-
-    logger.info(f"Using LLM ({model}) to generate report...")
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        extra_body={"reasoning_split": True}
-    )
-
-    content = response.choices[0].message.content or ""
-    if not content.strip():
-        return None
-
-    # 添加标题
-    title = f"# {type_name}学术资讯报告 - {date_str}\n\n"
-    return title + content
-
-
-def _generate_template_report(papers: List[Dict], type_name: str, date_str: str, user_keywords: List[str]) -> str:
+def _generate_template_report(papers: List[Dict], digest_type: str, date_str: str, user_keywords: List[str]) -> str:
     """模板方式生成报告（fallback）"""
     from datetime import datetime
     total_count = len(papers)
@@ -563,7 +515,7 @@ async def generate_digest_content(digest_id: str, params: Dict):
         digest["updated_at"] = datetime.now().isoformat()
 
         # 生成摘要
-        summary = generate_digest_summary(papers, params["type"])
+        summary = await generate_digest_summary(papers, params["type"])
         digest["summary"] = summary
         digest["content"] = summary  # 兼容旧字段
 

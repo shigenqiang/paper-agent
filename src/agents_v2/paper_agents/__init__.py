@@ -9,6 +9,7 @@ Agent列表:
 - DraftWriterAgent: 分节撰写
 - EditorAgent: 修订编辑
 - ReviewerAgent: 最终审核
+- DigestReportAgent: 学术资讯快报生成
 """
 from .topic_agent import TopicAgent
 from .literature_agent import LiteratureAgent
@@ -17,6 +18,7 @@ from .outline_agent import OutlineAgent
 from .draft_writer import DraftWriterAgent
 from .editor_agent import EditorAgent
 from .reviewer_agent import ReviewerAgent
+from .digest_agent import DigestReportAgent
 
 __all__ = [
     "TopicAgent",
@@ -26,4 +28,5 @@ __all__ = [
     "DraftWriterAgent",
     "EditorAgent",
     "ReviewerAgent",
+    "DigestReportAgent",
 ]

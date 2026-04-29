@@ -158,7 +158,8 @@ def demo_community_detection():
         print(f"  {src} --> {tgt}")
 
     # Louvain算法
-    louvain_communities = detect_communities(edges, algorithm="louvain")
+    louvain_result = detect_communities(edges, algorithm="louvain")
+    louvain_communities = louvain_result["communities"]
     print(f"\nLouvain detected {len(louvain_communities)} communities:")
     for i, c in enumerate(louvain_communities):
         print(f"  Community {i+1}: {list(c.members)[:5]}...")

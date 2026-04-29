@@ -10,6 +10,8 @@ from .arxiv_searcher import ArxivSearcher
 from .pubmed_searcher import PubmedSearcher
 from .semantic_scholar_searcher import SemanticScholarSearcher
 from .openalex_searcher import OpenAlexSearcher
+from .crossref_searcher import CrossRefSearcher
+from .base_advanced_searcher import BASEAdvancedSearcher
 from .search_result_merger import (
     SearchResultMerger,
     MergedSearchResult,
@@ -53,6 +55,10 @@ class SearchFactory:
                 cls._searchers[name] = SemanticScholarSearcher()
             elif name == "openalex":
                 cls._searchers[name] = OpenAlexSearcher()
+            elif name == "crossref":
+                cls._searchers[name] = CrossRefSearcher()
+            elif name == "base":
+                cls._searchers[name] = BASEAdvancedSearcher()
             else:
                 return None
         return cls._searchers[name]
@@ -78,7 +84,7 @@ class SearchFactory:
             List of SearchResponse
         """
         responses = []
-        for name in ["arxiv", "pubmed", "semantic_scholar", "openalex"]:
+        for name in ["arxiv", "pubmed", "semantic_scholar", "openalex", "crossref", "base"]:
             searcher = cls.get(name)
             if searcher:
                 result = await searcher.search(query, max_results)
