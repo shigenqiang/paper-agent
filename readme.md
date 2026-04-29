@@ -3,7 +3,7 @@
 > 基于多Agent协作的学术论文自动调研与综述生成系统
 
 [![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
-[![Test Status](https://img.shields.io/badge/tests-827+%20passed-green.svg)]()
+[![Test Status](https://img.shields.io/badge/tests-2112+%20passed-green.svg)](https://github.com/shigenqiang/paper-agent/actions)
 
 ---
 
