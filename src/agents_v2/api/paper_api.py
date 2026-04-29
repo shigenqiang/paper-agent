@@ -261,8 +261,8 @@ async def generate_outline(request: web.Request) -> web.Response:
         data = await request.json()
         topic = data.get("topic", paper.get("topic", ""))
 
-        # Use TopicAgent to generate outline
-        from src.agents_v2.paper_agents import TopicAgent
+        # Use OutlineAgent to generate outline
+        from src.agents_v2.paper_agents import OutlineAgent
         from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
 
         llm_config = LLMConfig(
@@ -273,12 +273,13 @@ async def generate_outline(request: web.Request) -> web.Response:
             base_url=DEFAULT_BASE_URL
         )
 
-        agent = TopicAgent(llm_config)
-        result = await agent.execute({"user_request": f"Generate outline for: {topic}"})
+        agent = OutlineAgent(llm_config)
+        result = await agent.execute({"task_description": topic})
 
         if result.success:
-            # Parse outline from result
-            outline = result.result.get("outline", []) if isinstance(result.result, dict) else []
+            # Parse outline from result - OutlineAgent returns {"outline": {...}}
+            result_data = result.result if isinstance(result.result, dict) else {}
+            outline = result_data.get("outline", {})
 
             paper["outline"] = outline
             paper["updated_at"] = datetime.now().isoformat()
@@ -295,14 +296,18 @@ async def generate_outline(request: web.Request) -> web.Response:
 
     except Exception as e:
         logger.error(f"Generate outline error: {e}")
-        # Return a default outline structure on error
-        default_outline = [
-            {"id": "1", "title": "引言", "level": 1, "children": []},
-            {"id": "2", "title": "文献综述", "level": 1, "children": []},
-            {"id": "3", "title": "研究方法", "level": 1, "children": []},
-            {"id": "4", "title": "结果与分析", "level": 1, "children": []},
-            {"id": "5", "title": "结论", "level": 1, "children": []},
-        ]
+        # Return a default outline structure on error - must match DraftWriterAgent format
+        default_outline = {
+            "structure": "学术论文标准结构",
+            "chapters": [
+                {"id": "1", "title": "引言", "description": "介绍研究背景和动机", "depends_on": None},
+                {"id": "2", "title": "文献综述", "description": "评述相关研究进展", "depends_on": None},
+                {"id": "3", "title": "研究方法", "description": "描述研究设计和方法", "depends_on": "1"},
+                {"id": "4", "title": "结果与分析", "description": "展示和讨论研究结果", "depends_on": "2,3"},
+                {"id": "5", "title": "结论", "description": "总结研究贡献和未来工作", "depends_on": "4"},
+            ],
+            "key_arguments": []
+        }
         return web.json_response({
             "success": True,
             "data": default_outline,
@@ -509,6 +514,179 @@ async def get_citation(request: web.Request) -> web.Response:
         }, status=500)
 
 
+# Knowledge Graph endpoints
+async def get_literature_graph(request: web.Request) -> web.Response:
+    """GET /api/knowledge-graph/literature - Get knowledge graph for all literature"""
+    try:
+        # 获取所有文献的图谱数据
+        graph_data = {
+            "nodes": [],
+            "edges": [],
+            "stats": {
+                "totalEntities": 0,
+                "totalRelations": 0,
+                "entityTypes": {}
+            }
+        }
+
+        # 从literature存储构建简单图谱
+        for lit_id, lit in LITERATURE_STORAGE.items():
+            # 添加文献节点
+            graph_data["nodes"].append({
+                "id": lit_id,
+                "label": lit.get("title", "Untitled")[:50],
+                "type": "paper",
+                "data": {
+                    "title": lit.get("title", ""),
+                    "authors": lit.get("authors", ""),
+                    "year": lit.get("year", ""),
+                    "journal": lit.get("journal", "")
+                }
+            })
+
+            # 提取关键词作为实体节点（简化处理）
+            keywords = lit.get("keywords", [])
+            for kw in keywords[:5]:  # 最多5个关键词
+                kw_id = f"kw_{kw}"
+                if not any(n["id"] == kw_id for n in graph_data["nodes"]):
+                    graph_data["nodes"].append({
+                        "id": kw_id,
+                        "label": kw,
+                        "type": "keyword"
+                    })
+
+                # 添加连接边
+                graph_data["edges"].append({
+                    "source": lit_id,
+                    "target": kw_id,
+                    "relation": "related_to"
+                })
+
+        # 统计
+        node_types = {}
+        for n in graph_data["nodes"]:
+            t = n["type"]
+            node_types[t] = node_types.get(t, 0) + 1
+        graph_data["stats"]["totalEntities"] = len(graph_data["nodes"])
+        graph_data["stats"]["totalRelations"] = len(graph_data["edges"])
+        graph_data["stats"]["entityTypes"] = node_types
+
+        return web.json_response({
+            "success": True,
+            "data": graph_data
+        })
+
+    except Exception as e:
+        logger.error(f"Get literature graph error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+async def generate_literature_graph(request: web.Request) -> web.Response:
+    """POST /api/knowledge-graph/generate - Generate knowledge graph from literature"""
+    try:
+        body = await request.content.read()
+        body_text = body.decode('utf-8', errors='ignore')
+        try:
+            data = json.loads(body_text) if body_text else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        literature_ids = data.get("literatureIds", [])
+
+        # 使用已存储的文献生成图谱
+        graph_data = {
+            "nodes": [],
+            "edges": [],
+            "generated": True,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # 为每篇文献创建节点和关系
+        for i, lit_id in enumerate(literature_ids):
+            lit = LITERATURE_STORAGE.get(lit_id)
+            if not lit:
+                continue
+
+            lit_node_id = f"lit_{lit_id}"
+            title = lit.get("title", "")[:50]
+
+            # 文献节点
+            graph_data["nodes"].append({
+                "id": lit_node_id,
+                "label": title,
+                "type": "paper",
+                "data": lit
+            })
+
+            # 方法/数据集节点（从摘要提取）
+            abstract = lit.get("abstract", "")
+            if abstract:
+                # 简单提取词汇作为实体（实际应该用NLP）
+                words = abstract.split()[:10]
+                for j, word in enumerate(words):
+                    if len(word) > 4:
+                        node_id = f"{lit_node_id}_entity_{j}"
+                        graph_data["nodes"].append({
+                            "id": node_id,
+                            "label": word,
+                            "type": "concept"
+                        })
+                        graph_data["edges"].append({
+                            "source": lit_node_id,
+                            "target": node_id,
+                            "relation": "contains"
+                        })
+
+        return web.json_response({
+            "success": True,
+            "data": graph_data
+        })
+
+    except Exception as e:
+        logger.error(f"Generate literature graph error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+async def get_entity_relations(request: web.Request) -> web.Response:
+    """GET /api/knowledge-graph/entity/{entityId} - Get relations for an entity"""
+    try:
+        entity_id = request.match_info.get("entityId")
+
+        # 简化：返回该实体的直接关联
+        relations = []
+
+        # 查找所有边
+        for lit_id, lit in LITERATURE_STORAGE.items():
+            if entity_id in [lit_id, f"lit_{lit_id}"]:
+                relations.append({
+                    "source": entity_id,
+                    "target": lit.get("title", "")[:50],
+                    "relation": "same_paper"
+                })
+
+        return web.json_response({
+            "success": True,
+            "data": {
+                "entityId": entity_id,
+                "relations": relations,
+                "count": len(relations)
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Get entity relations error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 # Literature file upload endpoint
 async def upload_literature_file(request: web.Request) -> web.Response:
     """POST /api/literature/upload - Upload and extract metadata from a literature file"""
@@ -659,11 +837,11 @@ async def chat(request: web.Request) -> web.Response:
             system_prompt = "你是一个友好的AI写作助手。请用中文回答用户的问题。"
             api_messages = [{"role": "system", "content": system_prompt}] + messages_context
 
-            # 调用API，启用reasoning_split
+            # 调用API，禁用reasoning_split避免星号包裹的思考过程
             response = client.chat.completions.create(
                 model=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
                 messages=api_messages,
-                extra_body={"reasoning_split": True}
+                extra_body={"reasoning_split": False}
             )
 
             # 提取回复内容（不含think）
@@ -819,6 +997,11 @@ def setup_paper_routes(app: web.Application):
     # Chat
     app.router.add_post('/api/papers/{paperId}/chat', chat)
     app.router.add_get('/api/papers/{paperId}/chat/history', get_chat_history)
+
+    # Knowledge Graph endpoints
+    app.router.add_get('/api/knowledge-graph/literature', get_literature_graph)
+    app.router.add_post('/api/knowledge-graph/generate', generate_literature_graph)
+    app.router.add_get('/api/knowledge-graph/entity/{entityId}', get_entity_relations)
 
     # Settings
     app.router.add_get('/api/settings', get_settings)

@@ -151,10 +151,23 @@ export const reportsAPI = {
   getMonthlyReports: (params) => apiClient.get('/reports/monthly', { params }),
 }
 
+// 知识图谱API
+export const knowledgeGraphAPI = {
+  // 获取文献知识图谱
+  getLiteratureGraph: () => apiClient.get('/knowledge-graph/literature'),
+
+  // 生成知识图谱
+  generateGraph: (literatureIds) => apiClient.post('/knowledge-graph/generate', { literatureIds }),
+
+  // 获取实体关联
+  getEntityRelations: (entityId) => apiClient.get(`/knowledge-graph/entity/${entityId}`),
+}
+
 export default {
   paperAPI,
   literatureAPI,
   aiAPI,
   settingsAPI,
   reportsAPI,
+  knowledgeGraphAPI,
 }

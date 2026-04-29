@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 const DEFAULT_SECTIONS = [
   { id: '1', title: '第1章 引言', parentId: null, content: '' },
@@ -14,7 +15,9 @@ const DEFAULT_SECTIONS = [
   { id: '6', title: '第6章 结论', parentId: null, content: '' },
 ]
 
-export const usePaperStore = create((set) => ({
+export const usePaperStore = create(
+  persist(
+    (set, get) => ({
   project: {
     id: null,
     title: '',
@@ -116,4 +119,15 @@ export const usePaperStore = create((set) => ({
     messages: [],
     isStreaming: false
   })
-}))
+}),
+    {
+      name: 'paper-agent-storage', // storage key
+      partialize: (state) => ({
+        literature: state.literature,
+        project: state.project,
+        messages: state.messages,
+        theme: state.theme,
+      }), // only persist these fields
+    }
+  )
+)

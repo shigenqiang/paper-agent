@@ -255,7 +255,7 @@ const AIAssistantPage = () => {
 
     const msg = chatInput
     setChatInput('')
-    setChatMessages(prev => [...prev, {
+    addChatMessage([{
       role: 'user',
       content: msg,
       time: new Date().toLocaleTimeString()
@@ -285,7 +285,7 @@ const AIAssistantPage = () => {
 
       if (response.success && response.data) {
         const content = response.data.response || ''
-        setChatMessages(prev => [...prev, {
+        addChatMessage([{
           role: 'assistant',
           content: content,
           time: new Date().toLocaleTimeString()
@@ -297,7 +297,7 @@ const AIAssistantPage = () => {
       }
     } catch (error) {
       message.error('发送失败')
-      setChatMessages(prev => [...prev, {
+      addChatMessage([{
         role: 'assistant',
         content: '抱歉，发送失败，请稍后重试。',
         time: new Date().toLocaleTimeString()
@@ -312,9 +312,23 @@ const AIAssistantPage = () => {
     message.success('已复制到剪贴板')
   }
 
+  const MAX_CHAT_HISTORY = 10
+
   const handleClearChat = () => {
     setChatMessages([{ role: 'system', content: '对话已清空' }])
     setContextText('')
+  }
+
+  // 添加消息时限制历史长度
+  const addChatMessage = (newMessages) => {
+    setChatMessages(prev => {
+      const updated = [...prev, ...newMessages]
+      // 限制消息数量，保留system消息和最后MAX_CHAT_HISTORY条
+      if (updated.length > MAX_CHAT_HISTORY + 1) {
+        return [updated[0], ...updated.slice(-MAX_CHAT_HISTORY)]
+      }
+      return updated
+    })
   }
 
   return (
@@ -357,10 +371,10 @@ const AIAssistantPage = () => {
       {/* 中间主对话区 */}
       <Card
         className="flex-1 !rounded-lg"
-        bodyStyle={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}
+        bodyStyle={{ display: 'flex', flexDirection: 'column', padding: 0, height: 'calc(100vh - 120px)' }}
       >
         {/* 模式切换 */}
-        <div className="px-4 py-3 border-b bg-gradient-to-r from-blue-50 to-purple-50">
+        <div className="px-4 py-3 border-b bg-gradient-to-r from-blue-50 to-purple-50 flex-shrink-0">
           <div className="flex items-center justify-between">
             <Space>
               <RobotOutlined className="text-lg text-blue-500" />
@@ -392,7 +406,7 @@ const AIAssistantPage = () => {
         </div>
 
         {/* 消息列表 */}
-        <div className="flex-1 overflow-y-auto px-4 py-2">
+        <div className="flex-1 overflow-y-auto px-4 py-2" style={{ minHeight: 0 }}>
           {chatMessages.map((msg, index) => (
             <MessageBubble key={index} message={msg} onCopy={handleCopy} />
           ))}
@@ -408,7 +422,7 @@ const AIAssistantPage = () => {
         </div>
 
         {/* 输入区域 */}
-        <div className="p-3 border-t bg-gray-50">
+        <div className="p-3 border-t bg-gray-50 flex-shrink-0">
           {mode === MODES.REVISE && (
             <div className="mb-2">
               <Select

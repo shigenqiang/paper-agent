@@ -320,12 +320,6 @@ const HomePage = () => {
                         </Space>
                       }
                     />
-                    <Progress
-                      percent={paper.status === 'completed' ? 100 : 30}
-                      size="small"
-                      className="w-28"
-                      strokeColor={paper.status === 'completed' ? '#52c41a' : '#1890ff'}
-                    />
                   </List.Item>
                 )}
               />

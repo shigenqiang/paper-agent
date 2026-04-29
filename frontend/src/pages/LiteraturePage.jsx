@@ -1,11 +1,20 @@
-import React, { useState, useMemo, useEffect } from 'react'
-import { Card, Input, Table, Tag, Button, Space, Typography, Modal, Form, Select, message, Tooltip, Row, Col, Empty, Upload, Spin, Tabs } from 'antd'
-import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined, GlobalOutlined, ExperimentOutlined, RobotOutlined, DatabaseOutlined } from '@ant-design/icons'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
+import { Card, Input, Table, Tag, Button, Space, Typography, Modal, Form, Select, message, Tooltip, Row, Col, Empty, Upload, Spin, Tabs, Switch, Alert, Drawer, Popover, Badge } from 'antd'
+import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined, GlobalOutlined, ExperimentOutlined, RobotOutlined, DatabaseOutlined, SettingOutlined, InfoCircleOutlined, NodeIndexOutlined, ReloadOutlined, ZoomInOutlined, ZoomOutOutlined, AimOutlined } from '@ant-design/icons'
 import { usePaperStore } from '../store/paperStore'
-import { literatureAPI } from '../services/api'
+import { literatureAPI, settingsAPI, knowledgeGraphAPI } from '../services/api'
 import { useLocation } from 'react-router-dom'
+import * as G6 from '@antv/g6'
 
 const { Title, Text } = Typography
+
+// 文献来源配置
+const SOURCE_CONFIG_LIST = [
+  { key: 'arxiv', label: 'arXiv', desc: 'AI/ML/物理预印本', color: '#e84a25' },
+  { key: 'pubmed', label: 'PubMed', desc: '生物医学文献', color: '#3e84c8' },
+  { key: 'semantic_scholar', label: 'Semantic Scholar', desc: 'AI论文引用数据', color: '#5c7fdd' },
+  { key: 'openalex', label: 'OpenAlex', desc: '跨学科覆盖', color: '#ff6b35' },
+]
 
 const SOURCE_CONFIG = {
   arxiv: { icon: <GlobalOutlined />, color: '#e84a25', label: 'arXiv' },
@@ -32,8 +41,54 @@ const LiteraturePage = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
   const [activeTab, setActiveTab] = useState('library')
+  const [isSourceSettingsOpen, setIsSourceSettingsOpen] = useState(false)
+  const [sources, setSources] = useState(['arxiv', 'pubmed', 'semantic_scholar', 'openalex'])
+
+  // 知识图谱状态
+  const [graphVisible, setGraphVisible] = useState(false)
+  const [graphLoading, setGraphLoading] = useState(false)
+  const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
+  const [selectedNode, setSelectedNode] = useState(null)
+  const graphRef = useRef(null)
+  const graphContainerRef = useRef(null)
 
   const PAGE_SIZE = 10
+
+  // 加载数据源设置
+  useEffect(() => {
+    loadSourceSettings()
+  }, [])
+
+  const loadSourceSettings = async () => {
+    try {
+      const response = await settingsAPI.getSettings()
+      if (response.success && response.data?.sources) {
+        setSources(response.data.sources)
+      }
+    } catch (e) {
+      console.error('加载数据源设置失败:', e)
+    }
+  }
+
+  const toggleSource = (sourceKey) => {
+    if (sources.includes(sourceKey)) {
+      if (sources.length > 1) {
+        setSources(sources.filter(s => s !== sourceKey))
+      }
+    } else {
+      setSources([...sources, sourceKey])
+    }
+  }
+
+  const saveSourceSettings = async () => {
+    try {
+      await settingsAPI.updateSettings({ sources })
+      message.success('数据来源设置已保存')
+      setIsSourceSettingsOpen(false)
+    } catch (e) {
+      message.error('保存失败')
+    }
+  }
 
   // 从 header 搜索跳转过来时自动触发搜索
   useEffect(() => {
@@ -240,6 +295,138 @@ const LiteraturePage = () => {
   const citedCount = filteredLiterature.filter(l => l.status === 'cited').length
   const pendingCount = filteredLiterature.filter(l => l.status === 'pending').length
 
+  // 加载知识图谱
+  const loadKnowledgeGraph = async () => {
+    setGraphLoading(true)
+    try {
+      const response = await knowledgeGraphAPI.getLiteratureGraph()
+      if (response.success && response.data) {
+        setGraphData(response.data)
+        // 初始化图谱
+        setTimeout(() => initGraph(response.data), 100)
+      }
+    } catch (e) {
+      message.error('加载知识图谱失败')
+    } finally {
+      setGraphLoading(false)
+    }
+  }
+
+  // 初始化G6图谱
+  const initGraph = (data) => {
+    if (!graphContainerRef.current || !data?.nodes?.length) return
+
+    // 清理旧图
+    if (graphRef.current) {
+      graphRef.current.destroy()
+    }
+
+    const container = graphContainerRef.current
+    const width = container.offsetWidth || 650
+    const height = container.offsetHeight || 380
+
+    // 转换数据为G6格式
+    const g6Data = {
+      nodes: data.nodes.map(n => ({
+        id: n.id,
+        label: n.label,
+        type: n.type,
+        size: n.type === 'paper' ? 40 : 25,
+        color: n.type === 'paper' ? '#1890ff' : n.type === 'keyword' ? '#722ed1' : '#52c41a',
+        style: {
+          fill: n.type === 'paper' ? '#e6f7ff' : n.type === 'keyword' ? '#f9f0ff' : '#d9f7be',
+          stroke: n.type === 'paper' ? '#1890ff' : n.type === 'keyword' ? '#722ed1' : '#52c41a',
+        }
+      })),
+      edges: data.edges?.map((e, i) => ({
+        id: `edge-${i}`,
+        source: e.source,
+        target: e.target,
+        label: e.relation || 'related',
+        style: { stroke: '#d9d9d9', lineWidth: 1 }
+      })) || []
+    }
+
+    try {
+      // 使用力导向布局
+      const graph = new G6.Graph({
+        container: container.id || 'graph-container',
+        width,
+        height,
+        fitView: true,
+        layout: {
+          type: 'force',
+          preventOverlap: true,
+          nodeSize: 40,
+          nodeSpacing: 20,
+          linkDistance: 100,
+          nodeStrength: -80,
+          edgeStrength: 0.3,
+          collideStrength: 0.8,
+          alpha: 0.3,
+          alphaDecay: 0.02,
+        },
+        defaultNode: {
+          labelCfg: {
+            style: {
+              fill: '#333',
+              fontSize: 11,
+              background: {
+                fill: '#fff',
+                padding: [4, 6, 4, 6],
+                radius: 4,
+              }
+            }
+          },
+        },
+        defaultEdge: {
+          labelCfg: {
+            autoRotate: true,
+            style: { fill: '#999', fontSize: 10 }
+          }
+        },
+        modes: {
+          default: ['drag-canvas', 'zoom-canvas', 'drag-node']
+        },
+        nodeStateStyles: {
+          hover: { shadowBlur: 10, shadowColor: '#666' },
+          selected: { stroke: '#000', lineWidth: 2 }
+        }
+      })
+
+      graph.data(g6Data)
+      graph.render()
+
+      // 节点点击事件
+      graph.on('node:click', (evt) => {
+        const { item } = evt
+        const model = item.getModel()
+        const nodeData = data.nodes.find(n => n.id === model.id)
+        setSelectedNode(nodeData || model)
+      })
+
+      graphRef.current = graph
+    } catch (e) {
+      console.error('G6 init error:', e)
+    }
+  }
+
+  // 打开图谱时加载数据
+  useEffect(() => {
+    if (graphVisible && literature.length > 0 && graphData.nodes?.length === 0) {
+      loadKnowledgeGraph()
+    }
+  }, [graphVisible, literature])
+
+  // 组件卸载时销毁图
+  useEffect(() => {
+    return () => {
+      if (graphRef.current) {
+        graphRef.current.destroy()
+      }
+    }
+  }, [])
+
   const libraryColumns = [
     {
       title: '标题',
@@ -342,11 +529,22 @@ const LiteraturePage = () => {
             />
           </Space>
           <Space>
+            <Button
+              icon={<NodeIndexOutlined />}
+              onClick={() => setGraphVisible(true)}
+              className={literature.length > 0 ? '!text-purple-500' : ''}
+            >
+              知识图谱
+              {literature.length > 0 && <Badge count={literature.length} size="small" className="ml-1" />}
+            </Button>
             <Button type="primary" icon={<UploadOutlined />} onClick={() => setIsUploadModalOpen(true)}>
               上传文件
             </Button>
             <Button icon={<PlusOutlined />} onClick={() => setIsAddModalOpen(true)}>
               手动添加
+            </Button>
+            <Button icon={<SettingOutlined />} onClick={() => setIsSourceSettingsOpen(true)}>
+              数据来源
             </Button>
           </Space>
         </div>
@@ -488,6 +686,39 @@ const LiteraturePage = () => {
         />
       </Card>
 
+      {/* 关键词论文索引统计 */}
+      <Card size="small" className="!rounded-lg">
+        <div className="flex justify-between items-center mb-3">
+          <Text strong>搜索统计</Text>
+        </div>
+        <Row gutter={16}>
+          <Col span={6}>
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <Text type="secondary" className="text-xs">当前搜索</Text>
+              <Title level={4} className="!mb-0 mt-1">{searchQuery || '-'}</Title>
+            </div>
+          </Col>
+          <Col span={6}>
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <Text type="secondary" className="text-xs">搜索结果</Text>
+              <Title level={4} className="!mb-0 mt-1">{searchResults.length}</Title>
+            </div>
+          </Col>
+          <Col span={6}>
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <Text type="secondary" className="text-xs">文献库</Text>
+              <Title level={4} className="!mb-0 mt-1">{literature.length}</Title>
+            </div>
+          </Col>
+          <Col span={6}>
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <Text type="secondary" className="text-xs">已引用</Text>
+              <Title level={4} className="!mb-0 mt-1">{citedCount}</Title>
+            </div>
+          </Col>
+        </Row>
+      </Card>
+
       {/* 添加文献弹窗 */}
       <Modal
         title="添加文献"
@@ -565,6 +796,183 @@ const LiteraturePage = () => {
           </div>
         </div>
       </Modal>
+
+      {/* 数据来源设置Modal */}
+      <Modal
+        title={
+          <Space>
+            <DatabaseOutlined className="text-blue-500" />
+            <span>学术数据来源设置</span>
+          </Space>
+        }
+        open={isSourceSettingsOpen}
+        onOk={saveSourceSettings}
+        onCancel={() => setIsSourceSettingsOpen(false)}
+        okText="保存设置"
+        cancelText="取消"
+        width={500}
+      >
+        <Alert
+          message="数据来源设置"
+          description="选择系统从哪些学术数据库搜索论文。不同来源涵盖不同领域，建议全部启用。"
+          type="info"
+          showIcon
+          icon={<DatabaseOutlined />}
+          className="!mb-4"
+        />
+
+        <Text type="secondary" className="block mb-3">
+          当前启用的数据来源（共 {sources.length} 个）:
+        </Text>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {SOURCE_CONFIG_LIST.map(source => {
+            const isEnabled = sources.includes(source.key)
+            return (
+              <div
+                key={source.key}
+                onClick={() => toggleSource(source.key)}
+                className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                  isEnabled
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: source.color }}
+                    ></div>
+                    <Text strong className={isEnabled ? 'text-blue-700' : 'text-gray-600'}>
+                      {source.label}
+                    </Text>
+                  </div>
+                  <Switch size="small" checked={isEnabled} onChange={() => toggleSource(source.key)} />
+                </div>
+                <Text type="secondary" className="text-xs">{source.desc}</Text>
+              </div>
+            )
+          })}
+        </div>
+      </Modal>
+
+      {/* 知识图谱抽屉 */}
+      <Drawer
+        title={
+          <Space>
+            <NodeIndexOutlined className="text-purple-500" />
+            <span>文献知识图谱</span>
+            <Badge count={graphData.nodes?.length || 0} size="small" />
+          </Space>
+        }
+        placement="right"
+        width={720}
+        open={graphVisible}
+        onClose={() => setGraphVisible(false)}
+        extra={
+          <Space>
+            <Button
+              icon={<ReloadOutlined />}
+              size="small"
+              onClick={loadKnowledgeGraph}
+              loading={graphLoading}
+            >
+              刷新
+            </Button>
+          </Space>
+        }
+      >
+        {graphLoading ? (
+          <div className="flex items-center justify-center h-96">
+            <Spin tip="加载知识图谱..." />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* 图谱统计 */}
+            {graphData.stats && (
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Card size="small" className="text-center !rounded-lg">
+                    <Statistic
+                      title={<Text type="secondary" className="text-xs">节点数</Text>}
+                      value={graphData.stats.totalEntities || 0}
+                      valueStyle={{ fontSize: '24px', color: '#722ed1' }}
+                    />
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card size="small" className="text-center !rounded-lg">
+                    <Statistic
+                      title={<Text type="secondary" className="text-xs">边数</Text>}
+                      value={graphData.stats.totalRelations || 0}
+                      valueStyle={{ fontSize: '24px', color: '#1890ff' }}
+                    />
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card size="small" className="text-center !rounded-lg">
+                    <Statistic
+                      title={<Text type="secondary" className="text-xs">文献数</Text>}
+                      value={graphData.nodes?.filter(n => n.type === 'paper').length || 0}
+                      valueStyle={{ fontSize: '24px', color: '#52c41a' }}
+                    />
+                  </Card>
+                </Col>
+              </Row>
+            )}
+
+            {/* 图谱容器 */}
+            <Card className="!rounded-lg" bodyStyle={{ padding: 0 }}>
+              <div
+                ref={graphContainerRef}
+                className="w-full h-96 bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg"
+                style={{ position: 'relative' }}
+              />
+            </Card>
+
+            {/* 节点详情 */}
+            {selectedNode && (
+              <Card
+                size="small"
+                className="!rounded-lg"
+                title={
+                  <Space>
+                    <AimOutlined className="text-blue-500" />
+                    <span>选中节点</span>
+                  </Space>
+                }
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Tag color={selectedNode.type === 'paper' ? 'blue' : selectedNode.type === 'keyword' ? 'purple' : 'green'}>
+                      {selectedNode.type}
+                    </Tag>
+                    <Text strong>{selectedNode.label}</Text>
+                  </div>
+                  {selectedNode.data && (
+                    <div className="text-sm text-gray-600">
+                      {selectedNode.data.authors && <div>作者: {selectedNode.data.authors}</div>}
+                      {selectedNode.data.year && <div>年份: {selectedNode.data.year}</div>}
+                      {selectedNode.data.journal && <div>期刊: {selectedNode.data.journal}</div>}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {/* 图例 */}
+            <Card size="small" className="!rounded-lg">
+              <Space>
+                <Text type="secondary" className="text-xs">图例:</Text>
+                <Tag color="blue">论文节点</Tag>
+                <Tag color="purple">关键词节点</Tag>
+                <Tag color="green">概念节点</Tag>
+              </Space>
+            </Card>
+          </div>
+        )}
+      </Drawer>
     </div>
   )
 }
