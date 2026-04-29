@@ -512,6 +512,10 @@ def create_app() -> web.Application:
     from src.agents_v2.api.reports_api import setup_reports_routes
     setup_reports_routes(app)
 
+    # Knowledge Graph API
+    from src.agents_v2.api.knowledge_graph_api import setup_knowledge_graph_routes
+    setup_knowledge_graph_routes(app)
+
     return app
 
 
