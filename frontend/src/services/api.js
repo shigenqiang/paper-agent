@@ -153,11 +153,17 @@ export const reportsAPI = {
 
 // 知识图谱API
 export const knowledgeGraphAPI = {
-  // 获取文献知识图谱
-  getLiteratureGraph: () => apiClient.get('/knowledge-graph/literature'),
+  // 获取文献知识图谱（可传入论文列表）
+  getLiteratureGraph: (papers) => {
+    if (papers && papers.length > 0) {
+      // 如果有论文数据，通过generate接口构建图谱
+      return apiClient.post('/knowledge-graph/generate', { papers })
+    }
+    return apiClient.get('/knowledge-graph/literature')
+  },
 
-  // 生成知识图谱
-  generateGraph: (literatureIds) => apiClient.post('/knowledge-graph/generate', { literatureIds }),
+  // 生成知识图谱（显式传入论文列表）
+  generateGraph: (papers) => apiClient.post('/knowledge-graph/generate', { papers }),
 
   // 获取实体关联
   getEntityRelations: (entityId) => apiClient.get(`/knowledge-graph/entity/${entityId}`),

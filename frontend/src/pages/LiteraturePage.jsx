@@ -299,7 +299,8 @@ const LiteraturePage = () => {
   const loadKnowledgeGraph = async () => {
     setGraphLoading(true)
     try {
-      const response = await knowledgeGraphAPI.getLiteratureGraph()
+      // 将文献数据传递给后端以构建图谱
+      const response = await knowledgeGraphAPI.getLiteratureGraph(literature)
       if (response.success && response.data) {
         setGraphData(response.data)
         // 初始化图谱
