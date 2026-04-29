@@ -42,6 +42,7 @@ SETTINGS_STORAGE: Dict[str, Any] = {
         "computer vision",
         "artificial intelligence"
     ],
+    "sources": ["arxiv", "pubmed", "semantic_scholar", "openalex"],  # 默认全部启用
 }
 
 # Chat session context storage: {(user_id, session_id): [messages]}

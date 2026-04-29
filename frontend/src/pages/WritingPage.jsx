@@ -11,8 +11,7 @@ import {
   CompressOutlined,
   DeleteOutlined,
   RobotOutlined,
-  SearchOutlined,
-  ClockCircleOutlined,
+    ClockCircleOutlined,
   CheckCircleOutlined,
   LoadingOutlined,
   CloudUploadOutlined,
@@ -22,6 +21,7 @@ import {
   UndoOutlined,
   RedoOutlined,
   CopyOutlined,
+  FileAddOutlined,
 } from '@ant-design/icons'
 import { usePaperStore } from '../store/paperStore'
 import { paperAPI, literatureAPI } from '../services/api'
@@ -58,6 +58,7 @@ const WritingPage = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const { project, updateSection, addSection, deleteSection, setProject, setTitle, literature, addCitation, removeCitation } = usePaperStore()
+  const [papers, setPapers] = useState([])
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [selectedSection, setSelectedSection] = useState('1-1')
   const [sectionContent, setSectionContent] = useState('')
@@ -66,17 +67,58 @@ const WritingPage = () => {
   const [generatingContent, setGeneratingContent] = useState(false)
   const [saveStatus, setSaveStatus] = useState('saved') // saved, saving, unsaved
   const [lastSaved, setLastSaved] = useState(null)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [newPaperTitle, setNewPaperTitle] = useState('')
   const autoSaveTimer = useRef(null)
   const [showCiteModal, setShowCiteModal] = useState(false)
   const [citeStyle, setCiteStyle] = useState('APA')
+
+  // 加载论文列表
+  useEffect(() => {
+    loadPapers()
+  }, [])
+
+  const loadPapers = async () => {
+    try {
+      const response = await paperAPI.getPapers()
+      setPapers(response.data || [])
+    } catch (e) {
+      console.error('加载论文列表失败:', e)
+    }
+  }
+
+  // 创建论文
+  const handleCreatePaper = async () => {
+    if (!newPaperTitle.trim()) {
+      message.warning('请输入论文标题')
+      return
+    }
+    try {
+      const response = await paperAPI.createPaper({
+        title: newPaperTitle,
+        topic: '待定'
+      })
+      if (response.success && response.data) {
+        setPapers(prev => [response.data, ...prev])
+        setProject(response.data)
+        setIsCreateModalOpen(false)
+        setNewPaperTitle('')
+        message.success('论文创建成功')
+      }
+    } catch (e) {
+      message.error('创建论文失败')
+    }
+  }
 
   // 从导航状态获取论文ID并加载论文
   useEffect(() => {
     const paperId = location.state?.paperId
     if (paperId) {
       loadPaper(paperId)
+    } else if (!project?.id && papers.length > 0) {
+      // 没有选中论文时，不自动加载第一个
     }
-  }, [location.state])
+  }, [location.state, papers])
 
   // 当store中的project变化时，同步到组件状态
   useEffect(() => {
@@ -287,22 +329,43 @@ const WritingPage = () => {
   }
 
   const handleGenerateContent = async () => {
-    if (!selectedSection) {
-      message.warning('请先选择要生成的章节')
-      return
-    }
     if (!project?.id) {
       message.warning('请先创建或选择论文')
       return
     }
+
+    // 确保有章节可以续写
+    let targetSection = selectedSection
+    const currentSections = project?.sections || []
+
+    if (!targetSection || !currentSections.find(s => s.id === targetSection)) {
+      // 检查是否需要添加父章节
+      if (!currentSections.find(s => s.id === '1')) {
+        addSection({ id: '1', title: '第1章 引言', parentId: null, content: '' })
+      }
+      // 添加第一个子章节
+      const newSection = {
+        id: '1-1',
+        title: '1.1 研究背景',
+        parentId: '1',
+        content: ''
+      }
+      addSection(newSection)
+      targetSection = '1-1'
+      setSelectedSection(targetSection)
+      setSectionContent('')
+      message.info('已创建章节：1.1 研究背景')
+    }
+
     setGeneratingContent(true)
     try {
-      const prompt = `为"${currentSectionTitle}"章节生成学术内容`
-      const result = await paperAPI.generateContent(project.id, selectedSection, prompt)
+      const currentTitle = currentSections.find(s => s.id === targetSection)?.title || '当前章节'
+      const prompt = `为"${currentTitle}"章节生成学术内容`
+      const result = await paperAPI.generateContent(project.id, targetSection, prompt)
       if (result.success && result.data) {
         const content = result.data.content || ''
         setSectionContent(content)
-        updateSection(selectedSection, content)
+        updateSection(targetSection, content)
         message.success('内容已生成！')
       } else {
         message.error(result.error || '生成内容失败')
@@ -356,12 +419,77 @@ const WritingPage = () => {
     return <ClockCircleOutlined className="text-orange-500" />
   }
 
+  // 未选择论文时的界面
+  if (!project?.id) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Card className="text-center !rounded-lg w-96">
+          <div className="py-8">
+            <FileTextOutlined className="text-5xl text-gray-300 mb-4" />
+            <Title level={4} className="text-gray-500 mb-4">请选择或创建论文</Title>
+            <Text type="secondary" className="block mb-6">
+              您还没有选择任何论文，请从列表中选择或创建新论文
+            </Text>
+            <Space>
+              <Select
+                placeholder="选择论文"
+                className="!w-48"
+                onChange={(paperId) => {
+                  const paper = papers.find(p => p.id === paperId)
+                  if (paper) {
+                    setProject(paper)
+                    setPaperTitle(paper.title || '未命名论文')
+                  }
+                }}
+                options={papers.map(p => ({ label: p.title || '未命名', value: p.id }))}
+              />
+              <Button type="primary" icon={<FileAddOutlined />} onClick={() => setIsCreateModalOpen(true)}>
+                新建论文
+              </Button>
+            </Space>
+          </div>
+        </Card>
+
+        <Modal
+          title="新建论文"
+          open={isCreateModalOpen}
+          onCancel={() => setIsCreateModalOpen(false)}
+          onOk={handleCreatePaper}
+          okText="创建"
+        >
+          <div className="py-4">
+            <Text strong>论文标题</Text>
+            <Input
+              className="mt-2"
+              placeholder="请输入论文标题"
+              value={newPaperTitle}
+              onChange={(e) => setNewPaperTitle(e.target.value)}
+              onPressEnter={() => handleCreatePaper()}
+            />
+          </div>
+        </Modal>
+      </div>
+    )
+  }
+
   return (
     <div className={`h-full flex flex-col ${isFullscreen ? 'fixed inset-0 z-50 bg-white' : ''}`}>
       {/* 顶部工具栏 */}
       <Card size="small" className="mb-3 !rounded-lg" bodyStyle={{ padding: '12px 16px' }}>
         <div className="flex justify-between items-center">
           <Space size="middle">
+            <Select
+              value={project?.id}
+              onChange={(paperId) => {
+                const paper = papers.find(p => p.id === paperId)
+                if (paper) {
+                  setProject(paper)
+                  setPaperTitle(paper.title || '未命名论文')
+                }
+              }}
+              className="!w-48"
+              options={papers.map(p => ({ label: p.title || '未命名', value: p.id }))}
+            />
             <Input
               value={paperTitle}
               onChange={(e) => {
@@ -385,33 +513,16 @@ const WritingPage = () => {
           </Space>
 
           <Space size="middle">
-            <Tooltip title="生成大纲（AI分析论文结构）">
-              <Button
-                icon={<ThunderboltOutlined />}
-                onClick={handleGenerateOutline}
-                loading={generatingOutline}
-                disabled={generatingContent}
-              >
-                生成大纲
-              </Button>
-            </Tooltip>
             <Tooltip title="AI续写当前章节（Ctrl+Enter）">
               <Button
                 type="primary"
                 icon={<RobotOutlined />}
                 onClick={handleGenerateContent}
                 loading={generatingContent}
-                disabled={generatingOutline}
               >
                 AI续写
               </Button>
             </Tooltip>
-            <Button
-              icon={<SearchOutlined />}
-              onClick={() => navigate('/literature')}
-            >
-              文献搜索
-            </Button>
           </Space>
 
           <Space size="small">
@@ -530,11 +641,6 @@ const WritingPage = () => {
               <span>引用管理</span>
             </Space>
           }
-          extra={
-            <Button type="text" size="small" icon={<SearchOutlined />} onClick={() => navigate('/literature')}>
-              搜索
-            </Button>
-          }
           bodyStyle={{ padding: 0 }}
         >
           <div className="flex justify-between items-center px-3 pt-3 pb-2">
@@ -603,18 +709,9 @@ const WritingPage = () => {
             <Button
               block
               icon={<PlusOutlined />}
-              className="mb-2"
               onClick={() => setShowCiteModal(true)}
             >
               添加引用
-            </Button>
-            <Button
-              block
-              icon={<SearchOutlined />}
-              type="dashed"
-              onClick={() => navigate('/literature')}
-            >
-              搜索文献
             </Button>
           </div>
         </Card>
@@ -630,11 +727,7 @@ const WritingPage = () => {
       >
         <Text type="secondary" className="mb-3 block">选择文献库中的论文进行引用：</Text>
         {literature.length === 0 ? (
-          <Empty description="暂无可用文献" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-            <Button type="primary" icon={<SearchOutlined />} onClick={() => { setShowCiteModal(false); navigate('/literature') }}>
-              前往搜索
-            </Button>
-          </Empty>
+          <Empty description="暂无可用文献" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <List
             dataSource={literature}
@@ -661,6 +754,26 @@ const WritingPage = () => {
             )}
           />
         )}
+      </Modal>
+
+      {/* 新建论文弹窗 */}
+      <Modal
+        title="新建论文"
+        open={isCreateModalOpen}
+        onCancel={() => setIsCreateModalOpen(false)}
+        onOk={handleCreatePaper}
+        okText="创建"
+      >
+        <div className="py-4">
+          <Text strong>论文标题</Text>
+          <Input
+            className="mt-2"
+            placeholder="请输入论文标题"
+            value={newPaperTitle}
+            onChange={(e) => setNewPaperTitle(e.target.value)}
+            onPressEnter={() => handleCreatePaper()}
+          />
+        </div>
       </Modal>
     </div>
   )

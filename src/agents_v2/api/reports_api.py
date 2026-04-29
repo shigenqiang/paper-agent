@@ -4,6 +4,7 @@ Reports API - Paper Intelligence Digest API (论文资讯快报)
 Auto-generated daily/weekly/monthly paper intelligence reports.
 """
 import time
+import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -14,8 +15,41 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# 持久化存储路径
+STORAGE_DIR = os.path.join(os.path.dirname(__file__), "../../data")
+DIGESTS_FILE = os.path.join(STORAGE_DIR, "digests.json")
+
+# 确保存储目录存在
+os.makedirs(STORAGE_DIR, exist_ok=True)
+
 # In-memory storage for paper digests
 DIGESTS_STORAGE: Dict[str, Dict] = {}
+
+
+def _load_digests() -> Dict[str, Dict]:
+    """从文件加载日报数据"""
+    if os.path.exists(DIGESTS_FILE):
+        try:
+            with open(DIGESTS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                logger.info(f"Loaded {len(data)} digests from storage")
+                return data
+        except Exception as e:
+            logger.warning(f"Failed to load digests from storage: {e}")
+    return {}
+
+
+def _save_digests() -> None:
+    """保存日报数据到文件"""
+    try:
+        with open(DIGESTS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(DIGESTS_STORAGE, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save digests to storage: {e}")
+
+
+# 启动时加载已有数据
+DIGESTS_STORAGE = _load_digests()
 
 # Report statuses
 STATUS = {
@@ -49,7 +83,7 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
     try:
         from src.agents_v2.search import search_all, MergeConfig, merge_search_results
 
-        # 从设置获取用户关键词，如果没有则使用默认关键词
+        # 从设置获取用户关键词和选择的来源
         from src.agents_v2.api.paper_api import SETTINGS_STORAGE
         keywords = SETTINGS_STORAGE.get("keywords", [
             "machine learning",
@@ -58,14 +92,21 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
             "computer vision",
             "artificial intelligence"
         ])
+        enabled_sources = SETTINGS_STORAGE.get("sources", ["arxiv", "pubmed", "semantic_scholar", "openalex"])
 
         all_papers = []
         seen_ids = set()
 
         for query in keywords:
             try:
-                # 使用search_all获取所有源的结果，然后合并去重
-                search_results = await search_all(query=query, max_results=20)
+                # 根据用户选择的来源进行搜索
+                from src.agents_v2.search.search_factory import SearchFactory
+                search_results = []
+                for source in enabled_sources:
+                    searcher = SearchFactory.get(source)
+                    if searcher:
+                        result = await searcher.search(query, max_results=10)
+                        search_results.append(result)
 
                 # 合并去重
                 config = MergeConfig(
@@ -100,7 +141,12 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
                     break
 
             except Exception as e:
-                logger.error(f"Search error for query '{query}': {e}")
+                # API限流、超时等是预期内的错误，记录为WARNING而非ERROR
+                error_str = str(e)
+                if any(keyword in error_str.lower() for keyword in ['rate limit', 'timeout', 'connection', 'network', '10054', '10060', '429', '500', '503']):
+                    logger.warning(f"Search API temporarily unavailable for query '{query}': {error_str[:80]}")
+                else:
+                    logger.warning(f"Search error for query '{query}': {error_str}")
                 continue
 
         return all_papers[:50]  # 最多返回50篇
@@ -458,6 +504,7 @@ async def create_digest(request: web.Request) -> web.Response:
         }
 
         DIGESTS_STORAGE[digest_id] = digest
+        _save_digests()  # 持久化保存
 
         # 异步生成内容
         asyncio.create_task(generate_digest_content(digest_id, {
@@ -533,6 +580,7 @@ async def generate_digest_content(digest_id: str, params: Dict):
             DIGESTS_STORAGE[digest_id]["status"] = "error"
             DIGESTS_STORAGE[digest_id]["error"] = str(e)
             DIGESTS_STORAGE[digest_id]["updated_at"] = datetime.now().isoformat()
+            _save_digests()  # 持久化保存错误状态
 
 
 async def get_digest(request: web.Request) -> web.Response:
@@ -598,6 +646,7 @@ async def update_digest(request: web.Request) -> web.Response:
                 "end": end_date,
                 "type": digest["type"]
             }))
+            _save_digests()  # 持久化保存
 
         return web.json_response({
             "success": True,
@@ -623,6 +672,7 @@ async def delete_digest(request: web.Request) -> web.Response:
             }, status=404)
 
         del DIGESTS_STORAGE[digest_id]
+        _save_digests()  # 持久化保存
 
         return web.json_response({
             "success": True,

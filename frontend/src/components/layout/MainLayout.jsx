@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Layout, Menu, Button, Dropdown, Space, Avatar, Badge, Tooltip, Typography, Input, message } from 'antd'
+import { Layout, Menu, Button, Dropdown, Space, Avatar, Badge, Tooltip, Typography, message } from 'antd'
 import {
   HomeOutlined,
   EditOutlined,
@@ -13,7 +13,6 @@ import {
   FileTextOutlined,
   ThunderboltOutlined,
   BellOutlined,
-  SearchOutlined,
   BulbOutlined,
   LeftOutlined,
   RightOutlined,
@@ -37,6 +36,12 @@ const MAIN_MENU = [
     icon: <EditOutlined />,
     label: '论文写作',
     badge: null,
+  },
+  {
+    key: 'outline',
+    path: '/outline',
+    icon: <ThunderboltOutlined />,
+    label: '生成大纲',
   },
   {
     key: 'literature',
@@ -83,19 +88,11 @@ const MainLayout = () => {
     const menu = [...MAIN_MENU, ...QUICK_MENU].find(m => m.path === path)
     return menu?.key || 'home'
   })
-  const [headerSearch, setHeaderSearch] = useState('')
 
-  // 应用主题
+  // 用户菜单
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
-
-  // Header 搜索
-  const handleHeaderSearch = (value) => {
-    if (value.trim()) {
-      navigate('/literature', { state: { searchQuery: value } })
-    }
-  }
 
   // 用户菜单
   const handleUserMenu = ({ key }) => {
@@ -264,16 +261,6 @@ const MainLayout = () => {
           </Space>
 
           <Space size="middle">
-            {/* 搜索框 */}
-            <Input.Search
-              placeholder="搜索文献..."
-              className="w-48"
-              value={headerSearch}
-              onChange={(e) => setHeaderSearch(e.target.value)}
-              onSearch={handleHeaderSearch}
-              allowClear
-            />
-
             {/* 通知 */}
             <Button type="text" icon={<BellOutlined />} />
 

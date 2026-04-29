@@ -1,0 +1,1244 @@
+{
+  "daily_f6da5ed4": {
+    "id": "daily_f6da5ed4",
+    "type": "daily",
+    "title": "2026-04-28 每日学术资讯",
+    "date_range": "2026-04-28",
+    "content": "# 今日学术资讯报告 - 2026-04-28\n\n# 今日学术资讯报告：人工智能研究前沿动态\n\n## 概述\n\n本期学术资讯收录了20篇涵盖人工智能理论与应用的研究论文，发表时间跨度从1995年至2026年，研究主题聚焦于AI基础理论、可解释人工智能（XAI）、医疗健康、教育、服务业及新药研发等多个关键领域。总体而言，本期论文呈现出三大趋势：一是XAI研究持续深化，从概念框架走向实践应用；二是AI在医疗领域的渗透日益深入，从影像诊断延伸至慢性病管理和数字化病理；三是AI应用边界不断拓展，从技术研究转向伦理考量与社会影响的多维审视。\n\n## 一、AI基础理论与方法演进\n\n本期收录的经典著作，包括Sivasubramanian Balasubramanian等著的**《Artificial Intelligence: A Modern Approach》**修订版[1]以及Nils J. Nilsson的同名著作[2]，系统梳理了AI领域的基础理论框架，涵盖智能代理、搜索算法、博弈论、一阶逻辑推理、概率推理及规划等核心主题。Haenlein与Kaplan的**《A Brief History of Artificial Intelligence》**[14]则从历史维度审视AI的发展脉络，将其定义为“系统正确解读外部数据、从数据中学习、并通过灵活适应实现特定目标和任务的能力”。\n\n这组文献揭示了AI理论研究的演进方向：传统符号主义方法逐步与统计学习方法融合，形成了当前以深度学习为主导的技术格局。经典教材的持续更新反映了该领域的勃勃生机——从早期的逻辑推理系统到现代的深度神经网络，AI正在从“能用”走向“好用”。\n\n## 二、可解释人工智能：从理论到实践\n\nXAI是本期最具理论深度的研究方向。Gil-López等发表的**《Explainable Artificial Intelligence (XAI): Concepts, taxonomies, opportunities and challenges toward responsible AI》**[3]，系统构建了XAI的概念框架与分类体系，将可解释性需求上升至“负责任AI”的伦理高度。Berrada与Adadi的综述[6]则聚焦于“黑箱”问题的技术根源，指出深度学习模型虽能产生强大预测，却难以提供人类可理解的决策依据。\n\n综合两篇论文可以看出，当前XAI研究主要沿两条路径展开：其一为事后解释方法（post-hoc explanation），如特征重要性分析、注意力可视化等；其二为内在可解释模型（interpretable-by-design），如决策规则提取、概念瓶颈模型等。值得关注的是，XAI已从纯技术问题演变为涉及信任建立、监管合规和伦理审查的多维议题，这与欧盟《人工智能法案》等监管框架的推进密切相关。\n\n## 三、AI在医疗健康领域的深度渗透\n\n医疗AI是本期论文最密集的研究方向，涵盖从宏观趋势到细分场景的完整图谱。\n\n**宏观趋势层面**，Topol的**《High-performance medicine: the convergence of human and artificial intelligence》**[4]描绘了“高性能医学”的愿景——AI与人类智能的深度融合将重塑诊疗范式。Zhi等人的综述[8]则从历史、现状与未来三个维度，系统梳理了AI在医疗领域的应用全景，指出机器学习方法（尤其是支持向量机等经典技术）在结构化医疗数据处理中的持久价值。Kalakota与Davenport[10]进一步细化了AI的应用场景矩阵，涵盖诊断与治疗建议、患者依从性管理和行政流程优化三大类别。\n\n**细分应用层面**，Schwartz等人的研究[9]聚焦于放射学这一AI应用最成熟的领域，讨论了影像AI从辅助诊断向自动报告生成的发展趋势。Kohane等人在Nature Biomedical Engineering发表的论文[13]则从生物医学工程角度，探讨了AI如何整合多模态健康数据实现精准医疗。Tremblay与Hamet[15]专门考察了AI在代谢性疾病诊疗中的应用潜力。\n\n**新兴前沿领域**，Abu-Qbeitah与Ahmad的综述[17]聚焦于AI与大数据在慢性病管理中的整合应用，强调临床与经济双重结局评估的重要性，指出数据标准化与隐私保护仍是主要挑战。Echols等人的研究[18]则反思了AI在心血管流行病学中的局限性——仅关注区分度（AUC）指标可能忽略模型的临床实用性和上下文适配性，呼吁采用更全面的评估框架。Satturwar等人的论文[19]介绍了数字细胞病理学的前沿进展，指出AI已在宫颈细胞学筛查中实现商业化部署，但向非妇科细胞病理学的扩展仍面临标本类型多样性和制片标准化等技术瓶颈。\n\n综合而言，医疗AI正从单点突破走向系统整合，从技术可行走向临床有效性验证，这一转型对研究方法论和监管模式都提出了新的要求。\n\n## 四、AI在教育领域的应用与反思\n\n本期收录了两篇关于AI在高等教育中应用的系统综述。Bond等人的研究[7]采用系统性综述方法，发现尽管AI在教育领域已积累约30年研究历史，但 educators（教育者）群体对其实际教学应用的理解仍显不足，存在理论与实践的鸿沟。Lin等人的综述[11]则构建了AI教育应用的评估框架，将研究范围限定于行政管理、教学辅助和学习支持三大维度，强调定性研究方法在理解AI教育影响方面的独特价值。\n\n两篇综述共同揭示了一个核心矛盾：AI技术的快速迭代与教育实践的渐进采用之间的张力。如何将AI从“技术可能性”转化为“教育增值”，仍是该领域亟需解决的问题。研究趋势表明，未来的AI教育研究将更注重学习者中心的视角，而非单纯追求技术先进性。\n\n## 五、AI在服务业的影响与服务创新\n\nRust与Huang在**《Artificial Intelligence in Service》**[12]中提出了一个颇具洞察力的理论框架——AI工作替代理论。该理论将服务任务所需能力分解为机械性、分析性、直觉性和共情性四个维度，认为AI正以可预测的顺序逐步替代人类执行这些任务。这一框架的价值在于，它不仅关注AI对就业的替代效应，更强调AI作为服务创新源泉的潜力，为平衡技术效率与人文关怀提供了分析工具。\n\n## 六、远程医疗与皮肤病学实践\n\nAlzamil等人的综述[16]聚焦于沙特阿拉伯的远程皮肤病学实践，为AI在专科分诊中的应用提供了一个区域性案例。该研究指出，地理广袤与皮肤科医生短缺的双重压力，恰恰为AI辅助的远程诊疗创造了需求土壤。沙特阿拉伯的数字转型战略为远程医疗的采纳提供了制度保障，这一模式对其他发展中国家具有借鉴意义。\n\n## 七、神经退行性疾病的新药研发\n\nMartinez-Gonzalez等人的综述[20]系统梳理了肌萎缩侧索硬化症（ALS）临床试验的最新进展，描绘了一个挑战与机遇并存的领域图景。尽管ALS药物研发失败率居高不下，但近年来小分子药物和创新疗法的涌入为该领域注入了新活力。AI在罕见病药物研发中的应用前景值得期待，但其对生物学机理理解的依赖仍是主要瓶颈。\n\n## 展望\n\n综合本期论文可以预见，AI研究正呈现三大前沿方向：\n\n**第一，可解释性与可信AI的深度融合**。随着XAI从学术概念走向监管实践，如何在模型性能与可解释性之间取得最优平衡，将成为决定AI能否进入高风险应用场景的关键。\n\n**第二，垂直领域AI的专业化深耕**。医疗、教育等服务领域的研究正从“AI能做什么”转向“AI应该怎么做”，学科知识与AI方法的深度整合将成为主流范式。\n\n**第三，AI评估框架的多维化演进**。Echols等人[18]对仅依赖区分度指标的批判性反思，预示着AI评估将从技术性能扩展至临床效用、经济价值、伦理合规和社会影响等多元维度。\n\nAI正从“工具”进化为“伙伴”，如何在提升效率的同时守护人文价值，将是该领域长期的核心议题。\n\n## 参考文献\n\n[1] Sivasubramanian Balasubramanian, Prof. Ganesh Vasudeo Manerkar, Dr. Haewon Byeon et al.. \"Artificial intelligence: a modern approach\". Choice Reviews Online, 1995. [openalex](https://openalex.org/W2122410182)\n\n[2] Nils J. Nilsson. \"Artificial intelligence: A modern approach\". Artificial Intelligence, 1996. [openalex](https://openalex.org/W2623293810)\n\n[3] Sergio Gil-López, Alberto Barbado, Salvador García et al.. \"Explainable Artificial Intelligence (XAI): Concepts, taxonomies, opportunities and challenges toward responsible AI\". Information Fusion, 2019. [openalex](https://openalex.org/W2981731882)\n\n[4] Eric J. Topol. \"High-performance medicine: the convergence of human and artificial intelligence\". Nature Medicine, 2018. [openalex](https://openalex.org/W2908201961)\n\n[5] Patrick Brézillon, Paolo Bouquet. \"Lecture Notes in Artificial Intelligence\". , 1999. [openalex](https://openalex.org/W26772505)\n\n[6] Mohammed Berrada, Amina Adadi. \"Peeking Inside the Black-Box: A Survey on Explainable Artificial Intelligence (XAI)\". IEEE Access, 2018. [openalex](https://openalex.org/W2891503716)\n\n[7] Melissa Bond, Franziska Gouverneur, Olaf Zawacki‐Richter et al.. \"Systematic review of research on artificial intelligence applications in higher education – where are the educators?\". International Journal of Educational Technology in Higher Education, 2019. [openalex](https://openalex.org/W2981863007)\n\n[8] Hui Zhi, Qiang Dong, Yi Dong et al.. \"Artificial intelligence in healthcare: past, present and future\". Stroke and Vascular Neurology, 2017. [openalex](https://openalex.org/W2664267452)\n\n[9] Lawrence H. Schwartz, Hugo J.W.L. Aerts, John Quackenbush et al.. \"Artificial intelligence in radiology\". Nature reviews. Cancer, 2018. [openalex](https://openalex.org/W2803760365)\n\n[10] Ravi Kalakota, Thomas H. Davenport. \"The potential for artificial intelligence in healthcare\". Future Healthcare Journal, 2019. [openalex](https://openalex.org/W2953532875)\n\n[11] Zhijian Lin, Pingping Chen, Lijia Chen. \"Artificial Intelligence in Education: A Review\". IEEE Access, 2020. [openalex](https://openalex.org/W3017131514)\n\n[12] Roland T. Rust, Ming‐Hui Huang. \"Artificial Intelligence in Service\". Journal of Service Research, 2018. [openalex](https://openalex.org/W2786141192)\n\n[13] Isaac S. Kohane, Andrew L. Beam, Kun‐Hsing Yu. \"Artificial intelligence in healthcare\". Nature Biomedical Engineering, 2018. [openalex](https://openalex.org/W2895763047)\n\n[14] Michael Haenlein, Andreas Kaplan. \"A Brief History of Artificial Intelligence: On the Past, Present, and Future of Artificial Intelligence\". California Management Review, 2019. [openalex](https://openalex.org/W2963849010)\n\n[15] Johanne Tremblay, Pavel Hamet. \"Artificial intelligence in medicine\". Metabolism, 2017. [openalex](https://openalex.org/W2576404523)\n\n[16] Alzamil FM, Sheerah HA, Arafa A et al.. \"A Review on Teledermatology in Saudi Arabia: Framework, Barriers, and Opportunities.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42047118/)\n\n[17] Abu-Qbeitah S, Ahmad M. \"Artificial intelligence and big data applications in chronic disease management: clinical outcomes, challenges, and future directions.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42047049/)\n\n[18] Echols MR, Ngonge AL, Matthews L et al.. \"Beyond Discriminative Performance and the AUCs: Application and Contextual Limits of AI in Cardiovascular Epidemiology.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42047037/)\n\n[19] Satturwar S, Parwani AV, Li Z. \"Advances in Digital Cytopathology and Artificial Intelligence Applications.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046894/)\n\n[20] Martinez-Gonzalez L, Sanchez-Santos C, Huang CS et al.. \"Innovative therapies under clinical development for ALS treatment: Small molecules.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046889/)\n\n[21] Mehta V, Vathani A, Kamma PKG et al.. \"Comparing Traditional Versus AI-Assisted TMJ Disorder Management Approaches: A Systematic Review and Meta-Analysis.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046845/)\n\n[22] Vittori A, Cascella M. \"Postoperative Pain in Children: A Real Emergency.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046826/)\n\n[23] de Souza NF, Shing TF, Souto LG et al.. \"Biobanks in veterinary forensic medicine: A systematic review on Advances, challenges, and applications in combating wildlife trafficking.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046693/)\n\n[24] Fleming RM. \"Quantitative whole-body measurement of inflammothrombotic immunologic response disease using Fleming method for tissue and vascular differentiation and metabolism.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046542/)\n\n[25] Sahu D, Nandi S, Choudhary G et al.. \"Ultralow Energy Optoelectronic Synapse Using Halide Perovskite/Organic Semiconductor Heterostructure for Neuromorphic Computing, Optical Logic and Wireless Communication.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046507/)\n\n[26] Sun Z, Du Y, Wang J et al.. \"Selective and Sustainable Recovery of High-Value Metals from e-Waste via a Glucose-Mediated Hydrothermal Process.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046431/)\n\n[27] Dehghani S, Rajabi A, Rahmati A et al.. \"Optimizing Cine Cardiac MRI: Technical Advances and Clinical Applications.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046342/)\n\n[28] Misiak M, Kurpas D. \"Author guidelines in the AI era: Writing for readers, search engines, and reproducibility. Insights from editorial practice.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046325/)\n\n[29] Yoo JH, Kang JH, Yoon SM et al.. \"Bi-linguistic performance of large language models in multimodal analysis for differentiating jawbone-destroying malignancy from osteomyelitis.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045868/)\n\n[30] Ye MZ, Jiang J, Chen Z et al.. \"Using artificial intelligence for physical exercise and healthy ageing among older adults: a scoping review.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045814/)\n\n[31] Hubbuch J, DiPaola B, Walsh DS. \"Adding Artificial Intelligence to the Surgeon's Domain.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045799/)\n\n[32] Azaad S. \"AI-accelerated meta-analysis in psychology: Large language models code study properties with high accuracy.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045772/)\n\n[33] Hung M, Strickler I, Jensen A et al.. \"Artificial Intelligence in Dental and Orthopedic Skeletal Imaging: A Scoping Review of Methodological Convergence and Translational Gaps.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045769/)\n\n[34] Öçbe M, Akçay HÇ, Sır E et al.. \"Multidimensional Evaluation of AI-Generated Patient Information on Cone Beam-Computed Tomography.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045764/)\n\n[35] Nasarudin NA, Al-Jasmi F, Abdul Aziz NH et al.. \"An Improved Deep Learning Algorithm for Breast Cancer Survival Prediction Based on Multi-Omics Data.\". PubMed, 2025. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046740/)\n\n[36] Tobias Labarta, Elizaveta Kulicheva, Ronja Froelian et al.. \"Study on the Helpfulness of Explainable Artificial Intelligence\". arXiv, 2024. [arxiv](http://arxiv.org/abs/2410.11896v1)\n\n[37] Subrato Bharati, M. Rubaiyat Hossain Mondal, Prajoy Podder. \"A Review on Explainable Artificial Intelligence for Healthcare: Why, How, and When?\". arXiv, 2023. [arxiv](http://arxiv.org/abs/2304.04780v1)\n\n[38] Chengpeng Hu, Yunlong Zhao, Ziqi Wang et al.. \"Games for Artificial Intelligence Research: A Review and Perspectives\". arXiv, 2023. [arxiv](http://arxiv.org/abs/2304.13269v4)\n\n[39] Evana Gizzi, Lakshmi Nair, Sonia Chernova et al.. \"Creative Problem Solving in Artificially Intelligent Agents: A Survey and Framework\". arXiv, 2022. [arxiv](http://arxiv.org/abs/2204.10358v1)\n\n[40] Michael Timothy Bennett. \"Compression, The Fermi Paradox and Artificial Super-Intelligence\". arXiv, 2021. [arxiv](http://arxiv.org/abs/2110.01835v1)\n\n[41] Manfred Eppe, Pierre-Yves Oudeyer. \"Intelligent behavior depends on the ecological niche: Scaling up AI to human-like intelligence in socio-cultural environments\". arXiv, 2021. [arxiv](http://arxiv.org/abs/2103.06769v1)\n\n[42] Michael Timothy Bennett, Yoshihiro Maruyama. \"The Artificial Scientist: Logicist, Emergentist, and Universalist Approaches to Artificial General Intelligence\". arXiv, 2021. [arxiv](http://arxiv.org/abs/2110.01831v1)\n\n[43] Li Weigang, Liriam Enamoto, Denise Leyi Li et al.. \"Watershed of Artificial Intelligence: Human Intelligence, Machine Intelligence, and Biological Intelligence\". arXiv, 2021. [arxiv](http://arxiv.org/abs/2104.13155v2)\n\n[44] Rongpeng Li, Zhifeng Zhao, Xing Xu et al.. \"Internet of Intelligence: The Collective Advantage for Advancing Communications and Intelligence\". arXiv, 2019. [arxiv](http://arxiv.org/abs/1905.00719v7)\n\n[45] Zhi Zhou, Xu Chen, En Li et al.. \"Edge Intelligence: Paving the Last Mile of Artificial Intelligence with Edge Computing\". arXiv, 2019. [arxiv](http://arxiv.org/abs/1905.10083v1)\n\n[46] Yi Zeng, Enmeng Lu, Cunqing Huangfu. \"Linking Artificial Intelligence Principles\". arXiv, 2018. [arxiv](http://arxiv.org/abs/1812.04814v1)\n\n[47] Iain Barclay, Alun Preece, Ian Taylor. \"Defining the Collective Intelligence Supply Chain\". arXiv, 2018. [arxiv](http://arxiv.org/abs/1809.09444v1)\n\n[48] Tshilidzi Marwala, Evan Hurwitz. \"Artificial Intelligence and Economic Theories\". arXiv, 2017. [arxiv](http://arxiv.org/abs/1703.06597v1)\n\n[49] Jarryd Martin, Tom Everitt, Marcus Hutter. \"Death and Suicide in Universal Artificial Intelligence\". arXiv, 2016. [arxiv](http://arxiv.org/abs/1606.00652v1)\n\n[50] David Weinbaum, Viktoras Veitas. \"Open Ended Intelligence: The individuation of Intelligent Agents\". arXiv, 2015. [arxiv](http://arxiv.org/abs/1505.06366v2)\n\n---\n生成时间: 2026-04-28 20:51:32\n",
+    "summary": "# 今日学术资讯报告 - 2026-04-28\n\n# 今日学术资讯报告：人工智能研究前沿动态\n\n## 概述\n\n本期学术资讯收录了20篇涵盖人工智能理论与应用的研究论文，发表时间跨度从1995年至2026年，研究主题聚焦于AI基础理论、可解释人工智能（XAI）、医疗健康、教育、服务业及新药研发等多个关键领域。总体而言，本期论文呈现出三大趋势：一是XAI研究持续深化，从概念框架走向实践应用；二是AI在医疗领域的渗透日益深入，从影像诊断延伸至慢性病管理和数字化病理；三是AI应用边界不断拓展，从技术研究转向伦理考量与社会影响的多维审视。\n\n## 一、AI基础理论与方法演进\n\n本期收录的经典著作，包括Sivasubramanian Balasubramanian等著的**《Artificial Intelligence: A Modern Approach》**修订版[1]以及Nils J. Nilsson的同名著作[2]，系统梳理了AI领域的基础理论框架，涵盖智能代理、搜索算法、博弈论、一阶逻辑推理、概率推理及规划等核心主题。Haenlein与Kaplan的**《A Brief History of Artificial Intelligence》**[14]则从历史维度审视AI的发展脉络，将其定义为“系统正确解读外部数据、从数据中学习、并通过灵活适应实现特定目标和任务的能力”。\n\n这组文献揭示了AI理论研究的演进方向：传统符号主义方法逐步与统计学习方法融合，形成了当前以深度学习为主导的技术格局。经典教材的持续更新反映了该领域的勃勃生机——从早期的逻辑推理系统到现代的深度神经网络，AI正在从“能用”走向“好用”。\n\n## 二、可解释人工智能：从理论到实践\n\nXAI是本期最具理论深度的研究方向。Gil-López等发表的**《Explainable Artificial Intelligence (XAI): Concepts, taxonomies, opportunities and challenges toward responsible AI》**[3]，系统构建了XAI的概念框架与分类体系，将可解释性需求上升至“负责任AI”的伦理高度。Berrada与Adadi的综述[6]则聚焦于“黑箱”问题的技术根源，指出深度学习模型虽能产生强大预测，却难以提供人类可理解的决策依据。\n\n综合两篇论文可以看出，当前XAI研究主要沿两条路径展开：其一为事后解释方法（post-hoc explanation），如特征重要性分析、注意力可视化等；其二为内在可解释模型（interpretable-by-design），如决策规则提取、概念瓶颈模型等。值得关注的是，XAI已从纯技术问题演变为涉及信任建立、监管合规和伦理审查的多维议题，这与欧盟《人工智能法案》等监管框架的推进密切相关。\n\n## 三、AI在医疗健康领域的深度渗透\n\n医疗AI是本期论文最密集的研究方向，涵盖从宏观趋势到细分场景的完整图谱。\n\n**宏观趋势层面**，Topol的**《High-performance medicine: the convergence of human and artificial intelligence》**[4]描绘了“高性能医学”的愿景——AI与人类智能的深度融合将重塑诊疗范式。Zhi等人的综述[8]则从历史、现状与未来三个维度，系统梳理了AI在医疗领域的应用全景，指出机器学习方法（尤其是支持向量机等经典技术）在结构化医疗数据处理中的持久价值。Kalakota与Davenport[10]进一步细化了AI的应用场景矩阵，涵盖诊断与治疗建议、患者依从性管理和行政流程优化三大类别。\n\n**细分应用层面**，Schwartz等人的研究[9]聚焦于放射学这一AI应用最成熟的领域，讨论了影像AI从辅助诊断向自动报告生成的发展趋势。Kohane等人在Nature Biomedical Engineering发表的论文[13]则从生物医学工程角度，探讨了AI如何整合多模态健康数据实现精准医疗。Tremblay与Hamet[15]专门考察了AI在代谢性疾病诊疗中的应用潜力。\n\n**新兴前沿领域**，Abu-Qbeitah与Ahmad的综述[17]聚焦于AI与大数据在慢性病管理中的整合应用，强调临床与经济双重结局评估的重要性，指出数据标准化与隐私保护仍是主要挑战。Echols等人的研究[18]则反思了AI在心血管流行病学中的局限性——仅关注区分度（AUC）指标可能忽略模型的临床实用性和上下文适配性，呼吁采用更全面的评估框架。Satturwar等人的论文[19]介绍了数字细胞病理学的前沿进展，指出AI已在宫颈细胞学筛查中实现商业化部署，但向非妇科细胞病理学的扩展仍面临标本类型多样性和制片标准化等技术瓶颈。\n\n综合而言，医疗AI正从单点突破走向系统整合，从技术可行走向临床有效性验证，这一转型对研究方法论和监管模式都提出了新的要求。\n\n## 四、AI在教育领域的应用与反思\n\n本期收录了两篇关于AI在高等教育中应用的系统综述。Bond等人的研究[7]采用系统性综述方法，发现尽管AI在教育领域已积累约30年研究历史，但 educators（教育者）群体对其实际教学应用的理解仍显不足，存在理论与实践的鸿沟。Lin等人的综述[11]则构建了AI教育应用的评估框架，将研究范围限定于行政管理、教学辅助和学习支持三大维度，强调定性研究方法在理解AI教育影响方面的独特价值。\n\n两篇综述共同揭示了一个核心矛盾：AI技术的快速迭代与教育实践的渐进采用之间的张力。如何将AI从“技术可能性”转化为“教育增值”，仍是该领域亟需解决的问题。研究趋势表明，未来的AI教育研究将更注重学习者中心的视角，而非单纯追求技术先进性。\n\n## 五、AI在服务业的影响与服务创新\n\nRust与Huang在**《Artificial Intelligence in Service》**[12]中提出了一个颇具洞察力的理论框架——AI工作替代理论。该理论将服务任务所需能力分解为机械性、分析性、直觉性和共情性四个维度，认为AI正以可预测的顺序逐步替代人类执行这些任务。这一框架的价值在于，它不仅关注AI对就业的替代效应，更强调AI作为服务创新源泉的潜力，为平衡技术效率与人文关怀提供了分析工具。\n\n## 六、远程医疗与皮肤病学实践\n\nAlzamil等人的综述[16]聚焦于沙特阿拉伯的远程皮肤病学实践，为AI在专科分诊中的应用提供了一个区域性案例。该研究指出，地理广袤与皮肤科医生短缺的双重压力，恰恰为AI辅助的远程诊疗创造了需求土壤。沙特阿拉伯的数字转型战略为远程医疗的采纳提供了制度保障，这一模式对其他发展中国家具有借鉴意义。\n\n## 七、神经退行性疾病的新药研发\n\nMartinez-Gonzalez等人的综述[20]系统梳理了肌萎缩侧索硬化症（ALS）临床试验的最新进展，描绘了一个挑战与机遇并存的领域图景。尽管ALS药物研发失败率居高不下，但近年来小分子药物和创新疗法的涌入为该领域注入了新活力。AI在罕见病药物研发中的应用前景值得期待，但其对生物学机理理解的依赖仍是主要瓶颈。\n\n## 展望\n\n综合本期论文可以预见，AI研究正呈现三大前沿方向：\n\n**第一，可解释性与可信AI的深度融合**。随着XAI从学术概念走向监管实践，如何在模型性能与可解释性之间取得最优平衡，将成为决定AI能否进入高风险应用场景的关键。\n\n**第二，垂直领域AI的专业化深耕**。医疗、教育等服务领域的研究正从“AI能做什么”转向“AI应该怎么做”，学科知识与AI方法的深度整合将成为主流范式。\n\n**第三，AI评估框架的多维化演进**。Echols等人[18]对仅依赖区分度指标的批判性反思，预示着AI评估将从技术性能扩展至临床效用、经济价值、伦理合规和社会影响等多元维度。\n\nAI正从“工具”进化为“伙伴”，如何在提升效率的同时守护人文价值，将是该领域长期的核心议题。\n\n## 参考文献\n\n[1] Sivasubramanian Balasubramanian, Prof. Ganesh Vasudeo Manerkar, Dr. Haewon Byeon et al.. \"Artificial intelligence: a modern approach\". Choice Reviews Online, 1995. [openalex](https://openalex.org/W2122410182)\n\n[2] Nils J. Nilsson. \"Artificial intelligence: A modern approach\". Artificial Intelligence, 1996. [openalex](https://openalex.org/W2623293810)\n\n[3] Sergio Gil-López, Alberto Barbado, Salvador García et al.. \"Explainable Artificial Intelligence (XAI): Concepts, taxonomies, opportunities and challenges toward responsible AI\". Information Fusion, 2019. [openalex](https://openalex.org/W2981731882)\n\n[4] Eric J. Topol. \"High-performance medicine: the convergence of human and artificial intelligence\". Nature Medicine, 2018. [openalex](https://openalex.org/W2908201961)\n\n[5] Patrick Brézillon, Paolo Bouquet. \"Lecture Notes in Artificial Intelligence\". , 1999. [openalex](https://openalex.org/W26772505)\n\n[6] Mohammed Berrada, Amina Adadi. \"Peeking Inside the Black-Box: A Survey on Explainable Artificial Intelligence (XAI)\". IEEE Access, 2018. [openalex](https://openalex.org/W2891503716)\n\n[7] Melissa Bond, Franziska Gouverneur, Olaf Zawacki‐Richter et al.. \"Systematic review of research on artificial intelligence applications in higher education – where are the educators?\". International Journal of Educational Technology in Higher Education, 2019. [openalex](https://openalex.org/W2981863007)\n\n[8] Hui Zhi, Qiang Dong, Yi Dong et al.. \"Artificial intelligence in healthcare: past, present and future\". Stroke and Vascular Neurology, 2017. [openalex](https://openalex.org/W2664267452)\n\n[9] Lawrence H. Schwartz, Hugo J.W.L. Aerts, John Quackenbush et al.. \"Artificial intelligence in radiology\". Nature reviews. Cancer, 2018. [openalex](https://openalex.org/W2803760365)\n\n[10] Ravi Kalakota, Thomas H. Davenport. \"The potential for artificial intelligence in healthcare\". Future Healthcare Journal, 2019. [openalex](https://openalex.org/W2953532875)\n\n[11] Zhijian Lin, Pingping Chen, Lijia Chen. \"Artificial Intelligence in Education: A Review\". IEEE Access, 2020. [openalex](https://openalex.org/W3017131514)\n\n[12] Roland T. Rust, Ming‐Hui Huang. \"Artificial Intelligence in Service\". Journal of Service Research, 2018. [openalex](https://openalex.org/W2786141192)\n\n[13] Isaac S. Kohane, Andrew L. Beam, Kun‐Hsing Yu. \"Artificial intelligence in healthcare\". Nature Biomedical Engineering, 2018. [openalex](https://openalex.org/W2895763047)\n\n[14] Michael Haenlein, Andreas Kaplan. \"A Brief History of Artificial Intelligence: On the Past, Present, and Future of Artificial Intelligence\". California Management Review, 2019. [openalex](https://openalex.org/W2963849010)\n\n[15] Johanne Tremblay, Pavel Hamet. \"Artificial intelligence in medicine\". Metabolism, 2017. [openalex](https://openalex.org/W2576404523)\n\n[16] Alzamil FM, Sheerah HA, Arafa A et al.. \"A Review on Teledermatology in Saudi Arabia: Framework, Barriers, and Opportunities.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42047118/)\n\n[17] Abu-Qbeitah S, Ahmad M. \"Artificial intelligence and big data applications in chronic disease management: clinical outcomes, challenges, and future directions.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42047049/)\n\n[18] Echols MR, Ngonge AL, Matthews L et al.. \"Beyond Discriminative Performance and the AUCs: Application and Contextual Limits of AI in Cardiovascular Epidemiology.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42047037/)\n\n[19] Satturwar S, Parwani AV, Li Z. \"Advances in Digital Cytopathology and Artificial Intelligence Applications.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046894/)\n\n[20] Martinez-Gonzalez L, Sanchez-Santos C, Huang CS et al.. \"Innovative therapies under clinical development for ALS treatment: Small molecules.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046889/)\n\n[21] Mehta V, Vathani A, Kamma PKG et al.. \"Comparing Traditional Versus AI-Assisted TMJ Disorder Management Approaches: A Systematic Review and Meta-Analysis.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046845/)\n\n[22] Vittori A, Cascella M. \"Postoperative Pain in Children: A Real Emergency.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046826/)\n\n[23] de Souza NF, Shing TF, Souto LG et al.. \"Biobanks in veterinary forensic medicine: A systematic review on Advances, challenges, and applications in combating wildlife trafficking.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046693/)\n\n[24] Fleming RM. \"Quantitative whole-body measurement of inflammothrombotic immunologic response disease using Fleming method for tissue and vascular differentiation and metabolism.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046542/)\n\n[25] Sahu D, Nandi S, Choudhary G et al.. \"Ultralow Energy Optoelectronic Synapse Using Halide Perovskite/Organic Semiconductor Heterostructure for Neuromorphic Computing, Optical Logic and Wireless Communication.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046507/)\n\n[26] Sun Z, Du Y, Wang J et al.. \"Selective and Sustainable Recovery of High-Value Metals from e-Waste via a Glucose-Mediated Hydrothermal Process.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046431/)\n\n[27] Dehghani S, Rajabi A, Rahmati A et al.. \"Optimizing Cine Cardiac MRI: Technical Advances and Clinical Applications.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046342/)\n\n[28] Misiak M, Kurpas D. \"Author guidelines in the AI era: Writing for readers, search engines, and reproducibility. Insights from editorial practice.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046325/)\n\n[29] Yoo JH, Kang JH, Yoon SM et al.. \"Bi-linguistic performance of large language models in multimodal analysis for differentiating jawbone-destroying malignancy from osteomyelitis.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045868/)\n\n[30] Ye MZ, Jiang J, Chen Z et al.. \"Using artificial intelligence for physical exercise and healthy ageing among older adults: a scoping review.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045814/)\n\n[31] Hubbuch J, DiPaola B, Walsh DS. \"Adding Artificial Intelligence to the Surgeon's Domain.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045799/)\n\n[32] Azaad S. \"AI-accelerated meta-analysis in psychology: Large language models code study properties with high accuracy.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045772/)\n\n[33] Hung M, Strickler I, Jensen A et al.. \"Artificial Intelligence in Dental and Orthopedic Skeletal Imaging: A Scoping Review of Methodological Convergence and Translational Gaps.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045769/)\n\n[34] Öçbe M, Akçay HÇ, Sır E et al.. \"Multidimensional Evaluation of AI-Generated Patient Information on Cone Beam-Computed Tomography.\". PubMed, 2026. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42045764/)\n\n[35] Nasarudin NA, Al-Jasmi F, Abdul Aziz NH et al.. \"An Improved Deep Learning Algorithm for Breast Cancer Survival Prediction Based on Multi-Omics Data.\". PubMed, 2025. [pubmed](https://pubmed.ncbi.nlm.nih.gov/42046740/)\n\n[36] Tobias Labarta, Elizaveta Kulicheva, Ronja Froelian et al.. \"Study on the Helpfulness of Explainable Artificial Intelligence\". arXiv, 2024. [arxiv](http://arxiv.org/abs/2410.11896v1)\n\n[37] Subrato Bharati, M. Rubaiyat Hossain Mondal, Prajoy Podder. \"A Review on Explainable Artificial Intelligence for Healthcare: Why, How, and When?\". arXiv, 2023. [arxiv](http://arxiv.org/abs/2304.04780v1)\n\n[38] Chengpeng Hu, Yunlong Zhao, Ziqi Wang et al.. \"Games for Artificial Intelligence Research: A Review and Perspectives\". arXiv, 2023. [arxiv](http://arxiv.org/abs/2304.13269v4)\n\n[39] Evana Gizzi, Lakshmi Nair, Sonia Chernova et al.. \"Creative Problem Solving in Artificially Intelligent Agents: A Survey and Framework\". arXiv, 2022. [arxiv](http://arxiv.org/abs/2204.10358v1)\n\n[40] Michael Timothy Bennett. \"Compression, The Fermi Paradox and Artificial Super-Intelligence\". arXiv, 2021. [arxiv](http://arxiv.org/abs/2110.01835v1)\n\n[41] Manfred Eppe, Pierre-Yves Oudeyer. \"Intelligent behavior depends on the ecological niche: Scaling up AI to human-like intelligence in socio-cultural environments\". arXiv, 2021. [arxiv](http://arxiv.org/abs/2103.06769v1)\n\n[42] Michael Timothy Bennett, Yoshihiro Maruyama. \"The Artificial Scientist: Logicist, Emergentist, and Universalist Approaches to Artificial General Intelligence\". arXiv, 2021. [arxiv](http://arxiv.org/abs/2110.01831v1)\n\n[43] Li Weigang, Liriam Enamoto, Denise Leyi Li et al.. \"Watershed of Artificial Intelligence: Human Intelligence, Machine Intelligence, and Biological Intelligence\". arXiv, 2021. [arxiv](http://arxiv.org/abs/2104.13155v2)\n\n[44] Rongpeng Li, Zhifeng Zhao, Xing Xu et al.. \"Internet of Intelligence: The Collective Advantage for Advancing Communications and Intelligence\". arXiv, 2019. [arxiv](http://arxiv.org/abs/1905.00719v7)\n\n[45] Zhi Zhou, Xu Chen, En Li et al.. \"Edge Intelligence: Paving the Last Mile of Artificial Intelligence with Edge Computing\". arXiv, 2019. [arxiv](http://arxiv.org/abs/1905.10083v1)\n\n[46] Yi Zeng, Enmeng Lu, Cunqing Huangfu. \"Linking Artificial Intelligence Principles\". arXiv, 2018. [arxiv](http://arxiv.org/abs/1812.04814v1)\n\n[47] Iain Barclay, Alun Preece, Ian Taylor. \"Defining the Collective Intelligence Supply Chain\". arXiv, 2018. [arxiv](http://arxiv.org/abs/1809.09444v1)\n\n[48] Tshilidzi Marwala, Evan Hurwitz. \"Artificial Intelligence and Economic Theories\". arXiv, 2017. [arxiv](http://arxiv.org/abs/1703.06597v1)\n\n[49] Jarryd Martin, Tom Everitt, Marcus Hutter. \"Death and Suicide in Universal Artificial Intelligence\". arXiv, 2016. [arxiv](http://arxiv.org/abs/1606.00652v1)\n\n[50] David Weinbaum, Viktoras Veitas. \"Open Ended Intelligence: The individuation of Intelligent Agents\". arXiv, 2015. [arxiv](http://arxiv.org/abs/1505.06366v2)\n\n---\n生成时间: 2026-04-28 20:51:32\n",
+    "papers": [
+      {
+        "paper_id": "W2122410182",
+        "title": "Artificial intelligence: a modern approach",
+        "abstract": "The long-anticipated revision of this #1 selling book offers the most comprehensive, state of the art introduction to the theory and practice of artificial intelligence for modern applications. Intelligent Agents. Solving Problems by Searching. Informed Search Methods. Game Playing. Agents that Reason Logically. First-order Logic. Building a Knowledge Base. Inference in First-Order Logic. Logical Reasoning Systems. Practical Planning. Planning and Acting. Uncertainty. Probabilistic Reasoning Systems. Making Simple Decisions. Making Complex Decisions. Learning from Observations. Learning with Neural Networks. Reinforcement Learning. Knowledge in Learning. Agents that Communicate. Practical Communication in English. Perception. Robotics. For computer professionals, linguists, and cognitive scientists interested in artificial intelligence.",
+        "authors": [
+          "Sivasubramanian Balasubramanian",
+          "Prof. Ganesh Vasudeo Manerkar",
+          "Dr. Haewon Byeon",
+          "Dr. Anil Kumar"
+        ],
+        "year": 1995,
+        "venue": "Choice Reviews Online",
+        "url": "https://openalex.org/W2122410182",
+        "citations": 22244,
+        "doi": "choice.33-1577",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 1
+      },
+      {
+        "paper_id": "W2981731882",
+        "title": "Explainable Artificial Intelligence (XAI): Concepts, taxonomies, opportunities and challenges toward responsible AI",
+        "abstract": "",
+        "authors": [
+          "Sergio Gil-López",
+          "Alberto Barbado",
+          "Salvador García",
+          "Richard Benjamins",
+          "Natalia Díaz-Rodríguez",
+          "Siham Tabik",
+          "Daniel Molina",
+          "Alejandro Barredo Arrieta",
+          "Javier Del Ser",
+          "Adrien Bennetot"
+        ],
+        "year": 2019,
+        "venue": "Information Fusion",
+        "url": "https://openalex.org/W2981731882",
+        "citations": 8539,
+        "doi": "j.inffus.2019.12.012",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 3
+      },
+      {
+        "paper_id": "W2908201961",
+        "title": "High-performance medicine: the convergence of human and artificial intelligence",
+        "abstract": "",
+        "authors": [
+          "Eric J. Topol"
+        ],
+        "year": 2018,
+        "venue": "Nature Medicine",
+        "url": "https://openalex.org/W2908201961",
+        "citations": 7921,
+        "doi": "s41591-018-0300-7",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 4
+      },
+      {
+        "paper_id": "42047118",
+        "title": "A Review on Teledermatology in Saudi Arabia: Framework, Barriers, and Opportunities.",
+        "abstract": "Teledermatology has become an important tool for expanding access to dermatologic care, especially in geographically large countries such as Saudi Arabia. Saudi Arabia's digital transformation and the shortage of dermatologists in rural regions have created favorable conditions for the adoption of teledermatology. Several platforms now provide virtual dermatology consultations. This narrative review aimed to explore teledermatology's current status, acceptance, barriers, and future directions in Saudi Arabia. The literature indicates that both dermatologists and patients are generally receptive to teledermatology, particularly for follow-up care; however, concerns about the lack of physical examination and reduced interpersonal interaction persist. A SWOT (Strengths, Weaknesses, Opportunities, and Threats) analysis revealed that Saudi Arabia's strong digital infrastructure, high smartphone penetration, and alignment with Vision 2030 are major strengths supporting teledermatology expansion. Key weaknesses include regulatory and reimbursement gaps, limited digital literacy, and the lack of dermatology-specific guidelines. Opportunities lie in extending services to underserved areas and integrating artificial intelligence, whereas threats include cultural resistance, cybersecurity risks, and potential inequities in digital access. In conclusion, teledermatology in Saudi Arabia is rapidly developing and shows considerable promise; however, its sustainability will depend on targeted investment, regulatory reforms, and efforts to promote equitable access.",
+        "authors": [
+          "Alzamil FM",
+          "Sheerah HA",
+          "Arafa A",
+          "AlBassam DM",
+          "Alsarari AA",
+          "Alahdal AY",
+          "Alghamdi EA",
+          "AlBassam AM",
+          "Rajeh DA",
+          "Bensaeed AA",
+          "Elkady E",
+          "Almuzaini Y",
+          "Alamri FA"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42047118/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 16
+      },
+      {
+        "paper_id": "42047049",
+        "title": "Artificial intelligence and big data applications in chronic disease management: clinical outcomes, challenges, and future directions.",
+        "abstract": "AIM: To synthesize applications of Artificial Intelligence (AI) and big data in chronic disease management, evaluate clinical and economic outcomes, challenges, and future directions. METHODS: A comprehensive search was conducted across PubMed, Scopus, Web of Science, IEEE Xplore, and CINAHL for studies published between 2015-2025, following the Preferred Reporting Items for Systematic Reviews and Meta-Analyses (PRISMA) 2020 guidelines.This review was registered in PROSPERO (CRD420251036828). Inclusion criteria encompassed peer-reviewed empirical, narrative, and systematic studies focused on AI and big data in chronic diseases care. Twelve studies were appraised using validated appraisal tools appropriate to each the study design, which conducted across clinical, technological and public health setting, reflecting application of AI and big data in hospital, digital health platform and diseases management. RESULTS: AI models achieved predictive accuracies between 88%-96% across diabetes, Chronic Kidney Disease (CKD), chronic obstructive pulmonary disease (COPD), and cardiovascular conditions. Outcomes included a 25% reduction in readmissions, a 30% decrease in CKD progression, and a 25% improvement in treatment adherence. Technologies included machine learning, electronic health record integration, wearable devices, and multi-omics platforms. Major challenges identified were data fragmentation, bias, and regulatory gaps. CONCLUSION: The AI and big data offer transformative potential for chronic disease management from early prediction to personalized treatment, but realizing this requires addressing data fragmentation, ethical and privacy concerns, and ensuring equity and accountability through transparent, explainable AI.",
+        "authors": [
+          "Abu-Qbeitah S",
+          "Ahmad M"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42047049/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 17
+      },
+      {
+        "paper_id": "42047037",
+        "title": "Beyond Discriminative Performance and the AUCs: Application and Contextual Limits of AI in Cardiovascular Epidemiology.",
+        "abstract": "",
+        "authors": [
+          "Echols MR",
+          "Ngonge AL",
+          "Matthews L",
+          "Rodriguez CJ"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42047037/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 18
+      },
+      {
+        "paper_id": "42046894",
+        "title": "Advances in Digital Cytopathology and Artificial Intelligence Applications.",
+        "abstract": "Cytopathology is the first field of pathology in which artificial intelligence (AI) models were successfully developed and commercialized for routine clinical screening of cervical cytology, a practice that has been in place for the past 2 to 3 decades. However, the development and deployment of AI applications for nongynecologic cytology has just begun. The variety of cytology specimen types and preparations with associated unique characteristics presents technical challenges for the complete digitization of the cytology workflow. Despite of these challenges, a few institutions have adopted a complete digital cytology workflow. Technical advancement in digital cytopathology have replaced conventional rapid onsite evaluation by a variety of virtual telecytology systems. Novel digital diagnostic solutions for cytology are evolving. Among these, Hologic Genius is the only one approved by the Food and Drug Administration (FDA) for routine clinical screening of cervical cytology in the United States. The recommendations for AI validation and best-practice guidelines for digital cytopathology are currently being developed. Prospect of technical and AI advances in digital cytopathology include automation of sample preparation, ROSE using telecytology, automation of screening of gynecologic and nongynecologic cytology specimens, automated quantitation of biomarkers, quality control, and beyond. This review article uncovers recent advances in digital cytopathology and discusses potential use cases of AI applications for routine cytopathology practice in this modern era of digital cytopathology.",
+        "authors": [
+          "Satturwar S",
+          "Parwani AV",
+          "Li Z"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046894/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 19
+      },
+      {
+        "paper_id": "42046889",
+        "title": "Innovative therapies under clinical development for ALS treatment: Small molecules.",
+        "abstract": "INTRODUCTION: The clinical trial landscape for Amyotrophic Lateral Sclerosis (ALS) is a rapidly evolving field, characterized by significant obstacles but also by an increasing volume of novel therapeutics entering clinical research. Expanding on our 2022 work, this review examines the current state of the ALS clinical pipeline. Given the high volume of ongoing trials, the diversity of their biological targets and the nature of their therapeutic approaches, we focus this comprehensive update in providing a comprehensive overview of the current state of small-molecule development, focusing on agents that have entered or progressed through clinical evaluation since 2022 to the end of 2025. AREAS COVERED: Clinical trials for ALS registered within the United States (ClinicalTrials.gov) and European Union (EU Clinical Trials Register/CTIS) databases have been systematically reviewed and are detailed in this report. EXPERT OPINION: The implementation of advanced clinical trial platforms has introduced more efficient, adaptive strategies, leading to a significant increase in the breadth of explored therapies for ALS. Furthermore, the advent of precision medicine, powered by Artificial Intelligence (AI) for enhanced patient selection and stratification, offers a critical pathway toward overcoming the challenges posed by this severe and heterogeneous disease.",
+        "authors": [
+          "Martinez-Gonzalez L",
+          "Sanchez-Santos C",
+          "Huang CS",
+          "Gil C",
+          "Martinez A"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046889/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 20
+      },
+      {
+        "paper_id": "42046845",
+        "title": "Comparing Traditional Versus AI-Assisted TMJ Disorder Management Approaches: A Systematic Review and Meta-Analysis.",
+        "abstract": "OBJECTIVE: This systematic review and meta-analysis compared traditional diagnostic approaches with artificial intelligence (AI)-based techniques for temporomandibular joint disorders (TMDs) and evaluated their diagnostic accuracy. METHODS: Literature searches across PubMed-MEDLINE, Scopus, Embase, Cochrane, and Google Scholar identified studies published between 1st January 2010 to 20th April 2025. Eligible studies used AI-based algorithms, such as deep learning (DL), machine learning (ML), or computer-aided diagnostic tools, for TMD diagnosis or management, reporting performance metrics including sensitivity, specificity, and accuracy. Traditional approaches, including clinical examinations, radiographic assessments, and standardized diagnostic criteria (DC/TMD), serve as comparators. Risk of bias was assessed using Quality Assessment of Diagnostic Accuracy Studies (QUADAS-2). Meta-analysis was conducted in the form of pooled sensitivity and specificity. RESULTS: Fourteen studies were included, comprising AI models trained on clinical and imaging data including cone beam computed tomography (CBCT), magnetic resonance imaging (MRI), and orthopantomogram (OPG). AI methods showed moderate-to-high diagnostic accuracy, with sensitivity ranging from 0.66 to 0.88 and specificity from 0.72 to 0.86. A meta-analysis of five studies showed pooled sensitivity and specificity estimates within these ranges. Among the included studies, AI models integrated radiomic as well as semantic features to achieve sensitivity from 0.82 to 0.93, and specificity from 0.76 to 0.90; however, evidence showed low certainty because bias risk was high (7/9 studies), sample sizes were small (mean n = 42), and external validation was absent in 8 of 9 studies. CONCLUSION: AI-assisted techniques offer significant potential to complement traditional TMD diagnostic methods by enhancing the diagnostic precision. However, owing to methodological limitations, further high-quality prospective studies with standardized reporting are needed to validate the use of AI in TMD management.",
+        "authors": [
+          "Mehta V",
+          "Vathani A",
+          "Kamma PKG",
+          "Chaturvedi S",
+          "Mathur A",
+          "Noor T"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046845/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 21
+      },
+      {
+        "paper_id": "42046826",
+        "title": "Postoperative Pain in Children: A Real Emergency.",
+        "abstract": "The topic of acute pain, especially post-operative pain, risks being unfairly relegated to the background. Although significant progress has been made in pediatric anesthesia, with a drastic reduction in perioperative mortality and morbidity, much remains to be done in terms of organization and training. Artificial intelligence can potentially help here. Combining data from large, well-structured datasets can provide predictive models that guide patients at higher risk of developing pain. Having reliable alerts would allow resources to be used not only more effectively, but also more rationally. Furthermore, artificial intelligence could help us diagnose and measure the pain of all those patients with cognitive barriers, exploiting nonverbal communication.",
+        "authors": [
+          "Vittori A",
+          "Cascella M"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046826/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 22
+      },
+      {
+        "paper_id": "42046693",
+        "title": "Biobanks in veterinary forensic medicine: A systematic review on Advances, challenges, and applications in combating wildlife trafficking.",
+        "abstract": "BACKGROUND AND AIM: Biobanks represent organized repositories of biological samples linked to associated data, designed for long-term scientific, clinical, and forensic utilization. In veterinary medicine, animal biobanks facilitate biomedical research, genetic resource preservation, species conservation, and forensic investigations. The present systematic review aimed to synthesize advances, persistent challenges, and practical applications of biobanks in veterinary forensic medicine, with particular emphasis on their contribution to detection, investigation, and suppression of wildlife trafficking. MATERIALS AND METHODS: A systematic literature search was conducted across Periódicos Capes, PubMed, SciELO, and ScienceDirect databases, covering publications from 2013 to 2023. Search strings combined terms such as \"animal biobank\", \"animal biorepository\", \"wildlife forensic\", \"wildlife trafficking\", and \"forensic veterinary\" (English), together with Portuguese equivalents. Only peer-reviewed articles published in English or Portuguese that explicitly addressed biobanks in veterinary forensic contexts or wildlife crime were included. The review adhered to PRISMA 2020 guidelines. Screening involved title/abstract evaluation followed by full-text assessment. Data were narratively synthesized. RESULTS: Of 1,495 records identified, 15 studies fulfilled all inclusion criteria after exclusion of 1,460 irrelevant or non-qualifying publications. No eligible articles appeared between 2013 and 2014. From 2015 onward, publications demonstrated progressive refinement, transitioning from molecular barcoding for species identification toward integrated applications in geographic origin assignment, chain-of-custody documentation, and evidentiary support in judicial proceedings. Key materials included DNA from muscle, scales, claws, and feathers; cryopreserved gonadal tissues; and somatic cells derived from minimally invasive sources (e.g., feather follicles) or roadkill specimens. Studies highlighted particular utility in identifying fraudulently labeled fishery products, counterfeit mammalian derivatives (e.g., fake tiger claws), and confiscated pangolin scales, as well as in tracing trafficking routes in high biodiversity regions. CONCLUSION: Veterinary forensic biobanks offer substantial potential for accurate species and geographic provenance determination, thereby strengthening enforcement against illegal wildlife trade. Nevertheless, implementation remains constrained by absent standardized operating procedures, limited practitioner awareness, fragmented reference databases, inadequate inter-institutional connectivity, and elevated logistic/financial demands. Regionalized biobanks integrated with wildlife screening centers (CETAS), harmonized chain-of-custody protocols, and artificial intelligence-supported data curation are proposed as priority strategies to translate existing scientific advances into routine forensic and conservation practice.",
+        "authors": [
+          "de Souza NF",
+          "Shing TF",
+          "Souto LG",
+          "Vieira FFA",
+          "Nishihara JKLF",
+          "Santos NYYD",
+          "Rostirolla BP",
+          "Gomes MDC",
+          "de Moura FBC",
+          "Rocha NS"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046693/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 23
+      },
+      {
+        "paper_id": "42046542",
+        "title": "Quantitative whole-body measurement of inflammothrombotic immunologic response disease using Fleming method for tissue and vascular differentiation and metabolism.",
+        "abstract": "BACKGROUND: Precision theranostics in nuclear medicine requires reproducible, calibrated quantification of tissue perfusion, and metabolism. This study evaluates whether the Fleming method for tissue and vascular differentiation and metabolism (FMTVDM) can quantify inflammothrombotic immunologic response disease (ITIRD) as a unified biologic continuum across cardiovascular, oncologic, and infectious/inflammatory conditions. METHODS: This is a secondary analysis of six independent, Institutional Review Board-approved cohorts (total N = 2127) encompassing coronary artery disease (n = 1001), myocardial perfusion kinetics (n = 330), breast tissue differentiation by absolute count activity (n = 260) and maximum count activity (n = 35), infectious/inflammatory disease (n = 501), and systemic ITIRD assessment. All imaging was performed using calibrated FMTVDM quantification with artificial intelligence iterative analysis. Statistical methods included paired t-tests, analysis of variance, multivariate analysis of variance, Spearman correlations, and Poisson regression with Bonferroni correction for multiplicity. RESULTS: Coronary anatomy demonstrated a continuous, nonbinary relationship with physiologic impairment (Spearman rho = -0.68, P < 0.001), with postintervention FMTVDM showing a mean increase of 14.2% (95% CI: 11.8-16.6%). Myocardial kinetics distinguished normal, ischemic, stunned, and hibernating states (analysis of variance F = 24.7, P < 0.001). Breast maximum count activity values differentiated normal tissue (142 ± 18), ductal carcinoma in situ (192 ± 24), and invasive carcinoma (402 ± 87; F = 38.2, P < 0.001) in a pilot cohort. Infectious disease FMTVDM values correlated with ferritin (rho = 0.72) and interleukin-6 (rho = 0.68; both P < 0.001), with tissue-level improvement preceding biomarker normalization by 4.2 ± 1.8 days. CONCLUSION: FMTVDM provides reproducible, calibrated quantification of perfusion and metabolism across organ systems. These findings provide evidence supporting ITIRD as a measurable biologic continuum. Prospective, multicenter validation studies are warranted to confirm these associations and to establish the role of FMTVDM in precision nuclear medicine.",
+        "authors": [
+          "Fleming RM"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046542/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 24
+      },
+      {
+        "paper_id": "42046507",
+        "title": "Ultralow Energy Optoelectronic Synapse Using Halide Perovskite/Organic Semiconductor Heterostructure for Neuromorphic Computing, Optical Logic and Wireless Communication.",
+        "abstract": "With the advancement of artificial intelligence, the emulation of biological neural processes through neuromorphic computing has gained significant attention. Artificial optoelectronic synapses have emerged as promising components for neuromorphic computing due to their simple structure, low energy consumption, and ability to overcome the von Neumann bottleneck. Here, we design a multifunctional, energy-efficient optoelectronic synapse based on a formamidinium cesium lead iodide (FA",
+        "authors": [
+          "Sahu D",
+          "Nandi S",
+          "Choudhary G",
+          "Roy SS",
+          "Giri PK"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046507/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 25
+      },
+      {
+        "paper_id": "42046431",
+        "title": "Selective and Sustainable Recovery of High-Value Metals from e-Waste via a Glucose-Mediated Hydrothermal Process.",
+        "abstract": "The rapid fabrication of artificial intelligence-based hardware worldwide is intensifying the electronic waste (e-waste) crisis, threatening ecosystems and demanding urgent, sustainable solutions for metal recovery. Herein, a glucose-mediated hydrothermal strategy is reported for the efficient reclamation of high-value metals from complex e-waste. Glucose functions as a multifunctional ligand, establishing a specific pathway for metal-organic coordination, enabling selective metal recovery. By precisely regulating reaction kinetics and thermodynamic parameters, the proposed metal-ligand hydrothermal strategy exhibited exceptional recovery of 99.16% for iron (Fe) and 98.67% for silver (Ag), while concurrently converting toxic metals such as lead (Pb) and nickel (Ni) into value-added byproducts without any energy-intensive purification steps. Notably, the process was operated within a closed-loop system. All residual solutions were recycled, eliminating secondary wastewater discharge and enabling the use of the entire components present in the resource. Density functional theory calculations and radial distribution function analysis further revealed the molecular basis of selectivity: Fe(III) preferentially formed bidentate chelates with the aldehyde and hydroxyl groups of glucose, a process complemented by electrostatic interactions that promote rapid nucleation and precipitation. In contrast, other metal ions, Ag(I) and Pb(II), are coordinated primarily via single oxygen sites. Technoeconomic analysis confirmed the economic viability of the process, demonstrating a net profit of $2460 per ton of processed e-waste. This study provides a sustainable and economically compelling waste-to-resource platform guided by molecular-level insights into selective coordination chemistry for advanced e-waste recycling.",
+        "authors": [
+          "Sun Z",
+          "Du Y",
+          "Wang J",
+          "Yin R",
+          "Zhang G",
+          "Wu J",
+          "Lu T",
+          "Chen Y",
+          "Qu Z",
+          "Ren H"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046431/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 26
+      },
+      {
+        "paper_id": "42046342",
+        "title": "Optimizing Cine Cardiac MRI: Technical Advances and Clinical Applications.",
+        "abstract": "Cine cardiac magnetic resonance imaging (MRI) is the gold standard for cardiac function assessment, offering exceptional spatial and temporal resolution in a non-invasive manner. Recently, there have been attempts to improve signal-to-noise ratio (SNR) and temporal resolution by optimizing pulse sequence parameters such as repetition time (TR), echo time (TE), flip angle (FA), and bandwidth (BW). Although the usual technique is balanced steady-state free precession (bSSFP), its performance is limited due to off-resonance effects, specific absorption rate (SAR) constraints, and susceptibility artifacts, particularly at ≥ 3 T scanners. Due to the lack of breath-hold capacity or arrhythmias in some patients, faster acquisition and motion robustness can be addressed such as wideband bSSFP and real-time imaging through compressed sensing (CS) and artificial intelligence (AI). For patients with severe metal artifacts from cardiac implantable electronic devices (CIEDs), the spoiled gradient recalled-echo (SPGR) sequence is an effective alternative due to its lower sensitivity to susceptibility artifacts. Additionally, innovations in B",
+        "authors": [
+          "Dehghani S",
+          "Rajabi A",
+          "Rahmati A",
+          "Omidi N"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046342/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 27
+      },
+      {
+        "paper_id": "42046325",
+        "title": "Author guidelines in the AI era: Writing for readers, search engines, and reproducibility. Insights from editorial practice.",
+        "abstract": "Scientific journals establish author guidelines to ensure manuscript consistency, enhance readability, and maintain editorial standards. However, the rationale behind specific requirements is not always apparent to submitting authors, leading to misunderstandings and noncompliance. This editorial examines the instructions for authors currently applied at Advances in Clinical and Experimental Medicine, explaining the purpose behind selected regulations that may initially seem arbitrary or overly prescriptive. We analyze requirements concerning manuscript titles (sentence case, study design specification, avoidance of nonstandard abbreviations), author affiliations (institutional hierarchy, geographic formatting), ORCID (Open Researcher and Contributor ID) usage, highlights preparation, taxonomic nomenclature (italicization of genus and species, distinction between genes and proteins), laboratory equipment reporting (manufacturer details, catalog numbers, software versions), abbreviation protocols, and supplementary file management. We demonstrate that these requirements serve essential practical functions: improving search engine optimization and discoverability, ensuring experimental reproducibility, preventing taxonomic and nomenclatural confusion, facilitating rigorous peer review, and enhancing reader comprehension across different formats and access points. The editorial also addresses the evolving nature of author guidelines in the era of artificial intelligence (AI) and digital publishing, emphasizing that editorial policies should function as adaptable documents that respond to technological advances and changing scholarly communication practices. By fostering open dialogue between editors and authors regarding the rationale behind publication requirements, journals can maintain high standards while remaining responsive to the legitimate concerns of the research community. We conclude that transparent communication about editorial policies not only improves compliance but also strengthens the collaborative relationship between journals and the researchers they serve.",
+        "authors": [
+          "Misiak M",
+          "Kurpas D"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046325/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 28
+      },
+      {
+        "paper_id": "42045868",
+        "title": "Bi-linguistic performance of large language models in multimodal analysis for differentiating jawbone-destroying malignancy from osteomyelitis.",
+        "abstract": "",
+        "authors": [
+          "Yoo JH",
+          "Kang JH",
+          "Yoon SM",
+          "Yeom HG",
+          "Lim HJ",
+          "Kim BC"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42045868/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 29
+      },
+      {
+        "paper_id": "42045814",
+        "title": "Using artificial intelligence for physical exercise and healthy ageing among older adults: a scoping review.",
+        "abstract": "",
+        "authors": [
+          "Ye MZ",
+          "Jiang J",
+          "Chen Z",
+          "Ng DTK",
+          "Kwok TT"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42045814/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 30
+      },
+      {
+        "paper_id": "42045799",
+        "title": "Adding Artificial Intelligence to the Surgeon's Domain.",
+        "abstract": "",
+        "authors": [
+          "Hubbuch J",
+          "DiPaola B",
+          "Walsh DS"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42045799/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 31
+      },
+      {
+        "paper_id": "42045772",
+        "title": "AI-accelerated meta-analysis in psychology: Large language models code study properties with high accuracy.",
+        "abstract": "Theoretically driven meta-analyses often involve testing whether study characteristics moderate an effect in a pattern that supports one of multiple competing theoretical accounts. To conduct such analyses, researchers must manually extract, i.e., code, these characteristics from sometimes hundreds of studies. Ideally, studies should be coded by two researchers independently to prevent errors and biases from compromising the dataset's integrity. The laborious nature of this task, however, means that meta-analysts usually settle for double-coding just a portion of the studies included in their study. Some researchers have proposed using large language models (LLMs) as a double-coder, showing that they can reliably extract explicitly stated information (e.g., publication year) from articles. However, meta-analyses in psychology generally require studies to be coded in terms of higher-level conceptual dimensions (e.g., the type of behavior rather than which behavior). The present study investigated whether two LLMs, OpenAI's GPT-5 and Google's Gemini 2.5 Pro, can code studies in this way. Both models replicated the study codes from three recently published meta-analyses in psychology with high accuracy (>92% overall), despite the limited information they received. LLM double-coding, therefore, offers a practical solution for meta-analysts seeking to ensure data integrity.",
+        "authors": [
+          "Azaad S"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42045772/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 32
+      },
+      {
+        "paper_id": "42045769",
+        "title": "Artificial Intelligence in Dental and Orthopedic Skeletal Imaging: A Scoping Review of Methodological Convergence and Translational Gaps.",
+        "abstract": "This scoping review aimed to answer the question: to what extent do artificial intelligence applications in dental and orthopedic skeletal imaging demonstrate true cross-disciplinary methodological convergence versus parallel development with shared translational barriers? This scoping review synthesizes AI applications across both fields to characterize methodological overlap, developmental asymmetries, and translational gaps, rather than assuming convergence. Following the PRISMA-ScR reporting standards, we searched PubMed, Scopus, Web of Science, IEEE Xplore, and EMBASE for peer-reviewed, English-language human studies published between January 2015 and May 2025. Eligible studies applied AI, machine learning, or deep learning to diagnostic, segmentation, or preoperative planning tasks in dental or orthopedic imaging. Three reviewers independently extracted data on imaging modality, task, model architecture, dataset characteristics, validation strategy, performance metrics, and translational considerations, with random auditing for consistency. Fifty-nine studies met inclusion criteria, comprising 48 dental (81.36%) and 11 orthopedic (18.64%) investigations, with no study spanning both domains. Most applications focused on foundational tasks such as segmentation and detection/classification using two-dimensional radiographs and cone-beam computed tomography. Computed tomography primarily supported bony anatomy and preoperative planning, while magnetic resonance imaging, the EOS system, and intraoral scanners were used in specialized workflows. Convolutional neural networks, particularly U-Net/nnU-Net variants and EfficientNet/ResNet backbones with YOLO-based detectors, dominated, alongside emerging transformer-based and hybrid physics-informed approaches. Internal validation performance was frequently high for segmentation (typical Dice 0.90-0.99), while more complex or anatomically challenging targets showed lower and more variable performance. External validation, prospective evaluation, and standardized reporting of calibration, expert comparators, and demographic performance were uncommon. The current AI skeletal imaging literature demonstrates strong technical feasibility but uneven clinical maturity, with dental imaging dominating in volume and automation of foundational tasks and orthopedic applications remaining fewer, more heterogeneous, and less mature. Rather than evidencing true cross-disciplinary convergence, the findings highlight asymmetrical development and shared translational barriers, particularly in validation rigor and real-world integration. By explicitly identifying these asymmetries, this review provides a realistic foundation for future cross-disciplinary collaboration focused on harmonized validation standards, clinically meaningful benchmarks, and equitable, workflow-native deployment.",
+        "authors": [
+          "Hung M",
+          "Strickler I",
+          "Jensen A",
+          "Gunnell B",
+          "Parry A",
+          "Dyal S",
+          "Lipsky MS"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42045769/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 33
+      },
+      {
+        "paper_id": "42045764",
+        "title": "Multidimensional Evaluation of AI-Generated Patient Information on Cone Beam-Computed Tomography.",
+        "abstract": "This study aimed to conduct a multidimensional evaluation of artificial intelligence (AI) chatbot-generated patient information regarding cone beam-computed tomography (CBCT) in dentistry, with specific focus on readability, informational quality, reliability, and patient-centered suitability. Twenty frequently asked, patient-oriented questions related to CBCT were systematically identified from a public online forum. Each question was submitted to four large language model-based chatbots (ChatGPT-4o, Gemini Advanced, Claude Sonnet 4, and Microsoft Copilot) under standardized conditions. Generated responses were evaluated using validated instruments, including the DISCERN tool and Global Quality Scale (GQS) for information quality and reliability, as well as Flesch Reading Ease, Flesch-Kincaid Grade Level, and Gunning Fog Index for readability. Patient-centeredness was further assessed using PEMAT-Understandability and PEMAT-Actionability scores. Comparative analyses were performed using linear mixed-effects models. Significant differences were observed among chatbots across all evaluated domains (p < 0.05). While advanced models demonstrated higher informational quality and reliability, their responses frequently exceeded recommended health literacy thresholds. Readability, transparency, and actionability varied substantially between platforms. No chatbot consistently met all criteria for optimal patient-directed communication. AI chatbots can provide generally accurate information on CBCT; however, variability in readability, reliability, and educational suitability limits their standalone use for patient education. Careful integration with professional oversight is essential to ensure safe and accessible AI-supported communication in dentomaxillofacial radiology. This study provides the first multidimensional, comparative evaluation of leading AI chatbots in delivering patient-oriented information about cone beam-computed tomography. It shows critical gaps between informational accuracy and health literacy suitability. This study reveals the need for professional oversight when using AI for patient education in dentomaxillofacial radiology.",
+        "authors": [
+          "Öçbe M",
+          "Akçay HÇ",
+          "Sır E",
+          "Taş Ç",
+          "Erbalta R"
+        ],
+        "year": 2026,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42045764/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 34
+      },
+      {
+        "paper_id": "42046740",
+        "title": "An Improved Deep Learning Algorithm for Breast Cancer Survival Prediction Based on Multi-Omics Data.",
+        "abstract": "BACKGROUND: Breast cancer is a leading cause of mortality among women worldwide. Accurate survival prediction can improve clinical decision-making and support personalized treatment planning. This study aims to develop an interpretable and effective deep learning model for breast cancer survival prediction using multi-omics data. METHODS: This study proposes a novel deep learning model combining Bi-directional Long Short-Term Memory (BiLSTM) and Convolutional Neural Network (CNN) architectures, integrated with Minimum Redundancy Maximum Relevance (MRMR) feature selection. The model was evaluated on two large datasets: METABRIC (n=1980) and TCGA-BRCA (n=1080), using clinical, copy number alteration (CNA), and gene expression data. Performance was assessed through metrics such as AUC-ROC and accuracy. RESULTS: The proposed model demonstrated superior performance compared to existing algorithms, achieving high AUC-ROC and accuracy values across all data modalities. The integration of BiLSTM and CNN architectures allowed the model to capture temporal and spatial patterns, improving prediction robustness. Notably, the model achieved an accuracy of 98% on the METABRIC dataset and 96% on the TCGA dataset. CONCLUSIONS: The combination of BiLSTM, CNN, and MRMR offers an interpretable and accurate framework for breast cancer survival prediction using multi-omics data. This approach provides actionable insights for clinicians and highlights its potential for broader applications in oncology.",
+        "authors": [
+          "Nasarudin NA",
+          "Al-Jasmi F",
+          "Abdul Aziz NH",
+          "Ab Aziz NA",
+          "Khan W",
+          "Hendrawan Y",
+          "Al Riza DF",
+          "Manzoor A",
+          "Ali BR",
+          "Mohamad MS"
+        ],
+        "year": 2025,
+        "venue": "PubMed",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/42046740/",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "pubmed"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 35
+      },
+      {
+        "paper_id": "W2981863007",
+        "title": "Systematic review of research on artificial intelligence applications in higher education – where are the educators?",
+        "abstract": "Abstract According to various international reports, Artificial Intelligence in Education (AIEd) is one of the currently emerging fields in educational technology. Whilst it has been around for about 30 years, it is still unclear for educators how to make pedagogical advantage of it on a broader scale, and how it can actually impact meaningfully on teaching and learning in higher education. This paper seeks to provide an overview of research on AI applications in higher education through a systematic review. Out of 2656 initially identified publications for the period between 2007 and 2018, 146 articles were included for final synthesis, according to explicit inclusion and exclusion criteria. The descriptive results show that most of the disciplines involved in AIEd papers come from Computer Science and STEM, and that quantitative methods were the most frequently used in empirical studies. The synthesis of results presents four areas of AIEd applications in academic support services, and institutional and administrative services: 1. profiling and prediction, 2. assessment and evaluation, 3. adaptive systems and personalisation, and 4. intelligent tutoring systems. The conclusions reflect on the almost lack of critical reflection of challenges and risks of AIEd, the weak connection to theoretical pedagogical perspectives, and the need for further exploration of ethical and educational approaches in the application of AIEd in higher education.",
+        "authors": [
+          "Melissa Bond",
+          "Franziska Gouverneur",
+          "Olaf Zawacki‐Richter",
+          "Victoria I. Marín"
+        ],
+        "year": 2019,
+        "venue": "International Journal of Educational Technology in Higher Education",
+        "url": "https://openalex.org/W2981863007",
+        "citations": 4768,
+        "doi": "s41239-019-0171-0",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 7
+      },
+      {
+        "paper_id": "W2891503716",
+        "title": "Peeking Inside the Black-Box: A Survey on Explainable Artificial Intelligence (XAI)",
+        "abstract": "At the dawn of the fourth industrial revolution, we are witnessing a fast and widespread adoption of artificial intelligence (AI) in our daily life, which contributes to accelerating the shift towards a more algorithmic society. However, even with such unprecedented advancements, a key impediment to the use of AI-based systems is that they often lack transparency. Indeed, the black-box nature of these systems allows powerful predictions, but it cannot be directly explained. This issue has triggered a new debate on explainable AI (XAI). A research field holds substantial promise for improving trust and transparency of AI-based systems. It is recognized as the sine qua non for AI to continue making steady progress without disruption. This survey provides an entry point for interested researchers and practitioners to learn key aspects of the young and rapidly growing body of research related to XAI. Through the lens of the literature, we review the existing approaches regarding the topic, discuss trends surrounding its sphere, and present major research trajectories.",
+        "authors": [
+          "Mohammed Berrada",
+          "Amina Adadi"
+        ],
+        "year": 2018,
+        "venue": "IEEE Access",
+        "url": "https://openalex.org/W2891503716",
+        "citations": 5586,
+        "doi": "access.2018.2870052",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 6
+      },
+      {
+        "paper_id": "W3017131514",
+        "title": "Artificial Intelligence in Education: A Review",
+        "abstract": "The purpose of this study was to assess the impact of Artificial Intelligence (AI) on education. Premised on a narrative and framework for assessing AI identified from a preliminary analysis, the scope of the study was limited to the application and effects of AI in administration, instruction, and learning. A qualitative research approach, leveraging the use of literature review as a research design and approach was used and effectively facilitated the realization of the study purpose. Artificial intelligence is a field of study and the resulting innovations and developments that have culminated in computers, machines, and other artifacts having human-like intelligence characterized by cognitive abilities, learning, adaptability, and decision-making capabilities. The study ascertained that AI has extensively been adopted and used in education, particularly by education institutions, in different forms. AI initially took the form of computer and computer related technologies, transitioning to web-based and online intelligent education systems, and ultimately with the use of embedded computer systems, together with other technologies, the use of humanoid robots and web-based chatbots to perform instructors' duties and functions independently or with instructors. Using these platforms, instructors have been able to perform different administrative functions, such as reviewing and grading students' assignments more effectively and efficiently, and achieve higher quality in their teaching activities. On the other hand, because the systems leverage machine learning and adaptability, curriculum and content has been customized and personalized in line with students' needs, which has fostered uptake and retention, thereby improving learners experience and overall quality of learning.",
+        "authors": [
+          "Zhijian Lin",
+          "Pingping Chen",
+          "Lijia Chen"
+        ],
+        "year": 2020,
+        "venue": "IEEE Access",
+        "url": "https://openalex.org/W3017131514",
+        "citations": 3275,
+        "doi": "access.2020.2988510",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 11
+      },
+      {
+        "paper_id": "2410.11896v1",
+        "title": "Study on the Helpfulness of Explainable Artificial Intelligence",
+        "abstract": "Explainable Artificial Intelligence (XAI) is essential for building advanced machine learning-powered applications, especially in critical domains such as medical diagnostics or autonomous driving. Legal, business, and ethical requirements motivate using effective XAI, but the increasing number of different methods makes it challenging to pick the right ones. Further, as explanations are highly context-dependent, measuring the effectiveness of XAI methods without users can only reveal a limited amount of information, excluding human factors such as the ability to understand it. We propose to evaluate XAI methods via the user's ability to successfully perform a proxy task, designed such that a good performance is an indicator for the explanation to provide helpful information. In other words, we address the helpfulness of XAI for human decision-making. Further, a user study on state-of-the-art methods was conducted, showing differences in their ability to generate trust and skepticism and the ability to judge the rightfulness of an AI decision correctly. Based on the results, we highly recommend using and extending this approach for more objective-based human-centered user studies to measure XAI performance in an end-to-end fashion.",
+        "authors": [
+          "Tobias Labarta",
+          "Elizaveta Kulicheva",
+          "Ronja Froelian",
+          "Christian Geißler",
+          "Xenia Melman",
+          "Julian von Klitzing"
+        ],
+        "year": 2024,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/2410.11896v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 36
+      },
+      {
+        "paper_id": "W2953532875",
+        "title": "The potential for artificial intelligence in healthcare",
+        "abstract": "The complexity and rise of data in healthcare means that artificial intelligence (AI) will increasingly be applied within the field. Several types of AI are already being employed by payers and providers of care, and life sciences companies. The key categories of applications involve diagnosis and treatment recommendations, patient engagement and adherence, and administrative activities. Although there are many instances in which AI can perform healthcare tasks as well or better than humans, implementation factors will prevent large-scale automation of healthcare professional jobs for a considerable period. Ethical issues in the application of AI to healthcare are also discussed.",
+        "authors": [
+          "Ravi Kalakota",
+          "Thomas H. Davenport"
+        ],
+        "year": 2019,
+        "venue": "Future Healthcare Journal",
+        "url": "https://openalex.org/W2953532875",
+        "citations": 3527,
+        "doi": "futurehosp.6-2-94",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 10
+      },
+      {
+        "paper_id": "W2664267452",
+        "title": "Artificial intelligence in healthcare: past, present and future",
+        "abstract": "Artificial intelligence (AI) aims to mimic human cognitive functions. It is bringing a paradigm shift to healthcare, powered by increasing availability of healthcare data and rapid progress of analytics techniques. We survey the current status of AI applications in healthcare and discuss its future. AI can be applied to various types of healthcare data (structured and unstructured). Popular AI techniques include machine learning methods for structured data, such as the classical support vector machine and neural network, and the modern deep learning, as well as natural language processing for unstructured data. Major disease areas that use AI tools include cancer, neurology and cardiology. We then review in more details the AI applications in stroke, in the three major areas of early detection and diagnosis, treatment, as well as outcome prediction and prognosis evaluation. We conclude with discussion about pioneer AI systems, such as IBM Watson, and hurdles for real-life deployment of AI.",
+        "authors": [
+          "Hui Zhi",
+          "Qiang Dong",
+          "Yi Dong",
+          "Haipeng Shen",
+          "Sufeng Ma",
+          "Fei Jiang",
+          "Hao Li",
+          "Yong Jiang",
+          "Yilong Wang"
+        ],
+        "year": 2017,
+        "venue": "Stroke and Vascular Neurology",
+        "url": "https://openalex.org/W2664267452",
+        "citations": 4496,
+        "doi": "svn-2017-000101",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 8
+      },
+      {
+        "paper_id": "2304.04780v1",
+        "title": "A Review on Explainable Artificial Intelligence for Healthcare: Why, How, and When?",
+        "abstract": "Artificial intelligence (AI) models are increasingly finding applications in the field of medicine. Concerns have been raised about the explainability of the decisions that are made by these AI models. In this article, we give a systematic analysis of explainable artificial intelligence (XAI), with a primary focus on models that are currently being used in the field of healthcare. The literature search is conducted following the preferred reporting items for systematic reviews and meta-analyses (PRISMA) standards for relevant work published from 1 January 2012 to 02 February 2022. The review analyzes the prevailing trends in XAI and lays out the major directions in which research is headed. We investigate the why, how, and when of the uses of these XAI models and their implications. We present a comprehensive examination of XAI methodologies as well as an explanation of how a trustworthy AI can be derived from describing AI models for healthcare fields. The discussion of this work will contribute to the formalization of the XAI field.",
+        "authors": [
+          "Subrato Bharati",
+          "M. Rubaiyat Hossain Mondal",
+          "Prajoy Podder"
+        ],
+        "year": 2023,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/2304.04780v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 37
+      },
+      {
+        "paper_id": "2304.13269v4",
+        "title": "Games for Artificial Intelligence Research: A Review and Perspectives",
+        "abstract": "Games have been the perfect test-beds for artificial intelligence research for the characteristics that widely exist in real-world scenarios. Learning and optimisation, decision making in dynamic and uncertain environments, game theory, planning and scheduling, design and education are common research areas shared between games and real-world problems. Numerous open-source games or game-based environments have been implemented for studying artificial intelligence. In addition to single- or multi-player, collaborative or adversarial games, there has also been growing interest in implementing platforms for creative design in recent years. Those platforms provide ideal benchmarks for exploring and comparing artificial intelligence ideas and techniques. This paper reviews the games and game-based platforms for artificial intelligence research, provides guidance on matching particular types of artificial intelligence with suitable games for testing and matching particular needs in games with suitable artificial intelligence techniques, discusses the research trend induced by the evolution of those games and platforms, and gives an outlook.",
+        "authors": [
+          "Chengpeng Hu",
+          "Yunlong Zhao",
+          "Ziqi Wang",
+          "Haocheng Du",
+          "Jialin Liu"
+        ],
+        "year": 2023,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/2304.13269v4",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 38
+      },
+      {
+        "paper_id": "W2803760365",
+        "title": "Artificial intelligence in radiology",
+        "abstract": "",
+        "authors": [
+          "Lawrence H. Schwartz",
+          "Hugo J.W.L. Aerts",
+          "John Quackenbush",
+          "Ahmed Hosny",
+          "Chintan Parmar"
+        ],
+        "year": 2018,
+        "venue": "Nature reviews. Cancer",
+        "url": "https://openalex.org/W2803760365",
+        "citations": 3540,
+        "doi": "s41568-018-0016-5",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 9
+      },
+      {
+        "paper_id": "W2963849010",
+        "title": "A Brief History of Artificial Intelligence: On the Past, Present, and Future of Artificial Intelligence",
+        "abstract": "This introduction to this special issue discusses artificial intelligence (AI), commonly defined as “a system’s ability to interpret external data correctly, to learn from such data, and to use those learnings to achieve specific goals and tasks through flexible adaptation.” It summarizes seven articles published in this special issue that present a wide variety of perspectives on AI, authored by several of the world’s leading experts and specialists in AI. It concludes by offering a comprehensive outlook on the future of AI, drawing on micro-, meso-, and macro-perspectives.",
+        "authors": [
+          "Michael Haenlein",
+          "Andreas Kaplan"
+        ],
+        "year": 2019,
+        "venue": "California Management Review",
+        "url": "https://openalex.org/W2963849010",
+        "citations": 2337,
+        "doi": "0008125619864925",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 14
+      },
+      {
+        "paper_id": "W2786141192",
+        "title": "Artificial Intelligence in Service",
+        "abstract": "Artificial intelligence (AI) is increasingly reshaping service by performing various tasks, constituting a major source of innovation, yet threatening human jobs. We develop a theory of AI job replacement to address this double-edged impact. The theory specifies four intelligences required for service tasks—mechanical, analytical, intuitive, and empathetic—and lays out the way firms should decide between humans and machines for accomplishing those tasks. AI is developing in a predictable order, with mechanical mostly preceding analytical, analytical mostly preceding intuitive, and intuitive mostly preceding empathetic intelligence. The theory asserts that AI job replacement occurs fundamentally at the task level, rather than the job level, and for “lower” (easier for AI) intelligence tasks first. AI first replaces some of a service job’s tasks, a transition stage seen as augmentation, and then progresses to replace human labor entirely when it has the ability to take over all of a job’s tasks. The progression of AI task replacement from lower to higher intelligences results in predictable shifts over time in the relative importance of the intelligences for service employees. An important implication from our theory is that analytical skills will become less important, as AI takes over more analytical tasks, giving the “softer” intuitive and empathetic skills even more importance for service employees. Eventually, AI will be capable of performing even the intuitive and empathetic tasks, which enables innovative ways of human–machine integration for providing service but also results in a fundamental threat for human employment.",
+        "authors": [
+          "Roland T. Rust",
+          "Ming‐Hui Huang"
+        ],
+        "year": 2018,
+        "venue": "Journal of Service Research",
+        "url": "https://openalex.org/W2786141192",
+        "citations": 3136,
+        "doi": "1094670517752459",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 12
+      },
+      {
+        "paper_id": "2204.10358v1",
+        "title": "Creative Problem Solving in Artificially Intelligent Agents: A Survey and Framework",
+        "abstract": "Creative Problem Solving (CPS) is a sub-area within Artificial Intelligence (AI) that focuses on methods for solving off-nominal, or anomalous problems in autonomous systems. Despite many advancements in planning and learning, resolving novel problems or adapting existing knowledge to a new context, especially in cases where the environment may change in unpredictable ways post deployment, remains a limiting factor in the safe and useful integration of intelligent systems. The emergence of increasingly autonomous systems dictates the necessity for AI agents to deal with environmental uncertainty through creativity. To stimulate further research in CPS, we present a definition and a framework of CPS, which we adopt to categorize existing AI methods in this field. Our framework consists of four main components of a CPS problem, namely, 1) problem formulation, 2) knowledge representation, 3) method of knowledge manipulation, and 4) method of evaluation. We conclude our survey with open research questions, and suggested directions for the future.",
+        "authors": [
+          "Evana Gizzi",
+          "Lakshmi Nair",
+          "Sonia Chernova",
+          "Jivko Sinapov"
+        ],
+        "year": 2022,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/2204.10358v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 39
+      },
+      {
+        "paper_id": "W2895763047",
+        "title": "Artificial intelligence in healthcare",
+        "abstract": "",
+        "authors": [
+          "Isaac S. Kohane",
+          "Andrew L. Beam",
+          "Kun‐Hsing Yu"
+        ],
+        "year": 2018,
+        "venue": "Nature Biomedical Engineering",
+        "url": "https://openalex.org/W2895763047",
+        "citations": 2624,
+        "doi": "s41551-018-0305-z",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 13
+      },
+      {
+        "paper_id": "2110.01835v1",
+        "title": "Compression, The Fermi Paradox and Artificial Super-Intelligence",
+        "abstract": "The following briefly discusses possible difficulties in communication with and control of an AGI (artificial general intelligence), building upon an explanation of The Fermi Paradox and preceding work on symbol emergence and artificial general intelligence. The latter suggests that to infer what someone means, an agent constructs a rationale for the observed behaviour of others. Communication then requires two agents labour under similar compulsions and have similar experiences (construct similar solutions to similar tasks). Any non-human intelligence may construct solutions such that any rationale for their behaviour (and thus the meaning of their signals) is outside the scope of what a human is inclined to notice or comprehend. Further, the more compressed a signal, the closer it will appear to random noise. Another intelligence may possess the ability to compress information to the extent that, to us, their signals would appear indistinguishable from noise (an explanation for The Fermi Paradox). To facilitate predictive accuracy an AGI would tend to more compressed representations of the world, making any rationale for their behaviour more difficult to comprehend for the same reason. Communication with and control of an AGI may subsequently necessitate not only human-like compulsions and experiences, but imposed cognitive impairment.",
+        "authors": [
+          "Michael Timothy Bennett"
+        ],
+        "year": 2021,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/2110.01835v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 40
+      },
+      {
+        "paper_id": "2103.06769v1",
+        "title": "Intelligent behavior depends on the ecological niche: Scaling up AI to human-like intelligence in socio-cultural environments",
+        "abstract": "This paper outlines a perspective on the future of AI, discussing directions for machines models of human-like intelligence. We explain how developmental and evolutionary theories of human cognition should further inform artificial intelligence. We emphasize the role of ecological niches in sculpting intelligent behavior, and in particular that human intelligence was fundamentally shaped to adapt to a constantly changing socio-cultural environment. We argue that a major limit of current work in AI is that it is missing this perspective, both theoretically and experimentally. Finally, we discuss the promising approach of developmental artificial intelligence, modeling infant development through multi-scale interaction between intrinsically motivated learning, embodiment and a fastly changing socio-cultural environment. This paper takes the form of an interview of Pierre-Yves Oudeyer by Mandred Eppe, organized within the context of a KI - K{ü}nstliche Intelligenz special issue in developmental robotics.",
+        "authors": [
+          "Manfred Eppe",
+          "Pierre-Yves Oudeyer"
+        ],
+        "year": 2021,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/2103.06769v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 41
+      },
+      {
+        "paper_id": "2110.01831v1",
+        "title": "The Artificial Scientist: Logicist, Emergentist, and Universalist Approaches to Artificial General Intelligence",
+        "abstract": "We attempt to define what is necessary to construct an Artificial Scientist, explore and evaluate several approaches to artificial general intelligence (AGI) which may facilitate this, conclude that a unified or hybrid approach is necessary and explore two theories that satisfy this requirement to some degree.",
+        "authors": [
+          "Michael Timothy Bennett",
+          "Yoshihiro Maruyama"
+        ],
+        "year": 2021,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/2110.01831v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 42
+      },
+      {
+        "paper_id": "2104.13155v2",
+        "title": "Watershed of Artificial Intelligence: Human Intelligence, Machine Intelligence, and Biological Intelligence",
+        "abstract": "This article reviews the \"Once learning\" mechanism that was proposed 23 years ago and the subsequent successes of \"One-shot learning\" in image classification and \"You Only Look Once - YOLO\" in objective detection. Analyzing the current development of Artificial Intelligence (AI), the proposal is that AI should be clearly divided into the following categories: Artificial Human Intelligence (AHI), Artificial Machine Intelligence (AMI), and Artificial Biological Intelligence (ABI), which will also be the main directions of theory and application development for AI. As a watershed for the branches of AI, some classification standards and methods are discussed: 1) Human-oriented, machine-oriented, and biological-oriented AI R&D; 2) Information input processed by Dimensionality-up or Dimensionality-reduction; 3) The use of one/few or large samples for knowledge learning.",
+        "authors": [
+          "Li Weigang",
+          "Liriam Enamoto",
+          "Denise Leyi Li",
+          "Geraldo Pereira Rocha Filho"
+        ],
+        "year": 2021,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/2104.13155v2",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 43
+      },
+      {
+        "paper_id": "W2576404523",
+        "title": "Artificial intelligence in medicine",
+        "abstract": "",
+        "authors": [
+          "Johanne Tremblay",
+          "Pavel Hamet"
+        ],
+        "year": 2017,
+        "venue": "Metabolism",
+        "url": "https://openalex.org/W2576404523",
+        "citations": 2226,
+        "doi": "j.metabol.2017.01.011",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 15
+      },
+      {
+        "paper_id": "W2623293810",
+        "title": "Artificial intelligence: A modern approach",
+        "abstract": "",
+        "authors": [
+          "Nils J. Nilsson"
+        ],
+        "year": 1996,
+        "venue": "Artificial Intelligence",
+        "url": "https://openalex.org/W2623293810",
+        "citations": 10690,
+        "doi": "0004-3702(96)00007-0",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 2
+      },
+      {
+        "paper_id": "1905.00719v7",
+        "title": "Internet of Intelligence: The Collective Advantage for Advancing Communications and Intelligence",
+        "abstract": "The fifth-generation cellular networks (5G) has boosted the unprecedented convergence between the information world and physical world. On the other hand, empowered with the enormous amount of data and information, artificial intelligence (AI) has been universally applied and pervasive AI is believed to be an integral part of the six-generation cellular networks (6G). Consequently, benefiting from the advancement in communication technology and AI, we boldly argue that the conditions for collective intelligence (CI) will be mature in the 6G era and CI will emerge among the widely connected beings and things. Afterwards, we highlight the potential huge impact of CI on both communications and intelligence. In particular, we introduce a regular language (i.e., the information economy metalanguage) supporting the future collective communications to augment human intelligence and explain its potential applications in naming Internet information and pushing information centric networks forward. Meanwhile, we propose a stigmergy-based federated collective intelligence and demonstrate its achievement in a simulated scenario where the agents collectively work together to form a pattern through simple indirect communications. In a word, CI could advance both communications and intelligence.",
+        "authors": [
+          "Rongpeng Li",
+          "Zhifeng Zhao",
+          "Xing Xu",
+          "Fei Ni",
+          "Honggang Zhang"
+        ],
+        "year": 2019,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/1905.00719v7",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 44
+      },
+      {
+        "paper_id": "1905.10083v1",
+        "title": "Edge Intelligence: Paving the Last Mile of Artificial Intelligence with Edge Computing",
+        "abstract": "With the breakthroughs in deep learning, the recent years have witnessed a booming of artificial intelligence (AI) applications and services, spanning from personal assistant to recommendation systems to video/audio surveillance. More recently, with the proliferation of mobile computing and Internet-of-Things (IoT), billions of mobile and IoT devices are connected to the Internet, generating zillions Bytes of data at the network edge. Driving by this trend, there is an urgent need to push the AI frontiers to the network edge so as to fully unleash the potential of the edge big data. To meet this demand, edge computing, an emerging paradigm that pushes computing tasks and services from the network core to the network edge, has been widely recognized as a promising solution. The resulted new inter-discipline, edge AI or edge intelligence, is beginning to receive a tremendous amount of interest. However, research on edge intelligence is still in its infancy stage, and a dedicated venue for exchanging the recent advances of edge intelligence is highly desired by both the computer system and artificial intelligence communities. To this end, we conduct a comprehensive survey of the recent research efforts on edge intelligence. Specifically, we first review the background and motivation for artificial intelligence running at the network edge. We then provide an overview of the overarching architectures, frameworks and emerging key technologies for deep learning model towards training/inference at the network edge. Finally, we discuss future research opportunities on edge intelligence. We believe that this survey will elicit escalating attentions, stimulate fruitful discussions and inspire further research ideas on edge intelligence.",
+        "authors": [
+          "Zhi Zhou",
+          "Xu Chen",
+          "En Li",
+          "Liekang Zeng",
+          "Ke Luo",
+          "Junshan Zhang"
+        ],
+        "year": 2019,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/1905.10083v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 45
+      },
+      {
+        "paper_id": "1812.04814v1",
+        "title": "Linking Artificial Intelligence Principles",
+        "abstract": "Artificial Intelligence principles define social and ethical considerations to develop future AI. They come from research institutes, government organizations and industries. All versions of AI principles are with different considerations covering different perspectives and making different emphasis. None of them can be considered as complete and can cover the rest AI principle proposals. Here we introduce LAIP, an effort and platform for linking and analyzing different Artificial Intelligence Principles. We want to explicitly establish the common topics and links among AI Principles proposed by different organizations and investigate on their uniqueness. Based on these efforts, for the long-term future of AI, instead of directly adopting any of the AI principles, we argue for the necessity of incorporating various AI Principles into a comprehensive framework and focusing on how they can interact and complete each other.",
+        "authors": [
+          "Yi Zeng",
+          "Enmeng Lu",
+          "Cunqing Huangfu"
+        ],
+        "year": 2018,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/1812.04814v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 46
+      },
+      {
+        "paper_id": "1809.09444v1",
+        "title": "Defining the Collective Intelligence Supply Chain",
+        "abstract": "Organisations are increasingly open to scrutiny, and need to be able to prove that they operate in a fair and ethical way. Accountability should extend to the production and use of the data and knowledge assets used in AI systems, as it would for any raw material or process used in production of physical goods. This paper considers collective intelligence, comprising data and knowledge generated by crowd-sourced workforces, which can be used as core components of AI systems. A proposal is made for the development of a supply chain model for tracking the creation and use of crowdsourced collective intelligence assets, with a blockchain based decentralised architecture identified as an appropriate means of providing validation, accountability and fairness.",
+        "authors": [
+          "Iain Barclay",
+          "Alun Preece",
+          "Ian Taylor"
+        ],
+        "year": 2018,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/1809.09444v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 47
+      },
+      {
+        "paper_id": "1703.06597v1",
+        "title": "Artificial Intelligence and Economic Theories",
+        "abstract": "The advent of artificial intelligence has changed many disciplines such as engineering, social science and economics. Artificial intelligence is a computational technique which is inspired by natural intelligence such as the swarming of birds, the working of the brain and the pathfinding of the ants. These techniques have impact on economic theories. This book studies the impact of artificial intelligence on economic theories, a subject that has not been extensively studied. The theories that are considered are: demand and supply, asymmetrical information, pricing, rational choice, rational expectation, game theory, efficient market hypotheses, mechanism design, prospect, bounded rationality, portfolio theory, rational counterfactual and causality. The benefit of this book is that it evaluates existing theories of economics and update them based on the developments in artificial intelligence field.",
+        "authors": [
+          "Tshilidzi Marwala",
+          "Evan Hurwitz"
+        ],
+        "year": 2017,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/1703.06597v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 48
+      },
+      {
+        "paper_id": "1606.00652v1",
+        "title": "Death and Suicide in Universal Artificial Intelligence",
+        "abstract": "Reinforcement learning (RL) is a general paradigm for studying intelligent behaviour, with applications ranging from artificial intelligence to psychology and economics. AIXI is a universal solution to the RL problem; it can learn any computable environment. A technical subtlety of AIXI is that it is defined using a mixture over semimeasures that need not sum to 1, rather than over proper probability measures. In this work we argue that the shortfall of a semimeasure can naturally be interpreted as the agent's estimate of the probability of its death. We formally define death for generally intelligent agents like AIXI, and prove a number of related theorems about their behaviour. Notable discoveries include that agent behaviour can change radically under positive linear transformations of the reward signal (from suicidal to dogmatically self-preserving), and that the agent's posterior belief that it will survive increases over time.",
+        "authors": [
+          "Jarryd Martin",
+          "Tom Everitt",
+          "Marcus Hutter"
+        ],
+        "year": 2016,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/1606.00652v1",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 49
+      },
+      {
+        "paper_id": "W26772505",
+        "title": "Lecture Notes in Artificial Intelligence",
+        "abstract": "",
+        "authors": [
+          "Patrick Brézillon",
+          "Paolo Bouquet"
+        ],
+        "year": 1999,
+        "venue": "",
+        "url": "https://openalex.org/W26772505",
+        "citations": 7440,
+        "doi": "",
+        "sources": [
+          "openalex"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 5
+      },
+      {
+        "paper_id": "1505.06366v2",
+        "title": "Open Ended Intelligence: The individuation of Intelligent Agents",
+        "abstract": "Artificial General Intelligence is a field of research aiming to distill the principles of intelligence that operate independently of a specific problem domain or a predefined context and utilize these principles in order to synthesize systems capable of performing any intellectual task a human being is capable of and eventually go beyond that. While \"narrow\" artificial intelligence which focuses on solving specific problems such as speech recognition, text comprehension, visual pattern recognition, robotic motion, etc. has shown quite a few impressive breakthroughs lately, understanding general intelligence remains elusive. In the paper we offer a novel theoretical approach to understanding general intelligence. We start with a brief introduction of the current conceptual approach. Our critique exposes a number of serious limitations that are traced back to the ontological roots of the concept of intelligence. We then propose a paradigm shift from intelligence perceived as a competence of individual agents defined in relation to an a priori given problem domain or a goal, to intelligence perceived as a formative process of self-organization by which intelligent agents are individuated. We call this process open-ended intelligence. Open-ended intelligence is developed as an abstraction of the process of cognitive development so its application can be extended to general agents and systems. We introduce and discuss three facets of the idea: the philosophical concept of individuation, sense-making and the individuation of general cognitive agents. We further show how open-ended intelligence can be framed in terms of a distributed, self-organizing network of interacting elements and how such process is scalable. The framework highlights an important relation between coordination and intelligence and a new understanding of values. We conclude with a number of questions for future research.",
+        "authors": [
+          "David Weinbaum",
+          "Viktoras Veitas"
+        ],
+        "year": 2015,
+        "venue": "arXiv",
+        "url": "http://arxiv.org/abs/1505.06366v2",
+        "citations": 0,
+        "doi": "",
+        "sources": [
+          "arxiv"
+        ],
+        "keywords": [
+          "artificial",
+          "intelligence"
+        ],
+        "citation_index": 50
+      }
+    ],
+    "sources": [
+      "openalex",
+      "pubmed",
+      "arxiv"
+    ],
+    "progress": 100,
+    "status": "ready",
+    "created_at": "2026-04-28T20:48:33.390461",
+    "updated_at": "2026-04-28T20:51:32.701746",
+    "error": null
+  },
+  "daily_46916020": {
+    "id": "daily_46916020",
+    "type": "daily",
+    "title": "2026-04-28 每日学术资讯",
+    "date_range": "2026-04-28",
+    "content": "",
+    "summary": "",
+    "papers": [],
+    "sources": [],
+    "progress": 0,
+    "status": "generating",
+    "created_at": "2026-04-28T21:25:25.663114",
+    "updated_at": "2026-04-28T21:25:25.663114",
+    "error": null
+  }
+}

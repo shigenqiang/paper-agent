@@ -8,8 +8,8 @@ const apiClient = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-    'X-API-Key': DEFAULT_API_KEY,  // 设置默认API Key
   },
+  withCredentials: false,
 })
 
 // 请求拦截器
@@ -21,7 +21,8 @@ apiClient.interceptors.request.use(
     if (!config.headers) {
       config.headers = {}
     }
-    config.headers['X-API-Key'] = apiKey
+    // 使用小写header名称，后端会忽略大小写
+    config.headers['x-api-key'] = apiKey
     return config
   },
   (error) => Promise.reject(error)

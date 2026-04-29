@@ -16,8 +16,12 @@ export default defineConfig({
           proxy.on('error', (err) => {
             console.log('proxy error', err);
           });
-          proxy.on('proxyReq', (proxyReq) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
             console.log('proxy req', proxyReq.path);
+            // Forward headers explicitly
+            if (req.headers['x-api-key']) {
+              proxyReq.setHeader('x-api-key', req.headers['x-api-key']);
+            }
           });
         }
       },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Tabs, Button, Space, Typography, List, Tag, Empty, Spin, message, Divider, Statistic, Row, Col, Alert, Badge, Collapse, Tooltip } from 'antd'
+import { Card, Tabs, Button, Space, Typography, List, Tag, Empty, Spin, message, Divider, Statistic, Row, Col, Alert, Badge, Collapse, Tooltip, Modal } from 'antd'
 import ReactMarkdown from 'react-markdown'
 import {
   ReloadOutlined,
@@ -14,6 +14,7 @@ import {
   CopyOutlined,
   PlusCircleOutlined,
   CheckCircleFilled,
+  TagOutlined,
 } from '@ant-design/icons'
 import { reportsAPI, settingsAPI } from '../services/api'
 import { usePaperStore } from '../store/paperStore'
@@ -29,10 +30,54 @@ const REPORT_TYPES = {
 }
 
 const SOURCE_CONFIG = {
-  arxiv: { color: '#e84a25', label: 'arXiv' },
-  pubmed: { color: '#3e84c8', label: 'PubMed' },
-  semantic_scholar: { color: '#5c7fdd', label: 'Semantic' },
-  openalex: { color: '#ff6b35', label: 'OpenAlex' },
+  arxiv: { color: '#e84a25', label: 'arXiv', desc: 'AI/ML/物理预印本' },
+  pubmed: { color: '#3e84c8', label: 'PubMed', desc: '生物医学文献' },
+  semantic_scholar: { color: '#5c7fdd', label: 'Semantic Scholar', desc: 'AI论文引用数据' },
+  openalex: { color: '#ff6b35', label: 'OpenAlex', desc: '跨学科覆盖' },
+}
+
+// 数据来源说明组件
+const SourceInfo = ({ sources = [] }) => {
+  if (sources.length === 0) return null
+  return (
+    <div className="mb-4 p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg border border-gray-100">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
+        <Text strong className="text-sm text-gray-700">数据来源</Text>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {sources.map(source => {
+          const config = SOURCE_CONFIG[source]
+          return config ? (
+            <div key={source} className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full shadow-sm border border-gray-100">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: config.color }}></div>
+              <Text className="text-xs font-medium text-gray-700">{config.label}</Text>
+              <Text type="secondary" className="text-xs">|</Text>
+              <Text type="secondary" className="text-xs">{config.desc}</Text>
+            </div>
+          ) : (
+            <Tag key={source} className="!text-xs">{source}</Tag>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// 学术搜索Skill说明 - 已移至帮助文档
+const SEARCH_SKILL_INFO = {
+  name: '多源学术搜索 (SearchFactory)',
+  description: '并行搜索多个学术数据库并自动合并去重排序',
+  searchers: [
+    { name: 'arXiv', source: 'arxiv', color: '#e84a25', desc: 'AI/ML/物理预印本' },
+    { name: 'PubMed', source: 'pubmed', color: '#3e84c8', desc: '生物医学文献' },
+    { name: 'Semantic Scholar', source: 'semantic', color: '#5c7fdd', desc: 'AI论文引用数据' },
+    { name: 'OpenAlex', source: 'openalex', color: '#ff6b35', desc: '跨学科覆盖' },
+  ],
+  usage: `from src.agents_v2.search.search_factory import search_merged
+
+# 搜索"machine learning"相关论文，获取前20篇
+results = await search_merged("machine learning", max_results=20)`,
 }
 
 const ReportsPage = () => {
@@ -253,10 +298,10 @@ const ReportsPage = () => {
         </Space>
       </div>
 
-      <Card size="small">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Text type="secondary" className="mr-2">监测关键词:</Text>
+      <Card size="small" className="!bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Text strong className="text-gray-700">监测关键词:</Text>
             {keywords.length > 0 ? (
               keywords.map(keyword => (
                 <Tag key={keyword} color="blue">{keyword}</Tag>
@@ -264,6 +309,13 @@ const ReportsPage = () => {
             ) : (
               <Text type="secondary">暂无设置</Text>
             )}
+            <Divider type="vertical" className="!mx-1" />
+            <Text strong className="text-gray-700">数据来源:</Text>
+            <Space size="small">
+              {Object.entries(SOURCE_CONFIG).map(([key, config]) => (
+                <Tag key={key} color={config.color} className="!text-xs !px-2 !py-0.5">{config.label}</Tag>
+              ))}
+            </Space>
           </div>
           <Button
             type="link"
@@ -329,6 +381,45 @@ const ReportsPage = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* 关键词相关论文 */}
+      {keywords.length > 0 && selectedDigest?.papers && (
+        <Card size="small" className="!rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <TagOutlined />
+            <Text strong>关键词论文索引</Text>
+            <Text type="secondary" className="text-xs">按关键词分类查看本期论文</Text>
+          </div>
+          <div className="space-y-3">
+            {keywords.slice(0, 6).map(keyword => {
+              const relatedPapers = selectedDigest.papers.filter(p =>
+                p.keywords?.some(kw => kw.toLowerCase().includes(keyword.toLowerCase())) ||
+                p.title?.toLowerCase().includes(keyword.toLowerCase()) ||
+                p.abstract?.toLowerCase().includes(keyword.toLowerCase())
+              )
+              if (relatedPapers.length === 0) return null
+              return (
+                <div key={keyword}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Tag color="blue">{keyword}</Tag>
+                    <Text type="secondary" className="text-xs">{relatedPapers.length} 篇</Text>
+                  </div>
+                  <List
+                    size="small"
+                    dataSource={relatedPapers.slice(0, 5)}
+                    renderItem={paper => (
+                      <List.Item className="!py-1 !px-2 hover:bg-gray-50 rounded cursor-pointer" onClick={() => handleAddPaper(paper)}>
+                        <Text ellipsis className="text-xs flex-1">{paper.title}</Text>
+                        <Text type="secondary" className="text-xs ml-2">{paper.year}</Text>
+                      </List.Item>
+                    )}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key); setSelectedDigest(null); }}>
@@ -511,6 +602,11 @@ const ContentPanel = ({
               </div>
             ) : (
               <div className="flex-1 overflow-auto">
+                {/* 数据来源信息 */}
+                <div className="p-4 pb-0">
+                  <SourceInfo sources={selectedDigest.sources} />
+                </div>
+
                 {/* Markdown 报告内容 */}
                 <div className="p-4" style={{ maxWidth: '900px' }}>
                   <div className="prose prose-sm max-w-none" style={{

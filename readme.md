@@ -440,6 +440,237 @@ tests/                       # 测试
 
 ---
 
+## 七、Agent提示词规范 (Prompt Engineering)
+
+> **重要参考**: 完整的提示词工程指南请查阅 [Agent提示词工程指南](docs/调研报告/Agent提示词工程指南.md)
+
+### 7.1 标准提示词结构
+
+每个Agent的提示词应包含五个部分：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SYSTEM PROMPT 结构                        │
+├─────────────────────────────────────────────────────────────┤
+│  1. 角色定义 (Role Definition)                              │
+│     - Agent身份、专业背景                                   │
+│     - 核心职责说明                                          │
+│                                                             │
+│  2. 能力边界 (Capabilities)                                 │
+│     - 能做什么                                               │
+│     - 具备哪些专业知识                                       │
+│                                                             │
+│  3. 行为准则 (Guidelines)                                  │
+│     - 应该如何处理任务                                       │
+│     - 质量标准                                               │
+│                                                             │
+│  4. 约束限制 (Constraints)                                 │
+│     - 不能做什么                                             │
+│     - 限制条件                                               │
+│                                                             │
+│  5. 输出格式 (Output Format)                               │
+│     - JSON Schema定义                                        │
+│     - 示例输出                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 7.2 Agent类型与提示词模板
+
+| Agent类型 | 职责 | 核心要素 |
+|-----------|------|----------|
+| **路由Agent** | 识别意图，分类问题，决定处理路径 | 问题类型定义、多路径映射 |
+| **搜索Agent** | 多源检索、查询优化、结果排序 | 多平台特点、查询扩展策略 |
+| **诊断Agent** | 问题识别、根因分析、严重程度评估 | 诊断维度、严重程度判定 |
+| **生成Agent** | 内容生成、结构化输出、引用规范 | 报告结构、质量标准 |
+| **精炼Agent** | 多轮迭代、质量提升、问题修复 | 评审维度、质量阈值 |
+| **PipelineAgent** | 流水线执行、阶段输出、流程协调 | 阶段目标、输入输出规范 |
+
+### 7.3 路由类Agent提示词示例 (QueryRouter)
+
+```python
+self.system_prompt = """你是一个专业的问题分类专家，擅长判断用户问题的类型并决定最佳处理策略。
+
+问题类型定义：
+1. BASIC_QUERY（基础查询）：简单的事实性问题，可以直接回答
+   - 例如：什么是贝叶斯定理？正态分布的定义是什么？
+   - 处理方式：直接回答，不需要搜索论文
+
+2. PROFESSIONAL（专业问题）：需要深入解释的方法论或理论问题
+   - 例如：分层模型的MCMC估计方法有哪些？
+   - 处理方式：搜索论文后给出专业回答
+
+3. FRONTIER（前沿探索）：关于最新研究进展的问题
+   - 例如：2024年统计学习有什么新突破？
+   - 处理方式：搜索arXiv最新论文
+
+4. APPLICATION（应用咨询）：关于在实际场景中应用的问题
+   - 例如：如何在医学研究中应用倾向性评分？
+   - 处理方式：搜索PubMed案例
+
+输出格式（JSON）：
+{
+    "question_type": "professional",
+    "confidence": 0.85,
+    "reasoning": "判断理由",
+    "suggested_path": "paper_search",
+    "filters": {"domain": "statistics", "sort_by": "relevance"}
+}
+"""
+```
+
+### 7.4 生成类Agent提示词示例
+
+```python
+system_prompt = """你是一个专业的学术[报告/文献]生成专家。
+
+职责：
+1. 确保内容符合学术规范
+2. 结构清晰，逻辑连贯
+3. 引用规范，有据可查
+
+生成要求：
+- 结构：摘要 → 引言 → 方法 → 结果 → 讨论
+- 长度：根据要求控制字数
+- 格式：Markdown或指定格式
+- 引用：使用标准引用格式
+
+输出格式：
+{
+    "sections": {
+        "abstract": "...",
+        "introduction": "...",
+        "methods": "...",
+        "results": "...",
+        "discussion": "..."
+    },
+    "references": [...],
+    "quality_score": 0.0-1.0
+}
+"""
+```
+
+### 7.5 Few-Shot Examples写法
+
+```python
+FEW_SHOT_EXAMPLES = """
+【示例1：专业问题】
+输入：我想研究因果推断在医学中的应用
+输出：
+{
+    "question_type": "application",
+    "confidence": 0.82,
+    "reasoning": "涉及医学领域的实际应用",
+    "suggested_path": "pubmed_search",
+    "filters": {"domain": "medicine", "time_range": 365}
+}
+
+【示例2：前沿探索】
+输入：2024年大语言模型有什么新突破？
+输出：
+{
+    "question_type": "frontier",
+    "confidence": 0.91,
+    "reasoning": "询问最新研究进展",
+    "suggested_path": "arxiv_search",
+    "filters": {"year": 2024, "sort_by": "recent"}
+}
+"""
+
+system_prompt = """你是一个问题分类专家...""" + FEW_SHOT_EXAMPLES
+```
+
+### 7.6 Chain-of-Thought (CoT) 提示
+
+```python
+prompt = f"""
+分析以下研究选题的问题：
+
+选题：{topic}
+研究者水平：{user_level}
+
+请按以下步骤逐步分析：
+
+步骤1：范围评估
+- 判断选题是过于宽泛还是过于狭窄
+
+步骤2：创新性评估
+- 分析是否有新颖的研究角度
+
+步骤3：可行性评估
+- 评估技术可行性和资源可行性
+
+步骤4：综合诊断
+- 汇总上述分析，识别主要问题
+
+输出JSON格式：
+{{
+    "issues": ["问题1", "问题2"],
+    "scope_assessment": {{"too_broad": true/false, "main_issue": "..."}},
+    "reasoning": "分析推理过程"
+}}
+"""
+```
+
+### 7.7 JSON输出处理
+
+```python
+# 严格Schema + 降级策略
+async def _llm_call_with_fallback(self, prompt: str, schema: str) -> Dict:
+    try:
+        # 尝试严格Schema输出
+        response = await self._llm_call(prompt + f"\n\n{schema}")
+        return json.loads(response)
+    except json.JSONDecodeError:
+        # 降级处理：返回原始文本
+        return {"raw_output": response, "parse_error": True}
+```
+
+### 7.8 质量阈值配置
+
+```python
+QUALITY_THRESHOLDS = {
+    "diagnostic": 6.0,   # 诊断阶段不需要太高
+    "topic": 7.0,
+    "literature": 7.0,
+    "methodology": 7.0,
+    "writing": 7.0,
+    "polish": 8.0        # 最终润色需要更高
+}
+```
+
+### 7.9 提示词设计检查清单
+
+- [ ] 角色定义清晰，避免模糊身份
+- [ ] 职责边界明确，防止任务混乱
+- [ ] 示例覆盖主要场景（2-3个）
+- [ ] 输出格式严格定义（JSON Schema）
+- [ ] 包含错误处理和降级策略
+- [ ] 设置合理的质量阈值
+- [ ] 定义明确的迭代终止条件
+
+---
+
+## 八、完整Agent列表
+
+| Agent | 模块 | 类型 | 核心职责 |
+|-------|------|------|----------|
+| `QueryRouter` | qa | 路由 | 问题分类、多路径映射 |
+| `PaperSearchAgent` | qa | 搜索 | 多源并行搜索 |
+| `DailyWatcher` | qa | 报告 | 每日论文监控 |
+| `WeeklyReportGenerator` | qa | 报告 | 周报告生成 |
+| `MonthlyReportGenerator` | qa | 报告 | 月度报告生成 |
+| `PaperFlash` | qa | 快讯 | 热点论文速读 |
+| `TopicAgent` | paper_agents | 选题 | 研究方向选择 |
+| `OutlineGeneratorAgent` | writing | 大纲 | 结构化大纲 |
+| `DraftGeneratorAgent` | writing | 初稿 | 全文撰写 |
+| `LiteratureReviewAgent` | writing | 综述 | 文献综述 |
+| `SmartReviserAgent` | writing | 改稿 | 意见→修改 |
+| `ReportRefinerAgent` | writing | 精炼 | 多轮迭代优化 |
+| `LanguagePolisherAgent` | writing | 润色 | 语法术语检查 |
+| `ReviewerAgent` | writing | 评审 | 质量评估 |
+
+---
+
 ## 技术特性
 
 - **模块化Agent** - 每个功能独立，便于扩展
@@ -448,13 +679,14 @@ tests/                       # 测试
 - **多源搜索** - 并行搜索多个学术平台
 - **流式生成** - 支持打字机效果的流式输出
 - **多轮迭代** - 自动迭代优化直到达标
+- **全链路追踪** - ChainTracer监控每个阶段
 
 ---
 
 ## 测试状态
 
 ```
-总测试数: 835个 | 通过率: 99.0%
+总测试数: 2063个 | 通过率: 98.9%
 ```
 
 ---

@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { Card, Button, Space, Typography, Input, Select, Divider, Tag, message, Spin, Tabs, Modal, Empty, Avatar, Badge, Tooltip, Dropdown } from 'antd'
+import { Card, Button, Space, Typography, Input, Select, Divider, Tag, message, Spin, Empty, Avatar, Tooltip, Modal, List, Popconfirm } from 'antd'
 import {
   SendOutlined,
-  EditOutlined,
   ThunderboltOutlined,
   SaveOutlined,
   ClearOutlined,
@@ -12,22 +11,39 @@ import {
   FileTextOutlined,
   RobotOutlined,
   UserOutlined,
-  SettingOutlined,
-  MoreOutlined,
-  LikeOutlined,
-  DislikeOutlined,
-  StopOutlined,
-  MenuFoldOutlined,
-  ClockCircleOutlined,
+  EditOutlined,
+  SwapOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons'
 import { aiAPI, paperAPI } from '../services/api'
 
-const { Title, Text, Paragraph } = Typography
+const { Title, Text } = Typography
 const { TextArea } = Input
-const { Option } = Select
+
+// 模式配置
+const MODES = {
+  WRITE: 'write',
+  REVISE: 'revise'
+}
+
+const MODE_CONFIG = {
+  [MODES.WRITE]: {
+    label: '写作模式',
+    icon: <EditOutlined />,
+    color: '#1890ff',
+    description: '生成大纲、续写内容'
+  },
+  [MODES.REVISE]: {
+    label: '修改模式',
+    icon: <ScissorOutlined />,
+    color: '#722ed1',
+    description: '润色、翻译、精简、扩展'
+  }
+}
 
 // 消息气泡组件
-const MessageBubble = ({ message, onCopy }) => {
+const MessageBubble = ({ message, onCopy, onInsert }) => {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
 
@@ -41,43 +57,41 @@ const MessageBubble = ({ message, onCopy }) => {
     )
   }
 
+  if (isSystem && message.isModeTip) {
+    return (
+      <div className="flex justify-center my-2">
+        <div className={`text-xs px-3 py-1 rounded-full ${message.mode === MODES.WRITE ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
+          {message.content}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`flex gap-3 my-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <Avatar
-        size={36}
+        size={32}
         className={isUser ? '!bg-blue-500' : '!bg-gradient-to-br from-blue-400 to-purple-500'}
         icon={isUser ? <UserOutlined /> : <RobotOutlined />}
       />
-      <div className={`max-w-[70%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
+      <div className={`max-w-[80%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
         <div
-          className={`px-4 py-3 rounded-2xl ${
+          className={`px-4 py-2 rounded-2xl text-sm ${
             isUser
               ? '!bg-blue-500 text-white rounded-tr-sm'
               : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm'
           }`}
-          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: '1.6' }}
         >
           {message.content}
         </div>
         <div className={`text-xs text-gray-400 mt-1 ${isUser ? 'text-right' : ''}`}>
           <Space size="small">
             {message.time && <span>{message.time}</span>}
-            {!isUser && (
+            {!isUser && message.content && (
               <Space size="small">
                 <Tooltip title="复制">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<CopyOutlined />}
-                    onClick={() => onCopy(message.content)}
-                    className="!text-gray-400"
-                  />
-                </Tooltip>
-                <Tooltip title="有帮助">
-                  <Button type="text" size="small" icon={<LikeOutlined />} className="!text-gray-400" />
-                </Tooltip>
-                <Tooltip title="需要改进">
-                  <Button type="text" size="small" icon={<DislikeOutlined />} className="!text-gray-400" />
+                  <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => onCopy(message.content)} className="!text-gray-400 !w-6 !h-6" />
                 </Tooltip>
               </Space>
             )}
@@ -88,29 +102,48 @@ const MessageBubble = ({ message, onCopy }) => {
   )
 }
 
-const AIAssistantPage = () => {
-  const [mode, setMode] = useState('write')
-  const [inputValue, setInputValue] = useState('')
-  const [referenceText, setReferenceText] = useState('')
-  const [originalText, setOriginalText] = useState('')
-  const [outputContent, setOutputContent] = useState('')
-  const [sending, setSending] = useState(false)
+// 快速操作按钮
+const QuickAction = ({ mode, onAction }) => {
+  const actions = mode === MODES.WRITE ? [
+    { key: 'outline', label: '生成大纲', icon: <FileTextOutlined /> },
+    { key: 'continue', label: 'AI续写', icon: <EditOutlined /> },
+  ] : [
+    { key: 'polish', label: '润色', icon: <EditOutlined /> },
+    { key: 'translate', label: '翻译', icon: <SwapOutlined /> },
+    { key: 'shorten', label: '精简', icon: <DeleteOutlined /> },
+    { key: 'expand', label: '扩展', icon: <PlusOutlined /> },
+  ]
 
+  return (
+    <div className="flex flex-wrap gap-2 mb-3">
+      {actions.map(action => (
+        <Tag
+          key={action.key}
+          className="cursor-pointer hover:bg-blue-50 border-dashed"
+          onClick={() => onAction(action.key)}
+        >
+          {action.icon} {action.label}
+        </Tag>
+      ))}
+    </div>
+  )
+}
+
+const AIAssistantPage = () => {
+  const [mode, setMode] = useState(MODES.WRITE)
   const [papers, setPapers] = useState([])
   const [selectedPaperId, setSelectedPaperId] = useState(null)
   const [selectedPaper, setSelectedPaper] = useState(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [newPaperTitle, setNewPaperTitle] = useState('')
+  const [reviseType, setReviseType] = useState('polish')
 
   const [chatMessages, setChatMessages] = useState([
-    { role: 'system', content: '对话已开启' },
-    {
-      role: 'assistant',
-      content: '您好！我是论文Agent写作助手。\n\n✍️ 我可以帮您：\n• 根据选题生成论文大纲\n• 续写章节内容\n• 润色、翻译、精简、扩展文章\n\n请先选择或创建论文项目，然后开始对话！'
-    }
+    { role: 'system', content: '对话已开启，当前为写作模式' }
   ])
   const [chatInput, setChatInput] = useState('')
   const [chatSending, setChatSending] = useState(false)
+  const [contextText, setContextText] = useState('')
   const chatEndRef = useRef(null)
 
   const userId = useMemo(() => {
@@ -128,6 +161,10 @@ const AIAssistantPage = () => {
     loadPapers()
   }, [])
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
   const loadPapers = async () => {
     try {
       const response = await paperAPI.getPapers()
@@ -137,24 +174,41 @@ const AIAssistantPage = () => {
     }
   }
 
-  useEffect(() => {
-    if (!selectedPaperId) return
-    const loadHistory = async () => {
-      try {
-        const res = await aiAPI.getChatHistory(selectedPaperId, userId, sessionId)
-        if (res?.success && res?.data?.messages?.length > 0) {
-          setChatMessages(prev => [...prev, ...res.data.messages.slice(-10)])
-        }
-      } catch (e) {
-        console.warn('加载聊天历史失败:', e)
-      }
-    }
-    loadHistory()
-  }, [selectedPaperId, userId, sessionId])
+  const handleModeSwitch = (newMode) => {
+    setMode(newMode)
+    const modeConfig = MODE_CONFIG[newMode]
+    setChatMessages(prev => [...prev, {
+      role: 'system',
+      content: `已切换到${modeConfig.label}：${modeConfig.description}`,
+      isModeTip: true,
+      mode: newMode
+    }])
+  }
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages])
+  const handleQuickAction = (action) => {
+    let prompt = ''
+    if (mode === MODES.WRITE) {
+      if (action === 'outline') {
+        prompt = '请帮我生成论文大纲，输入选题后我会为您生成详细的大纲结构。'
+      } else if (action === 'continue') {
+        prompt = '请续写论文内容。请提供当前章节的内容或写作方向，我会为您续写。'
+      }
+    } else {
+      // REVISE mode
+      const actionMap = {
+        polish: '润色 - 优化语言表达，使其更加流畅专业',
+        translate: '翻译 - 中英文互译，保持学术风格',
+        shorten: '精简 - 压缩冗余内容，保留核心观点',
+        expand: '扩展 - 丰富详细内容，增加细节和深度'
+      }
+      prompt = `请帮我进行【${actionMap[action]}】操作。请提供需要修改的文本。`
+      if (action === 'polish') setReviseType('polish')
+      else if (action === 'translate') setReviseType('translate')
+      else if (action === 'shorten') setReviseType('shorten')
+      else if (action === 'expand') setReviseType('expand')
+    }
+    setChatInput(prompt)
+  }
 
   const handleCreatePaper = async () => {
     if (!newPaperTitle.trim()) {
@@ -183,98 +237,11 @@ const AIAssistantPage = () => {
     const paper = papers.find(p => p.id === paperId)
     setSelectedPaperId(paperId)
     setSelectedPaper(paper)
-  }
-
-  const handleWrite = async () => {
-    if (!inputValue.trim() || sending) return
-    if (!selectedPaperId) {
-      message.warning('请先选择或创建论文项目')
-      return
-    }
-    setSending(true)
-    setOutputContent('')
-
-    const topic = inputValue
-    const reference = referenceText.trim()
-
-    setChatMessages(prev => [...prev, {
-      role: 'user',
-      content: `请为"${topic}"生成论文大纲${reference ? '，参考以下资料：\n' + reference : ''}`,
-      time: new Date().toLocaleTimeString()
-    }])
-
-    try {
-      const response = await paperAPI.generateOutline(selectedPaperId, topic)
-
-      if (response.success) {
-        const outline = response.data || []
-        let outlineText = '已生成大纲：\n\n'
-        outline.forEach((item, idx) => {
-          outlineText += `${idx + 1}. ${item.title}\n`
-        })
-        setOutputContent(outlineText)
-        setChatMessages(prev => [...prev, { role: 'assistant', content: outlineText, time: new Date().toLocaleTimeString() }])
-        message.success('大纲生成成功')
-      } else {
-        throw new Error(response.error)
-      }
-    } catch (error) {
-      message.error('生成失败，请稍后重试')
-      setChatMessages(prev => [...prev, { role: 'assistant', content: '抱歉，生成失败，请稍后重试。', time: new Date().toLocaleTimeString() }])
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const handleRevise = async () => {
-    if (!originalText.trim() || !inputValue.trim() || sending) return
-    if (!selectedPaperId) {
-      message.warning('请先选择或创建论文项目')
-      return
-    }
-    setSending(true)
-    setOutputContent('')
-
-    const reviseType = inputValue
-    setChatMessages(prev => [...prev, {
-      role: 'user',
-      content: `请帮我修改以下内容（${reviseType === 'polish' ? '润色' : reviseType === 'translate' ? '翻译' : reviseType === 'shorten' ? '精简' : '扩展'}）：\n\n${originalText}`,
-      time: new Date().toLocaleTimeString()
-    }])
-
-    let prompt = ''
-    switch (reviseType) {
-      case 'polish':
-        prompt = `请润色以下论文内容，使其更加流畅，专业、符合学术规范：\n\n${originalText}`
-        break
-      case 'translate':
-        prompt = `请将以下中文论文内容翻译成英文（或将英文翻译成中文），保持学术风格：\n\n${originalText}`
-        break
-      case 'shorten':
-        prompt = `请精简以下论文内容，保留核心观点和方法，去除冗余：\n\n${originalText}`
-        break
-      case 'expand':
-        prompt = `请扩展以下论文内容，增加更多细节、论据和深度分析：\n\n${originalText}`
-        break
-      default:
-        prompt = `请修改以下内容：\n\n${originalText}`
-    }
-
-    try {
-      const response = await aiAPI.sendMessage(selectedPaperId, prompt, userId, sessionId)
-
-      if (response.success && response.data) {
-        const content = response.data.response || ''
-        setOutputContent(content)
-        setChatMessages(prev => [...prev, { role: 'assistant', content, time: new Date().toLocaleTimeString() }])
-      } else {
-        throw new Error(response.error)
-      }
-    } catch (error) {
-      message.error('修改失败，请稍后重试')
-      setChatMessages(prev => [...prev, { role: 'assistant', content: '抱歉，修改失败，请稍后重试。', time: new Date().toLocaleTimeString() }])
-    } finally {
-      setSending(false)
+    if (paperId) {
+      setChatMessages(prev => [...prev, {
+        role: 'system',
+        content: `已选择论文：${paper?.title || '未知'}`
+      }])
     }
   }
 
@@ -288,20 +255,53 @@ const AIAssistantPage = () => {
 
     const msg = chatInput
     setChatInput('')
-    setChatMessages(prev => [...prev, { role: 'user', content: msg, time: new Date().toLocaleTimeString() }])
+    setChatMessages(prev => [...prev, {
+      role: 'user',
+      content: msg,
+      time: new Date().toLocaleTimeString()
+    }])
+
+    // 构建prompt
+    let prompt = msg
+    if (contextText.trim()) {
+      prompt = `【上下文】\n${contextText}\n\n【请求】\n${msg}`
+    }
+
+    // 如果是修改模式，添加修改类型提示
+    if (mode === MODES.REVISE && reviseType) {
+      const reviseHints = {
+        polish: '请润色以下内容，使其更加流畅专业：',
+        translate: '请翻译以下内容，保持学术风格：',
+        shorten: '请精简以下内容，保留核心观点：',
+        expand: '请扩展以下内容，增加细节和深度：'
+      }
+      if (reviseHints[reviseType] && !msg.startsWith('请')) {
+        prompt = reviseHints[reviseType] + '\n\n' + (contextText.trim() || msg)
+      }
+    }
 
     try {
-      const response = await aiAPI.sendMessage(selectedPaperId, msg, userId, sessionId)
+      const response = await aiAPI.sendMessage(selectedPaperId, prompt, userId, sessionId)
 
       if (response.success && response.data) {
         const content = response.data.response || ''
-        setChatMessages(prev => [...prev, { role: 'assistant', content, time: new Date().toLocaleTimeString() }])
+        setChatMessages(prev => [...prev, {
+          role: 'assistant',
+          content: content,
+          time: new Date().toLocaleTimeString()
+        }])
+        // 清空上下文
+        setContextText('')
       } else {
         throw new Error(response.error)
       }
     } catch (error) {
       message.error('发送失败')
-      setChatMessages(prev => [...prev, { role: 'assistant', content: '抱歉，发送失败，请稍后重试。', time: new Date().toLocaleTimeString() }])
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: '抱歉，发送失败，请稍后重试。',
+        time: new Date().toLocaleTimeString()
+      }])
     } finally {
       setChatSending(false)
     }
@@ -312,199 +312,132 @@ const AIAssistantPage = () => {
     message.success('已复制到剪贴板')
   }
 
-  const handleClear = () => {
-    setInputValue('')
-    setOriginalText('')
-    setOutputContent('')
+  const handleClearChat = () => {
+    setChatMessages([{ role: 'system', content: '对话已清空' }])
+    setContextText('')
   }
 
   return (
     <div className="h-full flex gap-4">
-      {/* 左侧：写作/修改功能 */}
-      <div className="flex-1 flex flex-col gap-4 min-w-0">
-        {/* 论文选择器 */}
-        <Card size="small" className="!rounded-lg">
-          <div className="flex justify-between items-center">
-            <Space>
-              <FileTextOutlined className="text-gray-400" />
-              <Text strong>当前论文：</Text>
-              <Select
-                placeholder="选择论文项目"
-                value={selectedPaperId}
-                onChange={handleSelectPaper}
-                className="!w-64"
-                allowClear
-              >
-                {papers.map(p => (
-                  <Option key={p.id} value={p.id}>{p.title}</Option>
-                ))}
-              </Select>
-            </Space>
-            <Button type="primary" icon={<PlusOutlined />} size="small" onClick={() => setIsCreateModalOpen(true)}>
-              新建论文
-            </Button>
-          </div>
-        </Card>
-
-        {/* 模式切换 */}
-        <Card className="flex-1 !rounded-lg" bodyStyle={{ display: 'flex', flexDirection: 'column' }}>
-          <Tabs
-            activeKey={mode}
-            onChange={setMode}
-            items={[
-              {
-                key: 'write',
-                label: <span><EditOutlined /> 写作</span>,
-                children: (
-                  <div className="space-y-4 flex-1">
-                    <div>
-                      <Text strong className="mb-2 block">论文选题</Text>
-                      <Input
-                        placeholder="请输入论文主题，例如：人工智能对未来教育的影响"
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onPressEnter={() => handleWrite()}
-                        suffix={
-                          <Tooltip title="Enter发送">
-                            <Button type="text" size="small" icon={<SendOutlined />} onClick={handleWrite} className="!text-blue-500" />
-                          </Tooltip>
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Text strong className="mb-2 block">参考资料（可选）</Text>
-                      <TextArea
-                        placeholder="可以粘贴参考文章，大纲或要点，AI会结合这些资料生成更准确的内容..."
-                        rows={3}
-                        value={referenceText}
-                        onChange={(e) => setReferenceText(e.target.value)}
-                      />
-                    </div>
-                    <Space>
-                      <Button
-                        type="primary"
-                        icon={<ThunderboltOutlined />}
-                        onClick={handleWrite}
-                        loading={sending}
-                        disabled={!inputValue.trim() || !selectedPaperId}
-                      >
-                        生成大纲
-                      </Button>
-                      <Button icon={<ClearOutlined />} onClick={handleClear}>清空</Button>
-                    </Space>
-                  </div>
-                ),
-              },
-              {
-                key: 'revise',
-                label: <span><ScissorOutlined /> 修改</span>,
-                children: (
-                  <div className="space-y-4 flex-1">
-                    <div>
-                      <Text strong className="mb-2 block">修改类型</Text>
-                      <Select
-                        className="!w-full"
-                        value={inputValue}
-                        onChange={setInputValue}
-                        placeholder="请选择修改类型"
-                      >
-                        <Option value="polish">润色 - 优化语言表达</Option>
-                        <Option value="translate">翻译 - 中英文互译</Option>
-                        <Option value="shorten">精简 - 压缩冗余内容</Option>
-                        <Option value="expand">扩展 - 丰富详细内容</Option>
-                      </Select>
-                    </div>
-                    <div className="flex-1">
-                      <Text strong className="mb-2 block">原文内容</Text>
-                      <TextArea
-                        placeholder="请输入要修改的论文内容..."
-                        rows={6}
-                        value={originalText}
-                        onChange={(e) => setOriginalText(e.target.value)}
-                        className="h-full"
-                      />
-                    </div>
-                    <Space>
-                      <Button
-                        type="primary"
-                        icon={<ScissorOutlined />}
-                        onClick={handleRevise}
-                        loading={sending}
-                        disabled={!originalText.trim() || !inputValue || !selectedPaperId}
-                      >
-                        开始修改
-                      </Button>
-                      <Button icon={<ClearOutlined />} onClick={handleClear}>清空</Button>
-                    </Space>
-                  </div>
-                ),
-              },
-            ]}
-          />
-        </Card>
-
-        {/* 生成结果 */}
-        <Card
-          className="!rounded-lg"
-          title={
-            <Space>
-              <FileTextOutlined />
-              <span>生成结果</span>
-            </Space>
-          }
-          extra={
-            <Button icon={<CopyOutlined />} onClick={() => handleCopy(outputContent)} disabled={!outputContent}>
-              复制
-            </Button>
-          }
-          bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-        >
-          {sending ? (
-            <div className="flex items-center justify-center h-full">
-              <Spin tip="论文Agent正在生成内容..." />
-            </div>
-          ) : outputContent ? (
-            <div className="flex-1 overflow-auto">
-              <pre className="whitespace-pre-wrap text-sm leading-relaxed">{outputContent.replace(/\*/g, '')}</pre>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full text-gray-400">
-              <Empty description={mode === 'write' ? '输入选题后点击「生成大纲」' : '选择修改类型并输入原文后点击「开始修改」'} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* 右侧：对话窗口 */}
+      {/* 左侧论文列表 */}
       <Card
-        className="w-96 flex flex-col !rounded-lg"
+        className="w-64 flex-shrink-0 !rounded-lg"
+        title={
+          <Space>
+            <FileTextOutlined className="text-blue-500" />
+            <span className="text-sm">论文项目</span>
+          </Space>
+        }
+        extra={
+          <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)} />
+        }
+        bodyStyle={{ padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}
+      >
+        {papers.length === 0 ? (
+          <div className="p-4 text-center">
+            <Text type="secondary" className="text-xs">暂无论文</Text>
+            <Button type="link" size="small" onClick={() => setIsCreateModalOpen(true)}>创建论文</Button>
+          </div>
+        ) : (
+          <List
+            size="small"
+            dataSource={papers}
+            renderItem={paper => (
+              <List.Item
+                className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${selectedPaperId === paper.id ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''}`}
+                onClick={() => handleSelectPaper(paper.id)}
+              >
+                <Text ellipsis className="text-sm">{paper.title || '未命名'}</Text>
+              </List.Item>
+            )}
+          />
+        )}
+      </Card>
+
+      {/* 中间主对话区 */}
+      <Card
+        className="flex-1 !rounded-lg"
         bodyStyle={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}
       >
-        {/* 头部 */}
-        <div className="px-4 py-3 border-b flex justify-between items-center bg-gray-50">
-          <Space>
-            <Avatar size="small" className="!bg-gradient-to-br from-blue-400 to-purple-500" icon={<RobotOutlined />} />
-            <Text strong>论文Agent对话</Text>
-          </Space>
-          <Space>
-            {!selectedPaperId && <Tag color="warning" className="text-xs">未选择论文</Tag>}
-            {selectedPaperId && <Tag color="success" className="text-xs">已连接</Tag>}
-          </Space>
+        {/* 模式切换 */}
+        <div className="px-4 py-3 border-b bg-gradient-to-r from-blue-50 to-purple-50">
+          <div className="flex items-center justify-between">
+            <Space>
+              <RobotOutlined className="text-lg text-blue-500" />
+              <Text strong>AI写作助手</Text>
+            </Space>
+            <Space>
+              <Tooltip title="写作：生成大纲、续写内容">
+                <Tag
+                  color={mode === MODES.WRITE ? 'blue' : 'default'}
+                  className={`cursor-pointer ${mode !== MODES.WRITE ? 'opacity-60' : ''}`}
+                  onClick={() => handleModeSwitch(MODES.WRITE)}
+                >
+                  <EditOutlined /> 写作
+                </Tag>
+              </Tooltip>
+              <Tooltip title="修改：润色、翻译、精简、扩展">
+                <Tag
+                  color={mode === MODES.REVISE ? 'purple' : 'default'}
+                  className={`cursor-pointer ${mode !== MODES.REVISE ? 'opacity-60' : ''}`}
+                  onClick={() => handleModeSwitch(MODES.REVISE)}
+                >
+                  <ScissorOutlined /> 修改
+                </Tag>
+              </Tooltip>
+            </Space>
+          </div>
+          {/* 快速操作 */}
+          <QuickAction mode={mode} onAction={handleQuickAction} />
         </div>
 
         {/* 消息列表 */}
-        <div className="flex-1 overflow-y-auto px-4">
+        <div className="flex-1 overflow-y-auto px-4 py-2">
           {chatMessages.map((msg, index) => (
             <MessageBubble key={index} message={msg} onCopy={handleCopy} />
           ))}
+          {chatSending && (
+            <div className="flex gap-3 my-3">
+              <Avatar size={32} className="!bg-gradient-to-br from-blue-400 to-purple-500" icon={<RobotOutlined />} />
+              <div className="px-4 py-2 rounded-2xl bg-white border border-gray-200">
+                <Spin size="small" /> <Text type="secondary" className="ml-2">思考中...</Text>
+              </div>
+            </div>
+          )}
           <div ref={chatEndRef} />
         </div>
 
-        {/* 输入框 */}
+        {/* 输入区域 */}
         <div className="p-3 border-t bg-gray-50">
+          {mode === MODES.REVISE && (
+            <div className="mb-2">
+              <Select
+                size="small"
+                value={reviseType}
+                onChange={setReviseType}
+                className="!w-32"
+                options={[
+                  { label: '润色', value: 'polish' },
+                  { label: '翻译', value: 'translate' },
+                  { label: '精简', value: 'shorten' },
+                  { label: '扩展', value: 'expand' },
+                ]}
+              />
+              <Text type="secondary" className="ml-2 text-xs">选择修改类型</Text>
+            </div>
+          )}
+          {mode === MODES.REVISE && (
+            <TextArea
+              placeholder="粘贴要修改的原文（可选，提供上下文可获得更好的结果）..."
+              rows={2}
+              value={contextText}
+              onChange={(e) => setContextText(e.target.value)}
+              className="mb-2 !text-sm"
+            />
+          )}
           <Space.Compact className="w-full">
             <Input
-              placeholder={selectedPaperId ? "输入问题，AI助手为您解答..." : "请先选择论文项目"}
+              placeholder={mode === MODES.WRITE ? "输入选题或写作要求..." : "输入修改要求或直接发送要修改的内容..."}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onPressEnter={() => handleChatSend()}
@@ -518,7 +451,52 @@ const AIAssistantPage = () => {
               disabled={!selectedPaperId}
             />
           </Space.Compact>
+          <div className="flex justify-between items-center mt-2">
+            <Text type="secondary" className="text-xs">
+              {!selectedPaperId ? '请先选择论文项目' : `当前模式：${MODE_CONFIG[mode].label}`}
+            </Text>
+            <Button type="text" size="small" icon={<ClearOutlined />} onClick={handleClearChat}>
+              清空对话
+            </Button>
+          </div>
         </div>
+      </Card>
+
+      {/* 右侧：当前论文信息 */}
+      <Card
+        className="w-64 flex-shrink-0 !rounded-lg"
+        title={
+          <Space>
+            <FileTextOutlined className="text-purple-500" />
+            <span className="text-sm">当前论文</span>
+          </Space>
+        }
+        bodyStyle={{ padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}
+      >
+        {selectedPaper ? (
+          <div className="p-3">
+            <Text strong className="text-sm block mb-2">{selectedPaper.title}</Text>
+            <Text type="secondary" className="text-xs block mb-2">
+              章节：{selectedPaper.sections?.length || 0} 个
+            </Text>
+            <Divider className="!my-2" />
+            <Text strong className="text-xs">快速导航</Text>
+            <div className="mt-2 space-y-1">
+              <Button type="link" size="small" className="!p-0 !h-auto text-xs" icon={<EditOutlined />} onClick={() => window.location.href = '/writing'}>
+                前往写作
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 text-center">
+            <Text type="secondary" className="text-xs">未选择论文</Text>
+            <div className="mt-2">
+              <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
+                新建论文
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* 创建论文弹窗 */}
