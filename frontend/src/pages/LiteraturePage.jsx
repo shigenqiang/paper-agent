@@ -332,11 +332,26 @@ const LiteraturePage = () => {
         id: n.id,
         label: n.label,
         type: n.type,
-        size: n.type === 'paper' ? 40 : 25,
-        color: n.type === 'paper' ? '#1890ff' : n.type === 'keyword' ? '#722ed1' : '#52c41a',
+        size: n.type === 'paper' ? 40 : n.type === 'method' ? 30 : 25,
+        color: n.type === 'paper' ? '#1890ff' :
+               n.type === 'method' ? '#722ed1' :
+               n.type === 'dataset' ? '#52c41a' :
+               n.type === 'task' ? '#fa8c16' :
+               n.type === 'metric' ? '#eb2f96' :
+               n.type === 'author' ? '#13c2c2' : '#d9d9d9',
         style: {
-          fill: n.type === 'paper' ? '#e6f7ff' : n.type === 'keyword' ? '#f9f0ff' : '#d9f7be',
-          stroke: n.type === 'paper' ? '#1890ff' : n.type === 'keyword' ? '#722ed1' : '#52c41a',
+          fill: n.type === 'paper' ? '#e6f7ff' :
+                n.type === 'method' ? '#f9f0ff' :
+                n.type === 'dataset' ? '#d9f7be' :
+                n.type === 'task' ? '#fff7e6' :
+                n.type === 'metric' ? '#fff0f0' :
+                n.type === 'author' ? '#e6fff7' : '#f5f5f5',
+          stroke: n.type === 'paper' ? '#1890ff' :
+                  n.type === 'method' ? '#722ed1' :
+                  n.type === 'dataset' ? '#52c41a' :
+                  n.type === 'task' ? '#fa8c16' :
+                  n.type === 'metric' ? '#eb2f96' :
+                  n.type === 'author' ? '#13c2c2' : '#d9d9d9',
         }
       })),
       edges: data.edges?.map((e, i) => ({
@@ -964,11 +979,14 @@ const LiteraturePage = () => {
 
             {/* 图例 */}
             <Card size="small" className="!rounded-lg">
-              <Space>
+              <Space wrap>
                 <Text type="secondary" className="text-xs">图例:</Text>
-                <Tag color="blue">论文节点</Tag>
-                <Tag color="purple">关键词节点</Tag>
-                <Tag color="green">概念节点</Tag>
+                <Tag color="blue">论文</Tag>
+                <Tag color="purple">方法</Tag>
+                <Tag color="green">数据集</Tag>
+                <Tag color="orange">任务</Tag>
+                <Tag color="red">指标</Tag>
+                <Tag color="cyan">作者</Tag>
               </Space>
             </Card>
           </div>

@@ -24,22 +24,86 @@ _graph_storage: Dict[str, Any] = {
 
 
 def _extract_entities_from_text(text: str) -> List[Dict[str, str]]:
-    """从文本中提取实体（方法、作者等）"""
+    """从文本中提取实体（方法、数据集、任务、指标等）"""
     entities = []
+    text_lower = text.lower()
 
     # 提取常见AI/ML方法
     methods = [
-        "Transformer", "BERT", "GPT", "GPT-2", "GPT-3", "GPT-4",
-        "LSTM", "CNN", "RNN", "ResNet", "ViT", "GAN", "VAE",
-        "Attention", "Neural Network", "Deep Learning", "Machine Learning",
-        "BERT", "ELMo", "XLNet", "RoBERTa", "ALBERT", "T5", "BART"
+        "Transformer", "BERT", "GPT", "GPT-2", "GPT-3", "GPT-4", "GPT-4o",
+        "LSTM", "CNN", "RNN", "ResNet", "ViT", "GAN", "VAE", "AE",
+        "Attention", "Self-Attention", "Cross-Attention",
+        "Neural Network", "Deep Learning", "Machine Learning",
+        "ELMo", "XLNet", "RoBERTa", "ALBERT", "T5", "BART",
+        "Word2Vec", "GloVe", "FastText",
+        "SVM", "Random Forest", "Gradient Boosting", "XGBoost", "LightGBM",
+        "K-Means", "DBSCAN", "PCA", "t-SNE", "UMAP",
+        "Logistic Regression", "Linear Regression", "Decision Tree",
+        "Reinforcement Learning", "Supervised Learning", "Unsupervised Learning",
+        "Transfer Learning", "Meta Learning", "Multi-Task Learning",
+        "Graph Neural Network", "GCN", "GAT", "GraphSAGE",
+        "Adversarial Training", "Contrastive Learning", "Contrastive Loss",
+        "Knowledge Distillation", "Quantization", "Pruning"
     ]
 
     for method in methods:
-        if method.lower() in text.lower():
+        if method.lower() in text_lower:
             entities.append({
                 "name": method,
                 "type": "method"
+            })
+
+    # 提取常见数据集
+    datasets = [
+        "ImageNet", "COCO", "MNIST", "SQuAD", "GLUE", "SuperGLUE",
+        "Wikipedia", "BookCorpus", "Common Crawl", "OpenWebText",
+        "PubMed", "arXiv", "Reddit", "Twitter", "Facebook",
+        "CIFAR-10", "CIFAR-100", "SVHN", "FLICKR", "MSCOCO",
+        "WikiText", "Penn Treebank", "CoNLL", "ACE",
+        "Visual Genome", "Flickr30k", "SNLI", "MNLI", "QQP", "QNLI"
+    ]
+
+    for dataset in datasets:
+        if dataset.lower() in text_lower:
+            entities.append({
+                "name": dataset,
+                "type": "dataset"
+            })
+
+    # 提取常见任务类型
+    tasks = [
+        "classification", "detection", "segmentation", "parsing",
+        "translation", "generation", "summarization", "extraction",
+        "recognition", "prediction", "estimation", "retrieval",
+        "question answering", "qa", "machine reading comprehension",
+        "named entity recognition", "ner", "part-of-speech tagging",
+        "dependency parsing", "semantic parsing", "sentiment analysis",
+        "image captioning", "visual question answering", "vqa",
+        "object detection", "semantic segmentation", "instance segmentation",
+        "pose estimation", "face recognition", "speech recognition"
+    ]
+
+    for task in tasks:
+        if task in text_lower:
+            entities.append({
+                "name": task.replace("question answering", "QA").replace("named entity recognition", "NER"),
+                "type": "task"
+            })
+
+    # 提取常见评估指标
+    metrics = [
+        "accuracy", "precision", "recall", "f1", "f1-score",
+        "auc", "roc", "map", "mrr", "ndcg",
+        "bleu", "rouge", "meteor", "cider",
+        "perplexity", "loss", "cross-entropy",
+        "iou", "dice", "hausdorff distance"
+    ]
+
+    for metric in metrics:
+        if metric in text_lower:
+            entities.append({
+                "name": metric.upper() if metric in ["auc", "roc", "f1", "map", "mrr", "ndcg", "iou"] else metric,
+                "type": "metric"
             })
 
     return entities
@@ -56,7 +120,13 @@ def _build_graph_from_papers(papers: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     nodes = []
     edges = []
-    method_nodes = set()
+    # 跟踪已添加的实体（按类型分组）
+    entity_tracker = {
+        "method": set(),
+        "dataset": set(),
+        "task": set(),
+        "metric": set()
+    }
     paper_ids = set()
 
     for paper in papers:
@@ -75,25 +145,29 @@ def _build_graph_from_papers(papers: List[Dict[str, Any]]) -> Dict[str, Any]:
             "title": title
         })
 
-        # 从标题和摘要中提取方法实体
+        # 从标题和摘要中提取所有实体
         text = f"{title} {abstract}"
-        extracted_methods = _extract_entities_from_text(text)
+        extracted_entities = _extract_entities_from_text(text)
 
-        for method in extracted_methods:
-            method_name = method["name"]
-            if method_name not in method_nodes:
-                method_nodes.add(method_name)
+        for entity in extracted_entities:
+            entity_name = entity["name"]
+            entity_type = entity["type"]
+            entity_key = f"{entity_type}_{entity_name}"
+
+            # 检查是否已添加该实体
+            if entity_name not in entity_tracker[entity_type]:
+                entity_tracker[entity_type].add(entity_name)
                 nodes.append({
-                    "id": f"method_{method_name}",
-                    "label": method_name,
-                    "type": "method"
+                    "id": f"{entity_type}_{entity_name}",
+                    "label": entity_name,
+                    "type": entity_type
                 })
 
-            # 添加论文-方法关系
+            # 添加论文-实体关系
             edges.append({
                 "source": paper_id,
-                "target": f"method_{method_name}",
-                "relation": "uses"
+                "target": f"{entity_type}_{entity_name}",
+                "relation": "uses" if entity_type == "method" else "applies_to"
             })
 
         # 添加作者节点
@@ -111,26 +185,49 @@ def _build_graph_from_papers(papers: List[Dict[str, Any]]) -> Dict[str, Any]:
                     "relation": "authored"
                 })
 
-    # 发现论文之间的引用关系（基于共同方法）
-    paper_method_map = {}
+    # 发现论文之间的关联（基于共同实体）
+    paper_entity_map = {}
     for paper in papers:
         paper_id = paper.get("id", f"paper_{len(nodes)}")
         text = f"{paper.get('title', '')} {paper.get('abstract', '')}"
-        methods = _extract_entities_from_text(text)
-        paper_method_map[paper_id] = {m["name"] for m in methods}
+        entities = _extract_entities_from_text(text)
+        # 按类型组织实体
+        paper_entity_map[paper_id] = {e["type"]: {e["name"] for e in entities if e["type"] == e["type"]}
+                                   for e_type in entity_tracker}
 
-    # 基于共同方法创建论文间的隐式关系
+    # 基于共同方法/数据集等创建论文间的隐式关系
     paper_list = list(paper_ids)
     for i, p1 in enumerate(paper_list):
         for p2 in paper_list[i+1:]:
-            common_methods = paper_method_map.get(p1, set()) & paper_method_map.get(p2, set())
+            # 检查共同的方法
+            common_methods = paper_entity_map.get(p1, {}).get("method", set()) & \
+                            paper_entity_map.get(p2, {}).get("method", set())
             if common_methods:
-                for method in list(common_methods)[:2]:  # 最多2条边
+                for method in list(common_methods)[:1]:  # 最多1条边
                     edges.append({
                         "source": p1,
                         "target": p2,
-                        "relation": f"shares_{method}"
+                        "relation": f"shares_method_{method}"
                     })
+
+            # 检查共同的数据集
+            common_datasets = paper_entity_map.get(p1, {}).get("dataset", set()) & \
+                            paper_entity_map.get(p2, {}).get("dataset", set())
+            if common_datasets:
+                for dataset in list(common_datasets)[:1]:
+                    edges.append({
+                        "source": p1,
+                        "target": p2,
+                        "relation": f"uses_same_dataset"
+                    })
+
+    # 计算统计信息
+    total_entities = (
+        len(entity_tracker["method"]) +
+        len(entity_tracker["dataset"]) +
+        len(entity_tracker["task"]) +
+        len(entity_tracker["metric"])
+    )
 
     return {
         "nodes": nodes,
@@ -141,7 +238,10 @@ def _build_graph_from_papers(papers: List[Dict[str, Any]]) -> Dict[str, Any]:
             "total_nodes": len(nodes),
             "total_edges": len(edges),
             "paper_count": len(papers),
-            "method_count": len(method_nodes)
+            "method_count": len(entity_tracker["method"]),
+            "dataset_count": len(entity_tracker["dataset"]),
+            "task_count": len(entity_tracker["task"]),
+            "metric_count": len(entity_tracker["metric"])
         }
     }
 
