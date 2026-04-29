@@ -47,7 +47,7 @@ def demo_service_workflow():
 
     for (paper_id, ptype, props), embedding in zip(papers, embeddings):
         service.add_entity(paper_id, ptype, props, embedding)
-        print(f"✓ 添加实体: {paper_id} - {props['title']}")
+        print(f"[OK] Add entity: {paper_id} - {props['title']}")
 
     # 3. 添加关系
     relations = [
@@ -58,10 +58,10 @@ def demo_service_workflow():
 
     for source, target, rel, props in relations:
         service.add_relation(source, target, rel, props)
-        print(f"✓ 添加关系: {source} --[{rel}]--> {target}")
+        print(f"[OK] Add relation: {source} --[{rel}]--> {target}")
 
     # 4. 检索
-    print("\n检索测试:")
+    print("\nSearch Test:")
     results = service.search(
         query_embedding=[0.1, 0.2, 0.3],
         top_k=3
@@ -70,13 +70,13 @@ def demo_service_workflow():
         print(f"  - {r['entity_id']}: score={r['score']:.3f}")
 
     # 5. 社区检测
-    print("\n社区检测:")
+    print("\nCommunity Detection:")
     communities = service.detect_communities(algorithm="louvain")
     for i, c in enumerate(communities):
-        print(f"  社区 {i}: {c['members']}")
+        print(f"  Community {i}: {c['members']}")
 
     # 6. GraphRAG问答
-    print("\nGraphRAG问答:")
+    print("\nGraphRAG QA:")
     qa = create_graphrag_qa()
     qa.build_index(
         entities=[
@@ -91,26 +91,27 @@ def demo_service_workflow():
     )
 
     result = qa.query("What is BERT based on?")
-    print(f"  问题: What is BERT based on?")
-    print(f"  上下文: {result.to_prompt_context()[:200]}...")
+    print(f"  Question: What is BERT based on?")
+    print(f"  Context: {result.to_prompt_context()[:200]}...")
 
     # 7. Schema验证
-    print("\nSchema管理:")
+    print("\nSchema Management:")
     schema_manager = SchemaManager()
     paper_schema = schema_manager.get_node_schema("Paper")
-    print(f"  Paper节点属性: {[p.name for p in paper_schema.properties]}")
+    print(f"  Paper node properties: {[p.name for p in paper_schema.properties]}")
 
     print("\n" + "="*60)
-    print("演示完成!")
+    print("Demo Complete!")
     print("="*60)
 
 
 def demo_entity_extraction():
     """演示实体提取"""
     print("\n" + "="*60)
-    print("实体与关系提取演示")
+    print("Entity and Relation Extraction Demo")
     print("="*60)
 
+    import asyncio
     generator = KnowledgeGraphGenerator()
 
     text = """
@@ -119,20 +120,20 @@ def demo_entity_extraction():
     Experiments on the GLUE benchmark show significant improvement over previous methods.
     """
 
-    result = generator.generate_from_paper(
+    result = asyncio.run(generator.generate_from_paper(
         paper_id="bert_paper",
         title="BERT: Pre-training of Deep Bidirectional Transformers",
         abstract=text,
         full_text=text
-    )
+    ))
 
-    print(f"\n论文: {result.paper_id}")
-    print(f"成功: {result.success}")
-    print(f"\n提取的实体 ({len(result.entities)}):")
+    print(f"\nPaper: {result.paper_id}")
+    print(f"Success: {result.success}")
+    print(f"\nExtracted entities ({len(result.entities)}):")
     for entity in result.entities:
         print(f"  - [{entity.type.value}] {entity.name}")
 
-    print(f"\n提取的关系 ({len(result.relations)}):")
+    print(f"\nExtracted relations ({len(result.relations)}):")
     for rel in result.relations:
         print(f"  - {rel.source} --[{rel.relation.value}]--> {rel.target}")
 
@@ -140,27 +141,27 @@ def demo_entity_extraction():
 def demo_community_detection():
     """演示社区检测"""
     print("\n" + "="*60)
-    print("社区检测算法演示")
+    print("Community Detection Algorithm Demo")
     print("="*60)
 
     # 构建引用网络
     edges = [
-        ("paper_1", "paper_2"),  # 同一研究社区
+        ("paper_1", "paper_2"),  # Same research community
         ("paper_2", "paper_3"),
         ("paper_3", "paper_4"),
-        ("paper_5", "paper_6"),  # 不同社区
+        ("paper_5", "paper_6"),  # Different community
         ("paper_6", "paper_7"),
     ]
 
-    print("\n引用网络:")
+    print("\nCitation Network:")
     for src, tgt in edges:
         print(f"  {src} --> {tgt}")
 
     # Louvain算法
     louvain_communities = detect_communities(edges, algorithm="louvain")
-    print(f"\nLouvain算法检测到 {len(louvain_communities)} 个社区:")
+    print(f"\nLouvain detected {len(louvain_communities)} communities:")
     for i, c in enumerate(louvain_communities):
-        print(f"  社区 {i+1}: {list(c.members)[:5]}...")
+        print(f"  Community {i+1}: {list(c.members)[:5]}...")
 
 
 if __name__ == "__main__":
