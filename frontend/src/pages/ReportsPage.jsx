@@ -17,8 +17,9 @@ import {
   EditOutlined,
 } from '@ant-design/icons'
 import { reportsAPI, settingsAPI } from '../services/api'
-import { usePaperStore } from '../store/paperStore'
+import { useLiteratureStore } from '../store/literatureStore'
 import { useNavigate } from 'react-router-dom'
+import { SOURCE_CONFIG_LIST } from '../constants/source'
 
 const { Title, Text } = Typography
 const { Panel } = Collapse
@@ -29,12 +30,10 @@ const REPORT_TYPES = {
   MONTHLY: 'monthly'
 }
 
-const SOURCE_CONFIG = {
-  arxiv: { color: '#e84a25', label: 'arXiv' },
-  pubmed: { color: '#3e84c8', label: 'PubMed' },
-  semantic_scholar: { color: '#5c7fdd', label: 'Semantic' },
-  openalex: { color: '#ff6b35', label: 'OpenAlex' },
-}
+// ReportsPage使用的简化版SOURCE_CONFIG（无icon）
+const SOURCE_CONFIG = Object.fromEntries(
+  SOURCE_CONFIG_LIST.map(s => [s.key, { color: s.color, label: s.label }])
+)
 
 const MarkdownContent = ({ digest }) => {
   const content = useMemo(() => {
@@ -63,7 +62,7 @@ const MarkdownContent = ({ digest }) => {
 
 const ReportsPage = () => {
   const navigate = useNavigate()
-  const { literature, addLiterature, deleteLiterature } = usePaperStore()
+  const { literature, addLiterature, deleteLiterature } = useLiteratureStore()
   const [activeTab, setActiveTab] = useState(REPORT_TYPES.DAILY)
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)

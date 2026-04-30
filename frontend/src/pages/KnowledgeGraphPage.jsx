@@ -31,7 +31,7 @@ import {
   PlusOutlined, DragOutlined
 } from '@ant-design/icons'
 import { knowledgeGraphAPI, literatureAPI } from '../services/api'
-import { usePaperStore } from '../store/paperStore'
+import { useLiteratureStore } from '../store/literatureStore'
 import * as G6 from '@antv/g6'
 
 const { Text, Title, Paragraph } = AntTypography
@@ -105,7 +105,7 @@ const KnowledgeGraphPage = () => {
   const [derivativePapers, setDerivativePapers] = useState([]) // 引用当前论文的
 
   // 使用文献库数据
-  const { literature, addLiterature, deleteLiterature, updateLiterature } = usePaperStore()
+  const { literature, addLiterature, deleteLiterature, updateLiterature } = useLiteratureStore()
 
   // 文献库管理状态
   const [literatureSearchText, setLiteratureSearchText] = useState('')

@@ -5,10 +5,10 @@ import { ConfigProvider, theme as antTheme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import App from './App'
 import './styles/index.css'
-import { usePaperStore } from './store/paperStore'
+import { useUIStore } from './store/uiStore'
 
 const ThemeProvider = ({ children }) => {
-  const { theme } = usePaperStore()
+  const { theme } = useUIStore()
   return (
     <ConfigProvider
       locale={zhCN}

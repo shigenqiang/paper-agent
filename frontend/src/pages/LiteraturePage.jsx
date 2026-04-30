@@ -1,31 +1,17 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Card, Input, Table, Tag, Button, Space, Typography, Modal, Form, Select, message, Tooltip, Row, Col, Empty, Upload, Spin, Tabs, Switch, Alert, Drawer, Popover, Badge, Divider } from 'antd'
-import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined, GlobalOutlined, ExperimentOutlined, RobotOutlined, DatabaseOutlined } from '@ant-design/icons'
-import { usePaperStore } from '../store/paperStore'
+import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined } from '@ant-design/icons'
+import { useLiteratureStore } from '../store/literatureStore'
 import { literatureAPI, settingsAPI, knowledgeGraphAPI } from '../services/api'
 import { useLocation } from 'react-router-dom'
+import { SOURCE_CONFIG_LIST, SOURCE_CONFIG } from '../constants/source'
 import * as G6 from '@antv/g6'
 
 const { Title, Text } = Typography
 
-// 文献来源配置
-const SOURCE_CONFIG_LIST = [
-  { key: 'arxiv', label: 'arXiv', desc: 'AI/ML/物理预印本', color: '#e84a25' },
-  { key: 'pubmed', label: 'PubMed', desc: '生物医学文献', color: '#3e84c8' },
-  { key: 'semantic_scholar', label: 'Semantic Scholar', desc: 'AI论文引用数据', color: '#5c7fdd' },
-  { key: 'openalex', label: 'OpenAlex', desc: '跨学科覆盖', color: '#ff6b35' },
-]
-
-const SOURCE_CONFIG = {
-  arxiv: { icon: <GlobalOutlined />, color: '#e84a25', label: 'arXiv' },
-  pubmed: { icon: <ExperimentOutlined />, color: '#3e84c8', label: 'PubMed' },
-  semantic: { icon: <RobotOutlined />, color: '#5c7fdd', label: 'Semantic' },
-  openalex: { icon: <DatabaseOutlined />, color: '#ff6b35', label: 'OpenAlex' },
-}
-
 const LiteraturePage = () => {
   const location = useLocation()
-  const { literature, addLiterature, deleteLiterature, updateLiterature } = usePaperStore()
+  const { literature, addLiterature, deleteLiterature, updateLiterature } = useLiteratureStore()
   const [searchText, setSearchText] = useState('')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)

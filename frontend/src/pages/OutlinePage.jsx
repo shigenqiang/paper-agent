@@ -1,43 +1,24 @@
-import React, { useState, useEffect } from 'react'
-import { Card, Button, Space, Typography, Tree, Input, Divider, Tag, Tooltip, message, Modal, List, Empty, Spin, Avatar } from 'antd'
+import React, { useState } from 'react'
+import { Card, Button, Space, Typography, Tree, Input, Tag, Tooltip, message, Modal, Empty, Spin } from 'antd'
 import {
   PlusOutlined,
-  SaveOutlined,
   EditOutlined,
   ThunderboltOutlined,
   FileTextOutlined,
   DeleteOutlined,
   RobotOutlined,
-  ClockCircleOutlined,
-  CheckCircleOutlined,
-  LoadingOutlined,
   LeftOutlined,
 } from '@ant-design/icons'
-import { usePaperStore } from '../store/paperStore'
+import { useProjectStore } from '../store/projectStore'
 import { paperAPI } from '../services/api'
 import { useNavigate } from 'react-router-dom'
+import { DEFAULT_SECTIONS } from '../constants/paper'
 
 const { Title, Text } = Typography
-const { TextArea } = Input
-
-// 默认章节模板
-const DEFAULT_SECTIONS = [
-  { id: '1', title: '第1章 引言', parentId: null, content: '' },
-  { id: '1-1', title: '1.1 研究背景', parentId: '1', content: '' },
-  { id: '1-2', title: '1.2 研究意义', parentId: '1', content: '' },
-  { id: '1-3', title: '1.3 研究目标', parentId: '1', content: '' },
-  { id: '2', title: '第2章 文献综述', parentId: null, content: '' },
-  { id: '2-1', title: '2.1 国内研究现状', parentId: '2', content: '' },
-  { id: '2-2', title: '2.2 国外研究现状', parentId: '2', content: '' },
-  { id: '3', title: '第3章 研究方法', parentId: null, content: '' },
-  { id: '4', title: '第4章 实验结果', parentId: null, content: '' },
-  { id: '5', title: '第5章 讨论', parentId: null, content: '' },
-  { id: '6', title: '第6章 结论', parentId: null, content: '' },
-]
 
 const OutlinePage = () => {
   const navigate = useNavigate()
-  const { project, setProject, setTitle, updateSection, addSection, deleteSection } = usePaperStore()
+  const { project, setProject, addSection, deleteSection } = useProjectStore()
   const [paperTitle, setPaperTitle] = useState(project?.title || '新论文')
   const [generating, setGenerating] = useState(false)
   const [selectedSection, setSelectedSection] = useState(null)

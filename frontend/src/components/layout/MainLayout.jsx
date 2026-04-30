@@ -18,7 +18,7 @@ import {
   RightOutlined,
   NodeIndexOutlined,
 } from '@ant-design/icons'
-import { usePaperStore } from '../../store/paperStore'
+import { useUIStore } from '../../store/uiStore'
 
 const { Header, Sider, Content } = Layout
 const { Text } = Typography
@@ -89,7 +89,7 @@ const QUICK_MENU = [
 const MainLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { sidebarCollapsed, toggleSidebar, theme, setTheme } = usePaperStore()
+  const { sidebarCollapsed, toggleSidebar, theme, setTheme } = useUIStore()
   const [selectedKey, setSelectedKey] = useState(() => {
     const path = location.pathname
     const menu = [...MAIN_MENU, ...QUICK_MENU].find(m => m.path === path)

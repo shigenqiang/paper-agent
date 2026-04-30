@@ -211,7 +211,7 @@ const HomePage = () => {
               hoverable
               className="cursor-pointer h-full transition-all duration-300 hover:shadow-xl hover:-translate-y-1 !rounded-2xl overflow-hidden group"
               onClick={() => navigate(entry.path)}
-              styles={{ body: { padding: 0 }}}}
+              styles={{ body: { padding: 0 }}}
               style={{ animationDelay: `${index * 0.1}s` }}
             >
               <div
