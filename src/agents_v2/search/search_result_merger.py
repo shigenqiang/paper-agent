@@ -118,12 +118,12 @@ class SearchResultMerger:
                 if self.config.enable_title_dedup:
                     title_key = self._normalize_title_key(result.title)
                     matched = False
-                    for existing in merged.values():
-                        existing_key = self._normalize_title_key(existing.title)
-                        if self._calculate_similarity(title_key, existing_key) >= \
+                    for existing_key, existing in merged.items():
+                        existing_title_key = self._normalize_title_key(existing.title)
+                        if self._calculate_similarity(title_key, existing_title_key) >= \
                            self.config.title_similarity_threshold:
                             # 合并到已有结果
-                            self._merge_single_into(title_key, source, result, merged[existing.title[:50]])
+                            self._merge_single_into(title_key, source, result, merged[existing_key])
                             matched = True
                             break
                     if matched:

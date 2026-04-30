@@ -30,79 +30,58 @@ import {
   PlusCircleOutlined, UploadOutlined, FilePdfOutlined,
   PlusOutlined, DragOutlined
 } from '@ant-design/icons'
-import { knowledgeGraphAPI, literatureAPI } from '../services/api'
+import { literatureAPI } from '../services/api'
 import { useLiteratureStore } from '../store/literatureStore'
-import * as G6 from '@antv/g6'
+import { useKGStore } from '../store/kgStore'
+import { useGraphData } from '../hooks/useGraphData'
+import { useGraphInteraction, COMMUNITY_COLORS, TYPE_COLORS, YEAR_COLORS, getYearColor } from '../hooks/useGraphInteraction'
 
 const { Text, Title, Paragraph } = AntTypography
 const { Option } = Select
 const { TabPane } = Tabs
-const { Search } = Input
-
-// 社区颜色配置
-const COMMUNITY_COLORS = [
-  '#1890ff', '#722ed1', '#52c41a', '#fa8c16',
-  '#eb2f96', '#13c2c2', '#faad14', '#2f54ed',
-  '#a0d911', '#ff6b6b', '#4ecdc4', '#45b7d1'
-]
-
-// 节点类型颜色
-const TYPE_COLORS = {
-  paper: '#1890ff',
-  method: '#722ed1',
-  dataset: '#52c41a',
-  task: '#fa8c16',
-  metric: '#eb2f96',
-  author: '#13c2c2',
-  unknown: '#d9d9d9'
-}
-
-// 年份颜色渐变 (浅蓝到深红，越新越深)
-const YEAR_COLORS = [
-  '#e6f7ff', '#b3d9ff', '#80bbff', '#4d9dff', '#1a80ff',
-  '#0070f0', '#005acc', '#0044a8', '#002e84', '#001860'
-]
-
-// 根据年份获取颜色 (Connected Papers风格：越新越深)
-const getYearColor = (year) => {
-  if (!year) return '#e6f7ff'
-  const minYear = 2015
-  const maxYear = 2026
-  const normalized = Math.max(0, Math.min(1, (year - minYear) / (maxYear - minYear)))
-  const idx = Math.floor(normalized * (YEAR_COLORS.length - 1))
-  return YEAR_COLORS[idx] || '#e6f7ff'
-}
 
 const KnowledgeGraphPage = () => {
-  // 图谱状态
-  const [graphLoading, setGraphLoading] = useState(false)
-  const [graphData, setGraphData] = useState({ nodes: [], edges: [], stats: {} })
-  const [selectedNode, setSelectedNode] = useState(null)
-  const [hoveredNode, setHoveredNode] = useState(null)
-  const [communityData, setCommunityData] = useState({ communities: [], stats: {} })
+  // 使用自定义 hooks
+  const {
+    graphLoading,
+    graphData,
+    communityData,
+    loadGraphFromLiterature,
+    handleBuildFromLiterature,
+    handleBuildGraph,
+    handleGraphQuery,
+    detectCommunities,
+  } = useGraphData()
 
-  // 视图控制
-  const [viewMode, setViewMode] = useState('year') // community, type, degree, year
-  const [yearRange, setYearRange] = useState([2000, 2026])
-  const [showFilters, setShowFilters] = useState(true)
-  const [zoomLevel, setZoomLevel] = useState(1)
-  const [fitView, setFitView] = useState(false)
-  const [sortBy, setSortBy] = useState('citations') // citations, year, title
+  const {
+    containerRef,
+    zoomLevel,
+    selectedNode,
+    setSelectedNode,
+    hoveredNode,
+    priorPapers,
+    derivativePapers,
+    initGraph,
+    handleZoom,
+    handleFitView,
+    calculatePaperConnections,
+  } = useGraphInteraction()
+
+  // 视图控制（持久化）
+  const {
+    viewMode, setViewMode,
+    showFilters, setShowFilters,
+    sortBy, setSortBy,
+    queryText, setQueryText,
+    queryResult, setQueryResult,
+    showQueryPanel, setShowQueryPanel,
+  } = useKGStore()
 
   // 搜索
   const [searchText, setSearchText] = useState('')
-  const [filteredNodes, setFilteredNodes] = useState([])
-  const [paperSearchText, setPaperSearchText] = useState('')
 
-  // GraphRAG问答
-  const [queryText, setQueryText] = useState('')
-  const [queryResult, setQueryResult] = useState(null)
+  // GraphRAG问答（不持久化）
   const [queryLoading, setQueryLoading] = useState(false)
-  const [showQueryPanel, setShowQueryPanel] = useState(false)
-
-  // 引用分类
-  const [priorPapers, setPriorPapers] = useState([]) // 当前论文引用的
-  const [derivativePapers, setDerivativePapers] = useState([]) // 引用当前论文的
 
   // 使用文献库数据
   const { literature, addLiterature, deleteLiterature, updateLiterature } = useLiteratureStore()
@@ -123,25 +102,36 @@ const KnowledgeGraphPage = () => {
   const filteredLiterature = useMemo(() => {
     if (!literatureSearchText.trim()) return literature
     const lower = literatureSearchText.toLowerCase()
-    return literature.filter(item =>
-      item.title?.toLowerCase().includes(lower) ||
-      item.authors?.toLowerCase().includes(lower) ||
-      item.journal?.toLowerCase().includes(lower)
+    return literature.filter(l =>
+      (l.title || '').toLowerCase().includes(lower) ||
+      (l.authors || '').toLowerCase().includes(lower) ||
+      (l.journal || '').toLowerCase().includes(lower)
     )
   }, [literature, literatureSearchText])
 
-  // 文献库列定义
   const literatureColumns = [
     {
       title: '标题',
       dataIndex: 'title',
       key: 'title',
-      width: 250,
       ellipsis: true,
-      render: (text) => <Text ellipsis>{text}</Text>,
+      render: (text) => <Text ellipsis className="text-xs">{text}</Text>
     },
-    { title: '作者', dataIndex: 'authors', key: 'authors', width: 150, ellipsis: true },
-    { title: '年份', dataIndex: 'year', key: 'year', width: 70 },
+    {
+      title: '作者',
+      dataIndex: 'authors',
+      key: 'authors',
+      width: 120,
+      ellipsis: true,
+      render: (text) => <Text className="text-xs">{text}</Text>
+    },
+    {
+      title: '年份',
+      dataIndex: 'year',
+      key: 'year',
+      width: 60,
+      render: (text) => <Text className="text-xs">{text}</Text>
+    },
     {
       title: '状态',
       dataIndex: 'status',
@@ -150,922 +140,167 @@ const KnowledgeGraphPage = () => {
       render: (status) => {
         const statusMap = {
           cited: { color: 'green', text: '已引用' },
-          pending: { color: 'orange', text: '待引用' },
+          pending: { color: 'blue', text: '待处理' },
+          reading: { color: 'orange', text: '阅读中' },
+          completed: { color: 'default', text: '已完成' },
         }
-        const { color, text } = statusMap[status] || { color: 'default', text: status }
-        return <Tag color={color}>{text}</Tag>
-      },
+        const cfg = statusMap[status] || statusMap.pending
+        return <Tag color={cfg.color} className="text-xs">{cfg.text}</Tag>
+      }
     },
     {
       title: '操作',
-      key: 'action',
-      width: 160,
+      key: 'actions',
+      width: 150,
       render: (_, record) => (
-        <Space>
-          <Tooltip title="添加到知识图谱">
-            <Button type="text" size="small" icon={<BuildOutlined />} onClick={() => handleBuildFromLiterature(record.id)} />
-          </Tooltip>
-          <Tooltip title="引用">
-            <Button type="text" size="small" icon={<CheckCircleOutlined />} onClick={() => handleCiteLiterature(record.id)} />
-          </Tooltip>
-          <Tooltip title="删除">
-            <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDeleteLiterature(record.id)} />
-          </Tooltip>
+        <Space size={4}>
+          <Button type="link" size="small" onClick={() => handleBuildFromLiterature(record.id)}>图谱</Button>
+          <Button type="link" size="small" onClick={() => handleCiteLiterature(record.id)}>引用</Button>
+          <Button type="link" size="small" danger onClick={() => handleDeleteLiterature(record.id)}>删除</Button>
         </Space>
-      ),
-    },
+      )
+    }
   ]
 
-  // 引用文献
   const handleCiteLiterature = (id) => {
     updateLiterature(id, { status: 'cited' })
-    message.success('文献已引用')
+    message.success('已标记为已引用')
   }
 
-  // 在图谱中查看
-  const handleViewInGraph = (id) => {
-    const paper = literature.find(p => p.id === id)
-    if (paper) {
-      setSelectedNode({
-        id: paper.id,
-        title: paper.title,
-        year: paper.year,
-        citations: paper.citations || paper.citedCount || 0,
-        authors: paper.authors || [],
-        type: 'paper'
-      })
-    }
-  }
-
-  // 删除文献
   const handleDeleteLiterature = (id) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除这条文献吗？',
-      okText: '删除',
-      okType: 'danger',
-      onOk() {
-        deleteLiterature(id)
-        message.success('文献已删除')
-      }
-    })
+    deleteLiterature(id)
+    message.success('已删除')
   }
 
-  // 添加文献
   const handleAddLiterature = (values) => {
     const newItem = {
-      ...values,
       id: Date.now(),
-      citations: 0,
+      title: values.title,
+      authors: values.authors,
+      year: values.year || '',
+      journal: values.journal || '',
+      url: '',
+      abstract: '',
       status: 'pending',
     }
     addLiterature(newItem)
-    message.success('文献添加成功')
     setIsAddModalOpen(false)
     form.resetFields()
+    message.success('文献已添加')
   }
 
-  // 上传文件
   const handleUpload = async (file) => {
     setUploading(true)
     try {
       const formData = new FormData()
       formData.append('file', file)
       const result = await literatureAPI.uploadFile(formData)
-      if (result.success && result.data) {
-        addLiterature({
-          ...result.data,
-          id: result.data.id || Date.now(),
-          status: 'pending',
-        })
-        message.success('文献上传成功！已自动提取元数据')
+      if (result.success) {
+        message.success('文件上传成功')
         setIsUploadModalOpen(false)
-      } else {
-        throw new Error(result.error || '上传失败')
       }
     } catch (error) {
-      message.error('上传失败：' + (error.message || '未知错误'))
+      message.error('上传失败')
     } finally {
       setUploading(false)
     }
-    return false
   }
 
   const beforeUpload = (file) => {
     const isPdf = file.type === 'application/pdf'
     const isDocx = file.name.endsWith('.docx') || file.name.endsWith('.doc')
     if (!isPdf && !isDocx) {
-      message.error('只支持 PDF、Word 文件！')
+      message.error('仅支持 PDF 和 Word 文件')
       return false
     }
     const isLt50M = file.size / 1024 / 1024 < 50
     if (!isLt50M) {
-      message.error('文件大小不能超过 50MB！')
+      message.error('文件大小不能超过 50MB')
       return false
     }
     handleUpload(file)
     return false
   }
 
-  // 学术搜索
   const handleSearch = async (query) => {
     const q = query || searchQuery
-    if (!q.trim()) {
-      message.warning('请输入搜索关键词')
-      return
-    }
+    if (!q.trim()) return
     setSearchLoading(true)
     try {
       const result = await literatureAPI.search(q, { max_results: 10 })
-      if (result.success && result.data) {
+      if (result.data) {
         const papers = result.data.map(item => ({
-          id: item.paper_id || item.id || Date.now() + Math.random(),
+          paper_id: item.paper_id || item.id || Date.now().toString(),
           title: item.title || '',
           authors: Array.isArray(item.authors) ? item.authors.join(', ') : (item.authors || ''),
           year: item.year || '',
-          journal: item.venue || item.journal || '',
           abstract: item.abstract || '',
           url: item.url || '',
-          source: item.source || 'unknown',
+          venue: item.venue || '',
           citations: item.citations || 0,
+          sources: item.sources || [],
         }))
         setSearchResults(papers)
-      } else {
-        message.warning('未找到相关文献')
-        setSearchResults([])
       }
-    } catch (e) {
-      message.error('搜索失败: ' + (e.message || '网络错误'))
+    } catch (error) {
+      message.error('搜索失败')
     } finally {
       setSearchLoading(false)
     }
   }
 
-  // 添加搜索结果到文献库
   const handleAddToLibrary = async (record) => {
-    try {
-      addLiterature({
-        ...record,
-        status: 'pending',
-      })
-      message.success('已添加到文献库')
-    } catch (e) {
-      message.error('添加失败')
+    if (literature.some(l => l.id === record.paper_id)) {
+      message.info('该文献已在库中')
+      return
     }
+    addLiterature({
+      id: record.paper_id || Date.now(),
+      title: record.title || '',
+      authors: record.authors || '',
+      year: record.year || '',
+      journal: record.venue || '',
+      url: record.url || '',
+      abstract: record.abstract || '',
+      citations: record.citations || 0,
+      status: 'pending',
+    })
+    message.success('已添加到文献库')
   }
 
-  // Refs
-  const graphRef = useRef(null)
-  const containerRef = useRef(null)
-  const hasLoadedFromLiterature = useRef(false)
-
-  // 初始化图谱
+  // 初始化
   useEffect(() => {
-    loadGraphData()
+    if (literature.length > 0 && graphData.nodes.length === 0) {
+      loadGraphFromLiterature()
+    }
     return () => {
-      if (graphRef.current) {
-        graphRef.current.destroy()
-      }
+      // cleanup handled by useGraphInteraction
     }
   }, [])
 
-  // literature变化时重新加载图谱（仅当尚未从文献库加载时）
+  // 文献库变化时重新加载
   useEffect(() => {
-    if (literature.length > 0 && graphData.nodes.length === 0 && !hasLoadedFromLiterature.current) {
-      hasLoadedFromLiterature.current = true
+    if (literature.length > 0 && graphData.nodes.length === 0) {
       loadGraphFromLiterature()
     }
   }, [literature])
 
-  // 重新渲染图谱当视图模式改变时
+  // 图谱数据变化时初始化 G6
   useEffect(() => {
-    if (graphRef.current && graphData.nodes.length > 0) {
-      updateNodeStyles()
+    if (graphData.nodes.length > 0) {
+      setTimeout(() => initGraph(graphData, viewMode, graphData), 100)
+    }
+  }, [graphData])
+
+  // 视图模式变化时更新
+  useEffect(() => {
+    if (graphData.nodes.length > 0) {
+      setTimeout(() => initGraph(graphData, viewMode, graphData), 50)
     }
   }, [viewMode, communityData])
 
-  // 从文献库加载图谱
-  const loadGraphFromLiterature = async () => {
-    if (!literature || literature.length === 0) {
-      message.info('文献库为空，请先添加文献')
-      return
-    }
-
-    setGraphLoading(true)
-    try {
-      // 调用API从文献库构建图谱
-      const response = await knowledgeGraphAPI.getLiteratureGraph(literature)
-      if (response.success && response.data) {
-        setGraphData(response.data)
-
-        // 检测社区
-        await detectCommunities()
-
-        // 初始化图谱
-        setTimeout(() => initGraph(response.data), 100)
-      }
-    } catch (e) {
-      console.error('Load from literature error:', e)
-      // 如果API失败，使用本地数据构建
-      const localData = generateFromLiteratureData(literature)
-      setGraphData(localData)
-      setTimeout(() => initGraph(localData), 100)
-    } finally {
-      setGraphLoading(false)
-    }
-  }
-
-  // 从本地文献数据生成本地图谱
-  const generateFromLiteratureData = (litData) => {
-    const nodes = litData.map((paper, idx) => ({
-      id: paper.id || `paper_${idx}`,
-      label: (paper.title || 'Untitled').length > 28 ? (paper.title || 'Untitled').substring(0, 28) + '...' : (paper.title || 'Untitled'),
-      title: paper.title || 'Untitled',
-      year: paper.year || 2020,
-      citations: paper.citations || paper.citedCount || 0,
-      authors: paper.authors || [],
-      type: 'paper',
-      nodeInfo: {
-        id: paper.id,
-        title: paper.title,
-        year: paper.year,
-        citations: paper.citations || paper.citedCount || 0,
-        authors: paper.authors,
-        type: 'paper'
-      },
-      size: Math.max(20, Math.min(50, Math.log((paper.citations || paper.citedCount || 0) + 1) * 4))
-    }))
-
-    // 生成边（基于年份相近和共同作者）
-    const edges = []
-    for (let i = 0; i < litData.length; i++) {
-      for (let j = i + 1; j < litData.length; j++) {
-        const p1 = litData[i]
-        const p2 = litData[j]
-
-        // 处理 authors 可能是字符串或数组的情况
-        const authors1 = Array.isArray(p1.authors) ? p1.authors : (typeof p1.authors === 'string' ? p1.authors.split(',').map(a => a.trim()) : [])
-        const authors2 = Array.isArray(p2.authors) ? p2.authors : (typeof p2.authors === 'string' ? p2.authors.split(',').map(a => a.trim()) : [])
-
-        // 如果有共同作者或年份相近，创建边
-        const hasCommonAuthor = authors1.some(a1 => authors2.some(a2 => a1.toLowerCase() === a2.toLowerCase()))
-        const sameYear = p1.year === p2.year
-        if (hasCommonAuthor || sameYear) {
-          edges.push({
-            source: p1.id || `paper_${i}`,
-            target: p2.id || `paper_${j}`,
-            relation: hasCommonAuthor ? 'co_author' : 'same_year'
-          })
-        }
-      }
-    }
-
-    return {
-      nodes,
-      edges,
-      stats: {
-        totalNodes: nodes.length,
-        totalEdges: edges.length,
-        paperCount: nodes.length
-      }
-    }
-  }
-
-  // 加载图谱数据
-  const loadGraphData = async () => {
-    setGraphLoading(true)
-    try {
-      // 如果文献库有数据，使用文献库
-      if (literature.length > 0 && !hasLoadedFromLiterature.current) {
-        hasLoadedFromLiterature.current = true
-        await loadGraphFromLiterature()
-      }
-      // 文献库为空时不加载任何数据，保持空白
-    } catch (e) {
-      console.error('Load graph error:', e)
-      message.error('加载图谱失败')
-    } finally {
-      setGraphLoading(false)
-    }
-  }
-
-  // 从文献库下拉菜单构建图谱
-  const handleBuildFromLiterature = async (paperId) => {
-    const paper = literature.find(p => p.id === paperId)
-    if (!paper) return
-
-    setGraphLoading(true)
-    try {
-      // 先尝试搜索论文获取真实引用数
-      let realCitations = paper.citations || paper.citedCount || 0
-      try {
-        const searchResult = await literatureAPI.search(paper.title, { max_results: 5 })
-        if (searchResult.success && searchResult.data) {
-          const matchedPaper = searchResult.data.find(p =>
-            p.title?.toLowerCase().includes(paper.title?.toLowerCase().substring(0, 30)) ||
-            paper.title?.toLowerCase().includes(p.title?.toLowerCase().substring(0, 30))
-          )
-          if (matchedPaper) {
-            realCitations = matchedPaper.citations || realCitations
-          }
-        }
-      } catch (e) {
-        console.log('Search for citations failed, using local value')
-      }
-
-      // 转换 authors 为数组
-      const paperAuthors = Array.isArray(paper.authors)
-        ? paper.authors
-        : (typeof paper.authors === 'string' ? paper.authors.split(',').map(a => a.trim()) : [])
-
-      // 查找相关的论文（共同作者、年份相近）
-      const relatedPapers = literature.filter(p => {
-        if (p.id === paperId) return false
-        const pAuthors = Array.isArray(p.authors)
-          ? p.authors
-          : (typeof p.authors === 'string' ? p.authors.split(',').map(a => a.trim()) : [])
-        const hasCommonAuthor = paperAuthors.some(a1 => pAuthors.some(a2 => a1.toLowerCase() === a2.toLowerCase()))
-        const similarYear = Math.abs((paper.year || 2020) - (p.year || 2020)) <= 2
-        return hasCommonAuthor || similarYear
-      })
-
-      // 合并目标论文和相关文章
-      const paperWithCitations = { ...paper, citations: realCitations }
-      const graphPapers = [paperWithCitations, ...relatedPapers]
-      const localData = generateFromLiteratureData(graphPapers)
-
-      setSelectedNode({
-        id: paper.id,
-        title: paper.title,
-        year: paper.year,
-        citations: paper.citations || paper.citedCount || 0,
-        authors: paper.authors || [],
-        type: 'paper'
-      })
-
-      setGraphData(localData)
-
-      // 尝试社区检测，但不阻塞主流程
-      detectCommunities().catch(() => {})
-
-      // 初始化图谱
-      setTimeout(() => {
-        initGraph(localData)
-      }, 100)
-    } catch (e) {
-      console.error('Build from literature error:', e)
-      message.error('构建图谱失败: ' + (e.message || e.name || '未知错误'))
-    } finally {
-      setGraphLoading(false)
-    }
-  }
-
-  // 构建图谱 - Connected Papers核心功能
-  const handleBuildGraph = async (value) => {
-    if (!value?.trim()) {
-      message.warning('请输入论文标题或DOI')
-      return
-    }
-
-    setGraphLoading(true)
-    try {
-      // 模拟搜索论文（实际应调用文献搜索API）
-      message.loading({ content: '搜索论文...', key: 'search' })
-
-      // 模拟找到目标论文
-      const targetPaper = {
-        id: 'target_paper',
-        title: value,
-        year: 2020,
-        citations: 10000,
-        authors: ['Search Author'],
-        type: 'paper'
-      }
-
-      // 生成以目标论文为核心的图谱
-      const mockData = generateTargetedGraphData(targetPaper)
-      setGraphData(mockData)
-      setSelectedNode(targetPaper)
-
-      // 检测社区并初始化图谱
-      await detectCommunities()
-      setTimeout(() => initGraph(mockData), 100)
-    } catch (e) {
-      console.error('Build graph error:', e)
-      message.error({ content: '构建图谱失败', key: 'search' })
-    } finally {
-      setGraphLoading(false)
-    }
-  }
-
-  // GraphRAG知识问答
-  const handleGraphQuery = async () => {
-    if (!queryText?.trim()) {
-      message.warning('请输入问题')
-      return
-    }
-
-    if (!graphData.nodes || graphData.nodes.length === 0) {
-      message.warning('请先构建图谱')
-      return
-    }
-
-    setQueryLoading(true)
-    try {
-      // 调用GraphRAG问答API
-      const apiKey = localStorage.getItem('api_key') || 'dev-api-key'
-      const response = await fetch('/api/knowledge-graph/query', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey
-        },
-        body: JSON.stringify({
-          question: queryText,
-          papers: literature.length > 0 ? literature : graphData.nodes.map(n => ({
-            id: n.id,
-            title: n.title || n.label,
-            abstract: '',
-            authors: n.authors || []
-          }))
-        })
-      })
-
-      const data = await response.json()
-      if (data.success) {
-        setQueryResult(data.data)
-        setShowQueryPanel(true)
-        message.success('问答完成')
-      } else {
-        message.error(data.error || '问答失败')
-      }
-    } catch (e) {
-      console.error('Query error:', e)
-      message.error('问答请求失败')
-    } finally {
-      setQueryLoading(false)
-    }
-  }
-
-  // 生成以目标论文为核心的图谱数据
-  const generateTargetedGraphData = (targetPaper) => {
-    // Prior works - 目标论文引用的
-    const priorPapers = [
-      { id: 'prior_1', title: 'Attention Is All You Need', year: 2017, citations: 50000, authors: ['Vaswani et al.'] },
-      { id: 'prior_2', title: 'BERT: Pre-training', year: 2018, citations: 40000, authors: ['Devlin et al.'] },
-      { id: 'prior_3', title: 'Neural Machine Translation', year: 2016, citations: 15000, authors: ['Bahdanau et al.'] },
-      { id: 'prior_4', title: 'Word2Vec', year: 2013, citations: 30000, authors: ['Mikolov et al.'] },
-    ]
-
-    // Derivative works - 引用目标论文的
-    const derivativePapers = [
-      { id: 'deriv_1', title: 'ChatGPT Analysis', year: 2023, citations: 5000, authors: ['Future Author'] },
-      { id: 'deriv_2', title: 'GPT-4 Survey', year: 2024, citations: 3000, authors: ['New Author'] },
-      { id: 'deriv_3', title: 'LLM Research', year: 2023, citations: 8000, authors: ['Another Author'] },
-    ]
-
-    const allPapers = [targetPaper, ...priorPapers, ...derivativePapers]
-
-    const nodes = allPapers.map((p, idx) => ({
-      id: p.id,
-      label: p.title.length > 28 ? p.title.substring(0, 28) + '...' : p.title,
-      title: p.title,
-      year: p.year,
-      citations: p.citations,
-      authors: p.authors,
-      type: 'paper',
-      nodeInfo: {
-        id: p.id,
-        title: p.title,
-        year: p.year,
-        citations: p.citations,
-        authors: p.authors,
-        type: 'paper'
-      },
-      size: p.id === 'target_paper' ? 50 : Math.max(20, Math.min(45, Math.log(p.citations + 1) * 4)),
-      isTarget: p.id === 'target_paper'
-    }))
-
-    const edges = [
-      // 目标论文的边
-      { source: 'prior_1', target: 'target_paper', relation: 'cites' },
-      { source: 'prior_2', target: 'target_paper', relation: 'cites' },
-      { source: 'prior_3', target: 'target_paper', relation: 'cites' },
-      { source: 'prior_4', target: 'target_paper', relation: 'cites' },
-      { source: 'target_paper', target: 'deriv_1', relation: 'cites' },
-      { source: 'target_paper', target: 'deriv_2', relation: 'cites' },
-      { source: 'target_paper', target: 'deriv_3', relation: 'cites' },
-      // Prior之间的关联
-      { source: 'prior_1', target: 'prior_2', relation: 'cites' },
-      { source: 'prior_3', target: 'prior_1', relation: 'cites' },
-      // Derivative之间的关联
-      { source: 'deriv_1', target: 'deriv_2', relation: 'cites' },
-      { source: 'deriv_2', target: 'deriv_3', relation: 'cites' },
-    ]
-
-    return {
-      nodes,
-      edges,
-      stats: {
-        totalNodes: nodes.length,
-        totalEdges: edges.length,
-        paperCount: allPapers.length,
-        targetPaper: targetPaper
-      }
-    }
-  }
-
-  // 生成模拟图谱数据
-  const generateMockGraphData = () => {
-    const papers = [
-      { id: 'paper_1', title: 'Attention Is All You Need', year: 2017, citations: 50000, authors: ['Vaswani et al.'] },
-      { id: 'paper_2', title: 'BERT: Pre-training', year: 2018, citations: 40000, authors: ['Devlin et al.'] },
-      { id: 'paper_3', title: 'GPT-3', year: 2020, citations: 30000, authors: ['Brown et al.'] },
-      { id: 'paper_4', title: 'Deep Learning', year: 2015, citations: 25000, authors: ['LeCun et al.'] },
-      { id: 'paper_5', title: 'ResNet', year: 2016, citations: 80000, authors: ['He et al.'] },
-      { id: 'paper_6', title: 'Transformer-XL', year: 2019, citations: 8000, authors: ['Dai et al.'] },
-      { id: 'paper_7', title: 'XLNet', year: 2019, citations: 12000, authors: ['Yang et al.'] },
-      { id: 'paper_8', title: 'RoBERTa', year: 2019, citations: 15000, authors: ['Liu et al.'] },
-      { id: 'paper_9', title: 'ALBERT', year: 2019, citations: 10000, authors: ['Lan et al.'] },
-      { id: 'paper_10', title: 'T5', year: 2019, citations: 18000, authors: ['Raffel et al.'] },
-      { id: 'paper_11', title: 'BART', year: 2019, citations: 9000, authors: ['Lewis et al.'] },
-      { id: 'paper_12', title: 'ELECTRA', year: 2020, citations: 5000, authors: ['Clark et al.'] },
-    ]
-
-    const methods = [
-      { id: 'method_transformer', title: 'Transformer', type: 'method' },
-      { id: 'method_attention', title: 'Self-Attention', type: 'method' },
-      { id: 'method_bert', title: 'BERT', type: 'method' },
-      { id: 'method_gpt', title: 'GPT', type: 'method' },
-      { id: 'method_cnn', title: 'CNN', type: 'method' },
-      { id: 'method_lstm', title: 'LSTM', type: 'method' },
-    ]
-
-    const datasets = [
-      { id: 'dataset_glue', title: 'GLUE', type: 'dataset' },
-      { id: 'dataset_squad', title: 'SQuAD', type: 'dataset' },
-      { id: 'dataset_imagenet', title: 'ImageNet', type: 'dataset' },
-    ]
-
-    const nodes = [
-      ...papers.map(p => ({
-        id: p.id,
-        label: p.title.length > 30 ? p.title.substring(0, 30) + '...' : p.title,
-        title: p.title,
-        year: p.year,
-        citations: p.citations,
-        authors: p.authors,
-        type: 'paper',
-        size: Math.max(20, Math.min(60, Math.log(p.citations + 1) * 5))
-      })),
-      ...methods.map(m => ({
-        id: m.id,
-        label: m.title,
-        title: m.title,
-        type: m.type,
-        size: 25
-      })),
-      ...datasets.map(d => ({
-        id: d.id,
-        label: d.title,
-        title: d.title,
-        type: d.type,
-        size: 22
-      }))
-    ]
-
-    const edges = [
-      // Transformer相关
-      { source: 'paper_1', target: 'method_transformer', relation: 'proposes' },
-      { source: 'paper_1', target: 'method_attention', relation: 'uses' },
-      { source: 'paper_2', target: 'paper_1', relation: 'cites' },
-      { source: 'paper_2', target: 'method_bert', relation: 'proposes' },
-      { source: 'paper_2', target: 'dataset_glue', relation: 'benchmarks' },
-      { source: 'paper_3', target: 'paper_2', relation: 'cites' },
-      { source: 'paper_3', target: 'method_gpt', relation: 'proposes' },
-      { source: 'paper_6', target: 'paper_1', relation: 'cites' },
-      { source: 'paper_6', target: 'method_transformer', relation: 'extends' },
-      { source: 'paper_7', target: 'paper_1', relation: 'cites' },
-      { source: 'paper_7', target: 'paper_6', relation: 'cites' },
-      { source: 'paper_8', target: 'paper_2', relation: 'improves' },
-      { source: 'paper_9', target: 'paper_2', relation: 'improves' },
-      { source: 'paper_10', target: 'paper_1', relation: 'cites' },
-      { source: 'paper_10', target: 'paper_6', relation: 'cites' },
-      { source: 'paper_11', target: 'paper_1', relation: 'cites' },
-      { source: 'paper_12', target: 'paper_2', relation: 'cites' },
-      // CNN/LSTM相关
-      { source: 'paper_4', target: 'method_cnn', relation: 'surveys' },
-      { source: 'paper_4', target: 'method_lstm', relation: 'surveys' },
-      { source: 'paper_5', target: 'method_cnn', relation: 'proposes' },
-      { source: 'paper_5', target: 'dataset_imagenet', relation: 'uses' },
-      // 跨领域连接
-      { source: 'paper_2', target: 'dataset_squad', relation: 'benchmarks' },
-    ]
-
-    return {
-      nodes,
-      edges,
-      stats: {
-        totalNodes: nodes.length,
-        totalEdges: edges.length,
-        paperCount: papers.length,
-        methodCount: methods.length,
-        datasetCount: datasets.length
-      }
-    }
-  }
-
-  // 检测社区
-  const detectCommunities = async () => {
-    try {
-      const apiKey = localStorage.getItem('api_key') || 'dev-api-key'
-      const response = await fetch('/api/knowledge-graph/communities?algorithm=leiden', {
-        headers: { 'x-api-key': apiKey }
-      })
-      const data = await response.json()
-      if (data.success && data.data) {
-        setCommunityData(data.data)
-      }
-    } catch (e) {
-      console.error('Community detection error:', e)
-    }
-  }
-
-  // 初始化G6图谱
-  const initGraph = useCallback((data) => {
-    if (!containerRef.current || !data?.nodes?.length) return
-
-    // 清理旧图
-    if (graphRef.current) {
-      graphRef.current.destroy()
-    }
-
-    const container = containerRef.current
-    const width = container.offsetWidth || 800
-    const height = container.offsetHeight || 600
-
-    // 构建节点到社区的映射
-    const nodeToCommunity = {}
-    if (communityData.communities) {
-      communityData.communities.forEach((comm, idx) => {
-        comm.members.forEach(memberId => {
-          nodeToCommunity[memberId] = idx
-        })
-      })
-    }
-
-    // 准备G6数据
-    const g6Data = {
-      nodes: data.nodes.map(n => {
-        const communityIdx = nodeToCommunity[n.id]
-        const baseColor = TYPE_COLORS[n.type] || TYPE_COLORS.unknown
-
-        let color
-        if (viewMode === 'community' && communityIdx !== undefined) {
-          color = COMMUNITY_COLORS[communityIdx % COMMUNITY_COLORS.length]
-        } else if (viewMode === 'year') {
-          // 年份着色：越新的论文颜色越深
-          color = getYearColor(n.year)
-        } else {
-          color = baseColor
-        }
-
-        // 目标论文（搜索的论文）用特殊样式 - Connected Papers风格：黑色描边
-        const isTarget = n.isTarget || n.id === 'target_paper'
-        const targetStyle = isTarget ? {
-          fill: color + 'ff',
-          stroke: '#000000',
-          lineWidth: 4,
-          shadowBlur: 16,
-          shadowColor: '#00000040'
-        } : {
-          fill: color + 'cc',
-          stroke: color,
-          lineWidth: 2,
-          shadowBlur: 8,
-          shadowColor: color + '40'
-        }
-
-        return {
-          id: n.id,
-          label: n.label,
-          size: n.size || 30,
-          color: color,
-          style: targetStyle,
-          nodeInfo: n // 存储完整信息
-        }
-      }),
-      edges: data.edges.map((e, i) => ({
-        id: `edge-${i}`,
-        source: e.source,
-        target: e.target,
-        label: e.relation || '',
-        style: {
-          stroke: '#d9d9d9',
-          lineWidth: 1,
-          opacity: 0.6
-        }
-      }))
-    }
-
-    // 创建图实例
-    const graph = new G6.Graph({
-      container: container,
-      width,
-      height,
-      data: g6Data,
-      node: {
-        style: {
-          size: 30,
-          color: '#1890ff',
-          fill: '#1890ff',
-          stroke: '#1890ff',
-          lineWidth: 2,
-        },
-        labelText: 'label',
-      },
-      edge: {
-        style: {
-          stroke: '#d9d9d9',
-          lineWidth: 1,
-        },
-        labelText: 'relation',
-      },
-      layout: {
-        type: 'force',
-        preventOverlap: true,
-        nodeSpacing: 30,
-        linkDistance: 150,
-        nodeStrength: -200,
-        edgeStrength: 0.3,
-        collideStrength: 0.8,
-        alpha: 0.3,
-        alphaDecay: 0.02,
-        alphaMin: 0.001
-      },
-      behaviors: [
-        'drag-canvas',
-        'zoom-canvas',
-      ],
-      autoFit: true,
-    })
-
-    // G6 v5 点击事件
-    graph.on('node:click', (evt) => {
-      const nodeId = evt.target.id
-      if (nodeId && graph.getNodeData) {
-        const nodeData = graph.getNodeData(nodeId)
-        console.log('nodeData from graph:', nodeData)
-        // 使用 nodeInfo 中的完整数据，如果没有则使用 nodeData 本身
-        const fullData = nodeData?.nodeInfo || nodeData
-        setSelectedNode(fullData)
-        if (fullData?.id) calculatePaperConnections(fullData.id)
-      }
-    })
-
-    graph.on('canvas:click', () => {
-      console.log('canvas:click')
-      setSelectedNode(null)
-      setPriorPapers([])
-      setDerivativePapers([])
-    })
-
-    // 渲染
-    graph.render()
-    console.log('Graph rendered')
-
-    graphRef.current = graph
-  }, [communityData, viewMode])
-
-  // 计算论文的引用关系
-  const calculatePaperConnections = (nodeId) => {
-    const prior = []
-    const derivative = []
-
-    graphData.edges.forEach(edge => {
-      if (edge.source === nodeId) {
-        // 当前论文引用的
-        const targetNode = graphData.nodes.find(n => n.id === edge.target)
-        if (targetNode?.type === 'paper') {
-          prior.push({ ...targetNode, relation: edge.relation })
-        }
-      }
-      if (edge.target === nodeId && edge.relation === 'cites') {
-        // 引用当前论文的
-        const sourceNode = graphData.nodes.find(n => n.id === edge.source)
-        if (sourceNode?.type === 'paper') {
-          derivative.push({ ...sourceNode, relation: 'cites' })
-        }
-      }
-    })
-
-    setPriorPapers(prior)
-    setDerivativePapers(derivative)
-  }
-
-  // 更新节点样式 - G6 v5
-  const updateNodeStyles = () => {
-    if (!graphRef.current || !graphData.nodes.length) return
-
-    const graph = graphRef.current
-
-    // 构建节点ID到社区的映射
-    const nodeToCommunity = {}
-    if (communityData.communities) {
-      communityData.communities.forEach((comm, idx) => {
-        comm.members.forEach(memberId => {
-          nodeToCommunity[memberId] = idx
-        })
-      })
-    }
-
-    // 创建节点ID到原始数据的映射
-    const nodeDataMap = {}
-    graphData.nodes.forEach(n => { nodeDataMap[n.id] = n })
-
-    // 更新每个节点的颜色
-    graphData.nodes.forEach(node => {
-      const originalNode = nodeDataMap[node.id]
-      if (!originalNode) return
-
-      const communityIdx = nodeToCommunity[node.id]
-
-      let newColor
-      if (viewMode === 'community' && communityIdx !== undefined) {
-        newColor = COMMUNITY_COLORS[communityIdx % COMMUNITY_COLORS.length]
-      } else if (viewMode === 'year') {
-        newColor = getYearColor(originalNode.year)
-      } else if (viewMode === 'degree') {
-        const degree = graphData.edges.filter(
-          e => e.source === node.id || e.target === node.id
-        ).length
-        newColor = degree > 3 ? '#ff4d4f' : degree > 1 ? '#faad14' : '#52c41a'
-      } else {
-        newColor = TYPE_COLORS[originalNode.type] || TYPE_COLORS.unknown
-      }
-
-      // 直接从graphData获取当前样式
-      const currentNodeData = graph.getNodeData(node.id)
-      const currentStyle = currentNodeData?.style || {}
-
-      // 更新节点颜色
-      graph.updateNodeData(node.id, {
-        style: {
-          ...currentStyle,
-          color: newColor,
-          fill: newColor,
-          stroke: newColor
-        }
-      })
-    })
-
-    // 重新绘制
-    graph.draw()
-  }
-
-  // 缩放控制
-  const handleZoom = (delta) => {
-    if (!graphRef.current) return
-    const zoom = graphRef.current.getZoom()
-    graphRef.current.zoomTo(zoom + delta, { x: 400, y: 300 })
-    setZoomLevel(graphRef.current.getZoom())
-  }
-
-  // 适应视图
-  const handleFitView = () => {
-    if (!graphRef.current) return
-    graphRef.current.fitView()
-    setZoomLevel(1)
-    setFitView(!fitView)
-  }
-
-  // 筛选节点
-  const filterNodes = (searchTerm) => {
-    setSearchText(searchTerm)
-    if (!searchTerm.trim()) {
-      setFilteredNodes([])
-      return
-    }
-
-    const filtered = graphData.nodes.filter(n =>
-      n.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      n.label?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    setFilteredNodes(filtered)
-
-    // 高亮匹配的节点
-    if (graphRef.current && filtered.length > 0) {
-      const graph = graphRef.current
-      graph.getNodes().forEach(node => {
-        const model = node.getModel()
-        const isMatch = filtered.some(f => f.id === model.id)
-        if (isMatch) {
-          graph.setItemState(node, 'active', true)
-        } else {
-          graph.setItemState(node, 'active', false)
-        }
-      })
-    }
+  const onGraphQuery = () => {
+    handleGraphQuery(queryText, setQueryResult, setQueryLoading)
   }
 
   return (
@@ -1127,11 +362,11 @@ const KnowledgeGraphPage = () => {
               placeholder="例如: Transformer和BERT有什么关系?"
               value={queryText}
               onChange={(e) => setQueryText(e.target.value)}
-              onPressEnter={handleGraphQuery}
+              onPressEnter={onGraphQuery}
               style={{ width: 300 }}
               size="small"
             />
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleGraphQuery} loading={queryLoading} size="small">
+            <Button type="primary" icon={<SearchOutlined />} onClick={onGraphQuery} loading={queryLoading} size="small">
               提问
             </Button>
             {queryResult && (
@@ -1157,7 +392,7 @@ const KnowledgeGraphPage = () => {
                     renderItem={(paper) => (
                       <List.Item
                         className="cursor-pointer hover:bg-blue-50 px-3 py-2"
-                        onClick={() => { setSelectedNode(paper); calculatePaperConnections(paper.id); }}
+                        onClick={() => { setSelectedNode(paper); calculatePaperConnections(paper.id, graphData); }}
                       >
                         <List.Item.Meta
                           avatar={<Avatar size="small" style={{ backgroundColor: '#1890ff' }}>P</Avatar>}
@@ -1183,7 +418,7 @@ const KnowledgeGraphPage = () => {
                     renderItem={(paper) => (
                       <List.Item
                         className="cursor-pointer hover:bg-green-50 px-3 py-2"
-                        onClick={() => { setSelectedNode(paper); calculatePaperConnections(paper.id); }}
+                        onClick={() => { setSelectedNode(paper); calculatePaperConnections(paper.id, graphData); }}
                       >
                         <List.Item.Meta
                           avatar={<Avatar size="small" style={{ backgroundColor: '#52c41a' }}>D</Avatar>}
@@ -1396,7 +631,7 @@ const KnowledgeGraphPage = () => {
                           onClick={() => {
                             if (otherNode) {
                               setSelectedNode(otherNode)
-                              calculatePaperConnections(otherNode.id)
+                              calculatePaperConnections(otherNode.id, graphData)
                             }
                           }}
                         >

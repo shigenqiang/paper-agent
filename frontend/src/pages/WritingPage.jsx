@@ -15,21 +15,16 @@ import {
   CheckCircleOutlined,
   LoadingOutlined,
   CloudUploadOutlined,
-  DragOutlined,
   AimOutlined,
   CopyOutlined,
   FileAddOutlined,
-  FilePdfOutlined,
-  FileMarkdownOutlined,
   InboxOutlined,
-  EyeOutlined,
   RightOutlined,
-  VerticalLeftOutlined,
   MenuOutlined,
-  FontSizeOutlined,
 } from '@ant-design/icons'
 import { useProjectStore } from '../store/projectStore'
 import { useLiteratureStore } from '../store/literatureStore'
+import { useWritingStore } from '../store/writingStore'
 import { paperAPI, literatureAPI } from '../services/api'
 import { useLocation } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
@@ -37,6 +32,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { DEFAULT_SECTIONS } from '../constants/paper'
+import { UploadPaperModal } from '../components/writing'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -50,11 +46,17 @@ const SHORTCUTS = [
 const WritingPage = () => {
   const location = useLocation()
   const { project, updateSection, addSection, deleteSection, setProject, setTitle, addCitation, removeCitation } = useProjectStore()
+  const {
+    selectedSection, setSelectedSection,
+    sectionContent, setSectionContent,
+    paperTitle, setPaperTitle,
+    citeStyle, setCiteStyle,
+    editorMode, setEditorMode,
+    showFullPreview, setShowFullPreview,
+    showFullEdit, setShowFullEdit,
+  } = useWritingStore()
   const [papers, setPapers] = useState([])
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [selectedSection, setSelectedSection] = useState('1-1')
-  const [sectionContent, setSectionContent] = useState('')
-  const [paperTitle, setPaperTitle] = useState(project?.title || '未命名论文')
   const [generatingOutline, setGeneratingOutline] = useState(false)
   const [generatingContent, setGeneratingContent] = useState(false)
   const [saveStatus, setSaveStatus] = useState('saved')
@@ -68,10 +70,6 @@ const WritingPage = () => {
   const rightScrollRef = useRef(null)
   const [isSyncingScroll, setIsSyncingScroll] = useState(false)
   const [showCiteModal, setShowCiteModal] = useState(false)
-  const [citeStyle, setCiteStyle] = useState('APA')
-  const [editorMode, setEditorMode] = useState('split')
-  const [showFullPreview, setShowFullPreview] = useState(false)
-  const [showFullEdit, setShowFullEdit] = useState(false)
   const [fullEditContent, setFullEditContent] = useState({})
   const [unifiedContent, setUnifiedContent] = useState('')
   const [messageApi, contextHolder] = message.useMessage()
@@ -178,13 +176,30 @@ const WritingPage = () => {
       setPaperTitle(project.title)
     }
     if (project?.sections?.length > 0) {
-      const currentExists = project.sections.some(s => s.id === selectedSection)
-      if (!currentExists) {
-        setSelectedSection(project.sections[0].id)
-        setSectionContent(project.sections[0].content || '')
+      // 同步当前选中章节的内容
+      if (selectedSection) {
+        const section = project.sections.find(s => s.id === selectedSection)
+        if (section) {
+          setSectionContent(section.content || '')
+          // 同时同步全文模式内容
+          const merged = project.sections.map(s => `## ${s.title}\n\n${s.content || ''}`).join('\n\n')
+          setUnifiedContent(merged)
+          return
+        }
       }
+      // 如果没有有效选中章节，选第一个
+      setSelectedSection(project.sections[0].id)
+      setSectionContent(project.sections[0].content || '')
     }
-  }, [project])
+  }, [project, selectedSection])
+
+  // 当切换到全文模式时，同步内容
+  useEffect(() => {
+    if (editorMode === 'unified' && project?.sections?.length > 0) {
+      const merged = project.sections.map(s => `## ${s.title}\n\n${s.content || ''}`).join('\n\n')
+      setUnifiedContent(merged)
+    }
+  }, [editorMode, project])
 
   // 自动保存
   useEffect(() => {
@@ -245,23 +260,19 @@ const WritingPage = () => {
     return roots.map(root => ({
       title: root.title,
       key: root.id,
-      icon: <FileTextOutlined />,
       children: sections
-        .filter(s => s.id.includes('-') && s.id.startsWith(root.id))
+        .filter(s => s.id.includes('-') && s.id.startsWith(root.id + '-'))
         .map(s => ({ title: s.title, key: s.id, isLeaf: true }))
     }))
   }, [sections])
 
-  const getSectionContent = (sectionId) => {
-    const section = sections.find(s => s.id === sectionId)
-    return section?.content || ''
-  }
-
   const handleOutlineSelect = (selectedKeys) => {
     if (selectedKeys.length > 0) {
       const key = selectedKeys[0]
+      const section = sections.find(s => s.id === key)
+      console.log('点击章节:', key, section?.title, 'content长度:', section?.content?.length || 0)
       setSelectedSection(key)
-      setSectionContent(getSectionContent(key))
+      setSectionContent(section?.content || '')
     }
   }
 
@@ -332,6 +343,7 @@ const WritingPage = () => {
       if (result.success && result.data) {
         let newSections = []
         const outlineData = result.data.outline || result.data
+        // Handle array format
         if (Array.isArray(outlineData)) {
           outlineData.forEach(item => {
             newSections.push({
@@ -351,6 +363,17 @@ const WritingPage = () => {
                 })
               })
             }
+          })
+        } else if (outlineData && typeof outlineData === 'object') {
+          // Handle dict format from OutlineAgent: {chapters: [...], structure: {...}}
+          const chapters = outlineData.chapters || []
+          chapters.forEach((chapter, idx) => {
+            newSections.push({
+              id: String(idx + 1),
+              title: chapter.name || chapter.title || `章节${idx + 1}`,
+              parentId: null,
+              content: ''
+            })
           })
         }
         if (newSections.length > 0) {
@@ -510,79 +533,12 @@ const WritingPage = () => {
             </div>
           </Modal>
 
-          {/* 上传论文弹窗 */}
-          <Modal
-            title={
-              <Space>
-                <CloudUploadOutlined className="text-blue-500" />
-                <span>上传论文</span>
-              </Space>
-            }
+          <UploadPaperModal
             open={isUploadModalOpen}
-            onCancel={() => {
-              setIsUploadModalOpen(false)
-              setUploadingFile(null)
-            }}
-            footer={null}
-            width={480}
-          >
-            <div className="py-4">
-              <Upload.Dragger
-                accept=".pdf,.md,.txt,.docx"
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  console.log('文件选择:', file.name, file.size)
-                  setUploadingFile(file)
-                  return false
-                }}
-                className="mb-4"
-              >
-                <p className="ant-upload-drag-icon">
-                  <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
-                </p>
-                <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
-                <p className="ant-upload-hint">
-                  支持 PDF、Markdown (.md)、TXT、DOCX 格式
-                </p>
-              </Upload.Dragger>
-
-              {uploadingFile && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      {uploadingFile.name.endsWith('.pdf') ? (
-                        <FilePdfOutlined style={{ fontSize: 20, color: '#e84a25' }} />
-                      ) : uploadingFile.name.endsWith('.md') ? (
-                        <FileMarkdownOutlined style={{ fontSize: 20, color: '#3b82f6' }} />
-                      ) : (
-                        <FileTextOutlined style={{ fontSize: 20, color: '#666' }} />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <Text strong ellipsis className="block">{uploadingFile.name}</Text>
-                      <Text type="secondary" className="text-xs">
-                        {(uploadingFile.size / 1024).toFixed(1)} KB
-                      </Text>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <Button
-                      type="primary"
-                      icon={<CloudUploadOutlined />}
-                      onClick={handleUploadPaper}
-                      block
-                      size="large"
-                    >
-                      开始上传
-                    </Button>
-                    <Button onClick={() => setUploadingFile(null)}>
-                      清除
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Modal>
+            uploadingFile={uploadingFile}
+            setUploadingFile={setUploadingFile}
+            onUpload={handleUploadPaper}
+          />
         </div>
       </>
     )
@@ -607,7 +563,6 @@ const WritingPage = () => {
                   }
                 }}
                 className="!w-48"
-                popupMatchWidth={false}
                 options={papers.map(p => ({ label: p.title || '未命名', value: p.id }))}
               />
               <Input
@@ -687,142 +642,157 @@ const WritingPage = () => {
           </div>
         </div>
 
-        {/* 主内容区 - 重新设计布局 */}
-        <div className="flex-1 flex gap-4 p-4 min-h-0 overflow-hidden">
-          {/* 左侧大纲 - 卡片式设计 */}
-          <Card
-            className="!rounded-xl shadow-sm flex-shrink-0 w-60 flex flex-col"
-            styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}}
-          >
-            <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
-              <Space>
-                <FileTextOutlined className="text-blue-500" />
-                <Text strong className="text-sm">论文大纲</Text>
-              </Space>
-            </div>
-            <div className="flex-1 overflow-auto p-2">
-              <Tree
-                treeData={outlineData}
-                selectedKeys={[selectedSection]}
-                onSelect={handleOutlineSelect}
-                defaultExpandAll
-                blockNode
-                showIcon
-                className="outline-tree"
-              />
-            </div>
-            <div className="px-3 py-2 border-t border-gray-100 bg-gray-50 flex justify-between">
-              <Button type="text" size="small" icon={<PlusOutlined />} onClick={handleAddSection}>
-                添加
-              </Button>
-              <Button type="text" size="small" icon={<DeleteOutlined />} danger onClick={() => handleDeleteSection(selectedSection)}>
-                删除
-              </Button>
-            </div>
-          </Card>
-
-          {/* 中间写作区 - 主编辑区 */}
-          <Card
-            className="flex-1 !rounded-xl shadow-sm flex flex-col min-w-0"
-            styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' } }}
-          >
-            {/* 标题栏 */}
-            <div className="px-4 py-3 border-b border-gray-100 bg-white flex items-center justify-between">
-              <Space>
-                <EditOutlined className="text-blue-500" />
-                <Text strong>{currentSectionTitle}</Text>
-                <Tag color="blue" className="text-xs">{currentWords} 字</Tag>
-              </Space>
-              <Space size="small">
-                <span className="text-xs text-gray-400">总字数: {totalWords}</span>
-              </Space>
-            </div>
-
-            {/* 编辑/预览区域 */}
-            <div className="flex-1 flex min-h-0">
-              {/* 左侧编辑区 */}
-              {editorMode !== 'preview' && (
-                <div
-                  ref={leftScrollRef}
-                  className={`flex-1 flex flex-col min-w-0 ${editorMode === 'split' || editorMode === 'unified' ? 'border-r border-gray-200' : ''} overflow-auto bg-white`}
-                  onScroll={(e) => {
-                    if (isSyncingScroll) return
-                    setIsSyncingScroll(true)
-                    if (rightScrollRef.current) {
-                      rightScrollRef.current.scrollTop = e.target.scrollTop
+        {/* 主内容区 - 左右两栏 + 底部引用 */}
+        <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden">
+          {/* 上方：大纲 + 写作区 */}
+          <div className="flex-1 flex gap-4 min-h-0">
+            {/* 左侧大纲 - 卡片式设计 */}
+            <Card
+              className="!rounded-xl shadow-sm flex-shrink-0 w-60 flex flex-col"
+              styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}}
+            >
+              <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+                <Space>
+                  <FileTextOutlined className="text-blue-500" />
+                  <Text strong className="text-sm">论文大纲</Text>
+                </Space>
+              </div>
+              <div className="flex-1 overflow-auto p-2">
+                <Tree
+                  treeData={outlineData}
+                  selectedKeys={[selectedSection]}
+                  onSelect={(keys, info) => {
+                    console.log('Tree onSelect fired, keys:', keys, 'nodeTitle:', info?.node?.title)
+                    if (keys.length > 0) {
+                      const key = String(keys[0])
+                      const section = project?.sections?.find(s => s.id === key)
+                      console.log('点击章节:', key, section?.title, 'content长度:', section?.content?.length || 0)
+                      setSelectedSection(key)
+                      setSectionContent(section?.content || '')
                     }
-                    setTimeout(() => setIsSyncingScroll(false), 50)
                   }}
-                >
-                  {editorMode === 'unified' ? (
-                    <TextArea
-                      className="flex-1 !border-0 !rounded-none !resize-none !bg-white"
-                      placeholder="全文编辑模式..."
-                      style={{
-                        fontSize: '15px',
-                        lineHeight: '1.8',
-                        padding: '20px 24px',
-                      }}
-                      value={unifiedContent}
-                      onChange={(e) => setUnifiedContent(e.target.value)}
-                    />
-                  ) : (
-                    <TextArea
-                      className="flex-1 !border-0 !rounded-none !resize-none !bg-white"
-                      placeholder="开始写作... 或点击上方「修正格式」让AI帮您生成内容"
-                      style={{
-                        fontSize: '15px',
-                        lineHeight: '1.8',
-                        padding: '20px 24px',
-                      }}
-                      value={sectionContent}
-                      onChange={(e) => handleContentChange(e.target.value)}
-                    />
+                  defaultExpandAll
+                  blockNode
+                  selectable
+                  showLine
+                  className="outline-tree"
+                  style={{ fontSize: '13px', color: '#333' }}
+                  titleRender={(nodeData) => (
+                    <span style={{ color: '#333', fontSize: '13px', fontWeight: nodeData.isLeaf ? 'normal' : 500 }}>
+                      {nodeData.title}
+                    </span>
                   )}
-                </div>
-              )}
+                />
+              </div>
+              <div className="px-3 py-2 border-t border-gray-100 bg-gray-50 flex justify-between">
+                <Button type="text" size="small" icon={<PlusOutlined />} onClick={handleAddSection}>
+                  添加
+                </Button>
+                <Button type="text" size="small" icon={<DeleteOutlined />} danger onClick={() => handleDeleteSection(selectedSection)}>
+                  删除
+                </Button>
+              </div>
+            </Card>
 
-              {/* 右侧预览区 */}
-              {editorMode !== 'edit' && (
-                <div
-                  ref={rightScrollRef}
-                  className="flex-1 overflow-auto bg-gray-50"
-                  style={{ padding: '20px 24px' }}
-                  onScroll={(e) => {
-                    if (isSyncingScroll) return
-                    setIsSyncingScroll(true)
-                    if (leftScrollRef.current) {
-                      leftScrollRef.current.scrollTop = e.target.scrollTop
-                    }
-                    setTimeout(() => setIsSyncingScroll(false), 50)
-                  }}
-                >
-                  <div className="markdown-body bg-white p-6 rounded-lg shadow-sm">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkMath]}
-                      rehypePlugins={[rehypeKatex]}
-                    >
-                      {editorMode === 'unified' ? unifiedContent : sectionContent}
-                    </ReactMarkdown>
+            {/* 中间写作区 - 主编辑区 */}
+            <Card
+              className="flex-1 !rounded-xl shadow-sm flex flex-col min-w-0"
+              styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' } }}
+            >
+              {/* 标题栏 */}
+              <div className="px-4 py-3 border-b border-gray-100 bg-white flex items-center justify-between">
+                <Space>
+                  <EditOutlined className="text-blue-500" />
+                  <Text strong>{currentSectionTitle}</Text>
+                  <Tag color="blue" className="text-xs">{currentWords} 字</Tag>
+                </Space>
+                <Space size="small">
+                  <span className="text-xs text-gray-400">总字数: {totalWords}</span>
+                </Space>
+              </div>
+
+              {/* 编辑/预览区域 */}
+              <div className="flex-1 flex min-h-0">
+                {/* 左侧编辑区 */}
+                {editorMode !== 'preview' && (
+                  <div
+                    ref={leftScrollRef}
+                    className={`flex-1 flex flex-col min-w-0 ${editorMode === 'split' || editorMode === 'unified' ? 'border-r border-gray-200' : ''} overflow-auto bg-white`}
+                    onScroll={(e) => {
+                      if (isSyncingScroll) return
+                      setIsSyncingScroll(true)
+                      if (rightScrollRef.current) {
+                        rightScrollRef.current.scrollTop = e.target.scrollTop
+                      }
+                      setTimeout(() => setIsSyncingScroll(false), 50)
+                    }}
+                  >
+                    {editorMode === 'unified' ? (
+                      <TextArea
+                        className="flex-1 !border-0 !rounded-none !resize-none !bg-white"
+                        placeholder="全文编辑模式..."
+                        style={{
+                          fontSize: '15px',
+                          lineHeight: '1.8',
+                          padding: '20px 24px',
+                        }}
+                        value={unifiedContent}
+                        onChange={(e) => setUnifiedContent(e.target.value)}
+                      />
+                    ) : (
+                      <TextArea
+                        className="flex-1 !border-0 !rounded-none !resize-none !bg-white"
+                        placeholder="开始写作... 或点击上方「修正格式」让AI帮您生成内容"
+                        style={{
+                          fontSize: '15px',
+                          lineHeight: '1.8',
+                          padding: '20px 24px',
+                        }}
+                        value={sectionContent}
+                        onChange={(e) => handleContentChange(e.target.value)}
+                      />
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
-          </Card>
+                )}
 
-          {/* 右侧信息面板 */}
+                {/* 右侧预览区 */}
+                {editorMode !== 'edit' && (
+                  <div
+                    ref={rightScrollRef}
+                    className="flex-1 overflow-auto bg-gray-50"
+                    style={{ padding: '20px 24px' }}
+                    onScroll={(e) => {
+                      if (isSyncingScroll) return
+                      setIsSyncingScroll(true)
+                      if (leftScrollRef.current) {
+                        leftScrollRef.current.scrollTop = e.target.scrollTop
+                      }
+                      setTimeout(() => setIsSyncingScroll(false), 50)
+                    }}
+                  >
+                    <div className="markdown-body bg-white p-6 rounded-lg shadow-sm">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                      >
+                        {editorMode === 'unified' ? unifiedContent : sectionContent}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+
+          {/* 底部：引用管理 - 横条卡片 */}
           <Card
-            className="!rounded-xl shadow-sm w-64 flex-shrink-0 flex flex-col"
-            styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' } }}
+            className="!rounded-xl shadow-sm mt-4 flex-shrink-0"
+            styles={{ body: { padding: 0 }}}
           >
-            <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-purple-50 to-pink-50">
-              <Space>
+            <div className="flex items-center h-10">
+              <div className="flex items-center gap-2 px-4 py-2 border-r border-gray-100">
                 <BookOutlined className="text-purple-500" />
                 <Text strong className="text-sm">引用管理</Text>
-              </Space>
-            </div>
-            <div className="p-3 overflow-auto flex-1">
-              <div className="flex items-center gap-2 mb-3">
                 <Select
                   size="small"
                   value={citeStyle}
@@ -835,23 +805,26 @@ const WritingPage = () => {
                   ]}
                 />
               </div>
-              <div className="space-y-2">
-                {(project?.citations || []).map((cite) => (
-                  <div key={cite.id} className="p-2 bg-gray-50 rounded-lg text-xs">
-                    <div className="font-medium truncate">{cite.title}</div>
-                    <div className="text-gray-500 truncate">{cite.authors}</div>
-                    <div className="flex gap-1 mt-1">
-                      <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => handleCopyCitation(cite)} className="!text-xs" />
-                      <Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => handleRemoveCitation(cite.id)} className="!text-xs !text-red-500" />
-                    </div>
+              <div className="flex-1 overflow-auto px-4 py-2">
+                {(project?.citations || []).length === 0 ? (
+                  <Text type="secondary" className="text-xs">暂无引用，点击右侧按钮添加</Text>
+                ) : (
+                  <div className="flex gap-2 items-center">
+                    {(project?.citations || []).map((cite) => (
+                      <div key={cite.id} className="flex-shrink-0 px-3 py-1.5 bg-gray-50 rounded-lg text-xs border border-gray-200 flex items-center gap-1">
+                        <span className="font-medium truncate max-w-[200px]">{cite.title}</span>
+                        <Tooltip title="复制引用"><Button type="text" size="small" icon={<CopyOutlined />} onClick={() => handleCopyCitation(cite)} className="!text-xs !p-0" /></Tooltip>
+                        <Tooltip title="删除引用"><Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => handleRemoveCitation(cite.id)} className="!text-xs !p-0 !text-red-500" /></Tooltip>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-            <div className="px-3 py-2 border-t border-gray-100 bg-gray-50">
-              <Button type="text" size="small" icon={<BookOutlined />} onClick={() => setShowCiteModal(true)} block>
-                添加引用
-              </Button>
+              <div className="flex-shrink-0 px-2">
+                <Button type="primary" size="small" icon={<BookOutlined />} onClick={() => setShowCiteModal(true)}>
+                  添加引用
+                </Button>
+              </div>
             </div>
           </Card>
         </div>
@@ -890,79 +863,12 @@ const WritingPage = () => {
           </div>
         </Modal>
 
-        {/* 上传论文弹窗 */}
-        <Modal
-          title={
-            <Space>
-              <CloudUploadOutlined className="text-blue-500" />
-              <span>上传论文</span>
-            </Space>
-          }
+        <UploadPaperModal
           open={isUploadModalOpen}
-          onCancel={() => {
-            setIsUploadModalOpen(false)
-            setUploadingFile(null)
-          }}
-          footer={null}
-          width={480}
-        >
-          <div className="py-4">
-            <Upload.Dragger
-              accept=".pdf,.md,.txt,.docx"
-              showUploadList={false}
-              beforeUpload={(file) => {
-                console.log('文件选择:', file.name, file.size)
-                setUploadingFile(file)
-                return false
-              }}
-              className="mb-4"
-            >
-              <p className="ant-upload-drag-icon">
-                <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
-              </p>
-              <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
-              <p className="ant-upload-hint">
-                支持 PDF、Markdown (.md)、TXT、DOCX 格式
-              </p>
-            </Upload.Dragger>
-
-            {uploadingFile && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    {uploadingFile.name.endsWith('.pdf') ? (
-                      <FilePdfOutlined style={{ fontSize: 20, color: '#e84a25' }} />
-                    ) : uploadingFile.name.endsWith('.md') ? (
-                      <FileMarkdownOutlined style={{ fontSize: 20, color: '#3b82f6' }} />
-                    ) : (
-                      <FileTextOutlined style={{ fontSize: 20, color: '#666' }} />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <Text strong ellipsis className="block">{uploadingFile.name}</Text>
-                    <Text type="secondary" className="text-xs">
-                      {(uploadingFile.size / 1024).toFixed(1)} KB
-                    </Text>
-                  </div>
-                </div>
-                <div className="mt-4 flex gap-2">
-                  <Button
-                    type="primary"
-                    icon={<CloudUploadOutlined />}
-                    onClick={handleUploadPaper}
-                    block
-                    size="large"
-                  >
-                    开始上传
-                  </Button>
-                  <Button onClick={() => setUploadingFile(null)}>
-                    清除
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </Modal>
+          uploadingFile={uploadingFile}
+          setUploadingFile={setUploadingFile}
+          onUpload={handleUploadPaper}
+        />
       </div>
     </>
   )

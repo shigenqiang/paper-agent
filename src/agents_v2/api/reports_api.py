@@ -216,6 +216,10 @@ async def generate_digest_summary(papers: List[Dict], digest_type: str) -> str:
 
         if result.success:
             report = result.result.get("report", "")
+            # 验证报告内容不是 HTML（网关错误检测）
+            if report.strip().startswith('<!') or report.strip().startswith('<html'):
+                logger.error("DigestReportAgent returned HTML content - API gateway error")
+                raise ValueError("Report contains HTML from API gateway error, falling back to template")
             report += f"\n\n---\n**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
             report += f"**质量评分**: {result.quality_score:.2f}\n"
             report += f"**报告类型**: {digest_type}\n"

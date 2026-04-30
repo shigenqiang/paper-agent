@@ -18,6 +18,7 @@ import {
 } from '@ant-design/icons'
 import { reportsAPI, settingsAPI } from '../services/api'
 import { useLiteratureStore } from '../store/literatureStore'
+import { useReportsStore } from '../store/reportsStore'
 import { useNavigate } from 'react-router-dom'
 import { SOURCE_CONFIG_LIST } from '../constants/source'
 
@@ -63,13 +64,15 @@ const MarkdownContent = ({ digest }) => {
 const ReportsPage = () => {
   const navigate = useNavigate()
   const { literature, addLiterature, deleteLiterature } = useLiteratureStore()
-  const [activeTab, setActiveTab] = useState(REPORT_TYPES.DAILY)
+  const {
+    activeTab, setActiveTab,
+    selectedDigest, setSelectedDigest,
+    digests, setDigests,
+    keywords, setKeywords,
+  } = useReportsStore()
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [selectedDigest, setSelectedDigest] = useState(null)
-  const [digests, setDigests] = useState([])
   const [lastUpdate, setLastUpdate] = useState(null)
-  const [keywords, setKeywords] = useState([])
   const [stats, setStats] = useState({ totalPapers: 0, newToday: 0, sources: [] })
 
   const loadDigests = async () => {

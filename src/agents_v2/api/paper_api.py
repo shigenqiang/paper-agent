@@ -295,23 +295,14 @@ async def generate_outline(request: web.Request) -> web.Response:
             }, status=500)
 
     except Exception as e:
-        logger.error(f"Generate outline error: {e}")
-        # Return a default outline structure on error - must match DraftWriterAgent format
-        default_outline = {
-            "structure": "学术论文标准结构",
-            "chapters": [
-                {"id": "1", "title": "引言", "description": "介绍研究背景和动机", "depends_on": None},
-                {"id": "2", "title": "文献综述", "description": "评述相关研究进展", "depends_on": None},
-                {"id": "3", "title": "研究方法", "description": "描述研究设计和方法", "depends_on": "1"},
-                {"id": "4", "title": "结果与分析", "description": "展示和讨论研究结果", "depends_on": "2,3"},
-                {"id": "5", "title": "结论", "description": "总结研究贡献和未来工作", "depends_on": "4"},
-            ],
-            "key_arguments": []
-        }
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Generate outline error: {e}\n{tb}")
+        # 检查是否是 agent 返回的 fallback（即 LLM 调用失败但 agent 返回了成功）
         return web.json_response({
-            "success": True,
-            "data": default_outline,
-        })
+            "success": False,
+            "error": f"大纲生成失败: {str(e)}"
+        }, status=500)
 
 
 # Content generation endpoint
@@ -1204,6 +1195,33 @@ async def upload_paper_file(request: web.Request) -> web.Response:
         }, status=500)
 
 
+# Models endpoint
+async def get_available_models(request: web.Request) -> web.Response:
+    """GET /api/models - Get list of available LLM models"""
+    try:
+        from src.agents_v2.config import (
+            get_all_models,
+            get_default_model,
+            MODEL_CATEGORIES,
+            SUPPORTED_MODELS,
+        )
+
+        return web.json_response({
+            "success": True,
+            "data": {
+                "models": get_all_models(),
+                "categories": MODEL_CATEGORIES,
+                "default_model": get_default_model(),
+            },
+        })
+    except Exception as e:
+        logger.error(f"Get models error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 def setup_paper_routes(app: web.Application):
     """Setup all paper-related routes"""
     # Paper CRUD
@@ -1247,3 +1265,6 @@ def setup_paper_routes(app: web.Application):
     # Settings
     app.router.add_get('/api/settings', get_settings)
     app.router.add_put('/api/settings', update_settings)
+
+    # Models
+    app.router.add_get('/api/models', get_available_models)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Form, Switch, Select, Input, Button, Space, Typography, Divider, message, Tag, Row, Col, Alert, Tooltip } from 'antd'
+import { Card, Form, Switch, Select, Input, Button, Space, Typography, Divider, message, Tag, Row, Col, Alert, Tooltip, Spin } from 'antd'
+const { OptGroup, Option } = Select
 import {
   SaveOutlined,
   PlusOutlined,
@@ -14,7 +15,7 @@ import {
   InfoCircleOutlined,
   DatabaseOutlined,
 } from '@ant-design/icons'
-import { settingsAPI } from '../services/api'
+import { settingsAPI, modelsAPI } from '../services/api'
 
 const { Title, Text } = Typography
 
@@ -49,10 +50,14 @@ const SettingsPage = () => {
   const [inputKeyword, setInputKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [sources, setSources] = useState(['arxiv', 'pubmed', 'semantic_scholar', 'openalex'])
+  const [availableModels, setAvailableModels] = useState([])
+  const [modelCategories, setModelCategories] = useState({})
+  const [modelsLoading, setModelsLoading] = useState(true)
 
-  // 加载设置
+  // 加载设置和模型列表
   useEffect(() => {
     loadSettings()
+    loadModels()
   }, [])
 
   const loadSettings = async () => {
@@ -72,11 +77,36 @@ const SettingsPage = () => {
           autoSave: data.autoSave !== false,
           autoSaveInterval: data.autoSaveInterval || 30,
           defaultCitationStyle: data.defaultCitationStyle || 'apa',
-          defaultModel: data.defaultModel || 'gpt-4',
+          defaultModel: data.defaultModel || 'minimax-m2.7',
         })
       }
     } catch (e) {
       console.error('加载设置失败', e)
+    }
+  }
+
+  const loadModels = async () => {
+    try {
+      const response = await modelsAPI.getModels()
+      if (response.success && response.data) {
+        setAvailableModels(response.data.models || [])
+        setModelCategories(response.data.categories || {})
+        // 如果设置中没有默认模型，使用后端返回的默认模型
+        const defaultModel = response.data.default_model
+        if (defaultModel && !form.getFieldValue('defaultModel')) {
+          form.setFieldsValue({ defaultModel: defaultModel.id })
+        }
+      }
+    } catch (e) {
+      console.error('加载模型列表失败', e)
+      // 使用备选的硬编码模型列表
+      setAvailableModels([
+        { id: 'minimax-m2.7', name: 'MiniMax-M2.7', description: '默认模型', category: 'minimax' },
+        { id: 'minimax-m2', name: 'MiniMax-M2', description: 'MiniMax大模型', category: 'minimax' },
+      ])
+      setModelCategories({ minimax: 'MiniMax' })
+    } finally {
+      setModelsLoading(false)
     }
   }
 
@@ -182,13 +212,27 @@ const SettingsPage = () => {
           <Col span={12}>
             <Form.Item label="默认模型" name="defaultModel" className="!mb-4">
               <Select
-                options={[
-                  { label: 'GPT-4', value: 'gpt-4' },
-                  { label: 'GPT-3.5 Turbo', value: 'gpt-3.5-turbo' },
-                  { label: 'Claude 3', value: 'claude-3' },
-                  { label: 'DeepSeek', value: 'deepseek' },
-                ]}
-              />
+                placeholder="选择AI模型"
+                loading={modelsLoading}
+                optionFilterProp="children"
+              >
+                {Object.entries(modelCategories).map(([key, label]) => {
+                  const categoryModels = availableModels.filter(m => m.category === key)
+                  if (categoryModels.length === 0) return null
+                  return (
+                    <OptGroup key={key} label={label}>
+                      {categoryModels.map(model => (
+                        <Option key={model.id} value={model.id}>
+                          <Space>
+                            <span>{model.name}</span>
+                            <Tag fontSize={10} style={{ marginLeft: 4 }}>{model.category.toUpperCase()}</Tag>
+                          </Space>
+                        </Option>
+                      ))}
+                    </OptGroup>
+                  )
+                })}
+              </Select>
             </Form.Item>
           </Col>
         </Row>
@@ -267,6 +311,15 @@ const SettingsPage = () => {
         }
         className="!rounded-lg"
       >
+        <Alert
+          message="模型选择提示"
+          description="在上方'基本设置'中选择默认模型。不同模型支持的API和base_url不同，请确保API密钥与所选模型匹配。"
+          type="info"
+          showIcon
+          icon={<InfoCircleOutlined />}
+          className="!mb-4"
+        />
+
         <Row gutter={24}>
           <Col span={24}>
             <Form.Item label="API密钥" name="apiKey" className="!mb-4">
@@ -277,10 +330,49 @@ const SettingsPage = () => {
         <Row gutter={24}>
           <Col span={24}>
             <Form.Item label="API代理地址（可选）" name="apiProxy" className="!mb-0">
-              <Input placeholder="如: https://api.openai.com/v1" prefix={<ApiOutlined />} />
+              <Input placeholder="如: https://api.minimax.chat/v1" prefix={<ApiOutlined />} />
             </Form.Item>
           </Col>
         </Row>
+
+        {/* 可用模型列表 */}
+        {!modelsLoading && availableModels.length > 0 && (
+          <>
+            <Divider orientation="left">支持的模型</Divider>
+            <div className="grid grid-cols-2 gap-3">
+              {Object.entries(modelCategories).map(([key, label]) => {
+                const categoryModels = availableModels.filter(m => m.category === key)
+                if (categoryModels.length === 0) return null
+                return (
+                  <div key={key}>
+                    <Text strong className="text-sm mb-2 block">{label}</Text>
+                    {categoryModels.map(model => (
+                      <div
+                        key={model.id}
+                        className="p-3 mb-2 rounded-lg border border-gray-200 bg-gray-50 hover:bg-blue-50 transition-colors cursor-pointer"
+                        onClick={() => form.setFieldsValue({ defaultModel: model.id })}
+                      >
+                        <div className="flex items-center justify-between">
+                          <Text strong className="text-sm">{model.name}</Text>
+                          {form.getFieldValue('defaultModel') === model.id && (
+                            <Tag color="blue">当前</Tag>
+                          )}
+                        </div>
+                        <Text type="secondary" className="text-xs block mt-1">
+                          {model.description}
+                        </Text>
+                        <Text type="secondary" className="text-xs block">
+                          Max tokens: {model.max_tokens?.toLocaleString()} |
+                          支持工具调用: {model.supports_function_calling ? '是' : '否'}
+                        </Text>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
       </Card>
 
       {/* 文献同步 */}

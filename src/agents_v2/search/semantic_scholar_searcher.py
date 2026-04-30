@@ -22,23 +22,44 @@ class SemanticScholarSearcher(BaseSearcher):
     def __init__(self):
         super().__init__("semantic_scholar")
 
-    async def _make_request(self, url: str, params: dict = None) -> dict:
-        """发送HTTP请求"""
+    async def _make_request(self, url: str, params: dict = None, max_retries: int = 3) -> dict:
+        """发送HTTP请求，带指数退避重试"""
         import aiohttp
+        import asyncio
 
         headers = {"x-api-key": self.API_KEY} if self.API_KEY else {}
         timeout = aiohttp.ClientTimeout(total=30)
 
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, params=params, headers=headers) as resp:
-                if resp.status == 429:
-                    logger.warning("Semantic Scholar API rate limit exceeded")
-                    return {"data": [], "error": "Rate limit exceeded"}
-                if resp.status != 200:
-                    text = await resp.text()
-                    logger.error(f"Semantic Scholar API error: {resp.status} - {text}")
-                    return {"data": [], "error": f"API error: {resp.status}"}
-                return await resp.json()
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, params=params, headers=headers) as resp:
+                        if resp.status == 429:
+                            wait_time = min(2 ** attempt * 1.5, 10)
+                            logger.warning(
+                                f"Semantic Scholar API rate limit (attempt {attempt + 1}/{max_retries}), "
+                                f"waiting {wait_time:.1f}s"
+                            )
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(wait_time)
+                                continue
+                            return {"data": [], "error": "Rate limit exceeded after retries"}
+                        if resp.status != 200:
+                            text = await resp.text()
+                            logger.error(f"Semantic Scholar API error: {resp.status} - {text}")
+                            return {"data": [], "error": f"API error: {resp.status}"}
+                        return await resp.json()
+            except asyncio.TimeoutError:
+                logger.warning(f"Semantic Scholar request timeout (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                return {"data": [], "error": "Request timeout after retries"}
+            except Exception as e:
+                logger.error(f"Semantic Scholar request failed: {e}")
+                return {"data": [], "error": str(e)}
+
+        return {"data": [], "error": "Max retries exceeded"}
 
     async def search(self, query: str, max_results: int = 10) -> SearchResponse:
         """搜索Semantic Scholar论文

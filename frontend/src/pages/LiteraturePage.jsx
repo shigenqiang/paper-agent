@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Card, Input, Table, Tag, Button, Space, Typography, Modal, Form, Select, message, Tooltip, Row, Col, Empty, Upload, Spin, Tabs, Switch, Alert, Drawer, Popover, Badge, Divider } from 'antd'
-import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, DeleteOutlined, CheckCircleOutlined, FileTextOutlined, UploadOutlined, FilePdfOutlined, PlusCircleOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { useLiteratureStore } from '../store/literatureStore'
 import { literatureAPI, settingsAPI, knowledgeGraphAPI } from '../services/api'
 import { useLocation } from 'react-router-dom'
@@ -11,28 +11,26 @@ const { Title, Text } = Typography
 
 const LiteraturePage = () => {
   const location = useLocation()
-  const { literature, addLiterature, deleteLiterature, updateLiterature } = useLiteratureStore()
+  const {
+    literature, addLiterature, deleteLiterature, updateLiterature,
+    // 搜索状态（持久化）
+    searchResults, searchQuery, searchLoading, hasMore, currentPage, activeTab, graphVisible,
+    setSearchResults, setSearchQuery, setSearchLoading, setHasMore, setCurrentPage, setActiveTab, setGraphVisible,
+  } = useLiteratureStore()
   const [searchText, setSearchText] = useState('')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [form] = Form.useForm()
 
-  // 多源搜索状态
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState([])
-  const [searchLoading, setSearchLoading] = useState(false)
+  // 多源搜索状态（不持久化的状态）
   const [searchLoadingMore, setSearchLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
-  const [activeTab, setActiveTab] = useState('library')
   const [isSourceSettingsOpen, setIsSourceSettingsOpen] = useState(false)
   const [sources, setSources] = useState(['arxiv', 'pubmed', 'semantic_scholar', 'openalex'])
   const [expandedAuthors, setExpandedAuthors] = useState([])
 
   // 知识图谱状态
-  const [graphVisible, setGraphVisible] = useState(false)
   const [graphLoading, setGraphLoading] = useState(false)
   const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
   const [selectedNode, setSelectedNode] = useState(null)

@@ -166,10 +166,28 @@ class PaperAgentBase(ABC):
                 extra_body={"reasoning_split": False}
             )
 
-            content = response.choices[0].message.content or ""
+            # 检查响应类型
+            if isinstance(response, str):
+                # 如果 API 直接返回字符串，检测是否为 HTML（网关错误）
+                if response.strip().startswith('<!') or response.strip().startswith('<html'):
+                    logger.error(f"LLM API returned HTML instead of text (likely gateway error). Response starts with: {response[:200]}")
+                    raise ValueError(f"LLM API returned HTML page instead of text content - likely a gateway/auth error")
+                logger.warning("LLM API returned string instead of object, using directly")
+                content = response
+            elif hasattr(response, 'choices') and len(response.choices) > 0:
+                content = response.choices[0].message.content or ""
+            else:
+                # 未知响应格式
+                logger.error(f"Unexpected response type: {type(response)}, content: {response}")
+                raise ValueError(f"Unexpected LLM response format: {type(response)}")
 
             # 清理思考块
             content = self._clean_thinking_blocks(content)
+
+            # 二次检查：清理后内容是否为 HTML
+            if content.strip().startswith('<!') or content.strip().startswith('<html'):
+                logger.error(f"LLM content is HTML after cleaning (gateway error). Starts with: {content[:200]}")
+                raise ValueError("LLM returned HTML page instead of text - likely a gateway/auth error")
 
             return content
         except Exception as e:

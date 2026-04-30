@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { Card, Button, Space, Typography, Input, Select, Divider, Tag, message, Spin, Empty, Avatar, Tooltip, Modal, List, Popconfirm } from 'antd'
+import { Card, Button, Space, Typography, Input, Select, Divider, Tag, message, Spin, Empty, Avatar, Tooltip, Modal, List, Popconfirm, Tree } from 'antd'
 import {
   SendOutlined,
   ThunderboltOutlined,
@@ -15,8 +15,11 @@ import {
   SwapOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  FolderOutlined,
+  FolderOpenOutlined,
 } from '@ant-design/icons'
 import { aiAPI, paperAPI } from '../services/api'
+import { useAssistantStore } from '../store/assistantStore'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -130,20 +133,24 @@ const QuickAction = ({ mode, onAction }) => {
 }
 
 const AIAssistantPage = () => {
-  const [mode, setMode] = useState(MODES.WRITE)
-  const [papers, setPapers] = useState([])
-  const [selectedPaperId, setSelectedPaperId] = useState(null)
+  const {
+    mode, setMode,
+    folders, setFolders, addFolder, deleteFolder,
+    papers, setPapers,
+    selectedPaperId, setSelectedPaperId,
+    expandedPaperIds, togglePaperExpand,
+    chatMessages, setChatMessages,
+    chatInput, setChatInput,
+    contextText, setContextText,
+    reviseType, setReviseType,
+  } = useAssistantStore()
   const [selectedPaper, setSelectedPaper] = useState(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false)
   const [newPaperTitle, setNewPaperTitle] = useState('')
-  const [reviseType, setReviseType] = useState('polish')
-
-  const [chatMessages, setChatMessages] = useState([
-    { role: 'system', content: '对话已开启，当前为写作模式' }
-  ])
-  const [chatInput, setChatInput] = useState('')
+  const [newFolderName, setNewFolderName] = useState('')
+  const [createPaperFolderId, setCreatePaperFolderId] = useState('default')
   const [chatSending, setChatSending] = useState(false)
-  const [contextText, setContextText] = useState('')
   const chatEndRef = useRef(null)
 
   const userId = useMemo(() => {
@@ -168,7 +175,11 @@ const AIAssistantPage = () => {
   const loadPapers = async () => {
     try {
       const response = await paperAPI.getPapers()
-      setPapers(response.data || [])
+      const data = (response.data || []).map(p => ({
+        ...p,
+        folderId: p.folderId || 'default',
+      }))
+      setPapers(data)
     } catch (e) {
       console.error('加载论文列表失败:', e)
     }
@@ -177,7 +188,7 @@ const AIAssistantPage = () => {
   const handleModeSwitch = (newMode) => {
     setMode(newMode)
     const modeConfig = MODE_CONFIG[newMode]
-    setChatMessages(prev => [...prev, {
+    setChatMessages(prev => [...(Array.isArray(prev) ? prev : []), {
       role: 'system',
       content: `已切换到${modeConfig.label}：${modeConfig.description}`,
       isModeTip: true,
@@ -221,9 +232,10 @@ const AIAssistantPage = () => {
         topic: '待定'
       })
       if (response.success && response.data) {
-        setPapers(prev => [response.data, ...prev])
+        const paper = { ...response.data, folderId: createPaperFolderId }
+        setPapers(prev => [paper, ...prev])
         setSelectedPaperId(response.data.id)
-        setSelectedPaper(response.data)
+        setSelectedPaper(paper)
         setIsCreateModalOpen(false)
         setNewPaperTitle('')
         message.success('论文创建成功')
@@ -233,12 +245,23 @@ const AIAssistantPage = () => {
     }
   }
 
+  const handleCreateFolder = () => {
+    if (!newFolderName.trim()) {
+      message.warning('请输入文件夹名称')
+      return
+    }
+    addFolder({ name: newFolderName })
+    setNewFolderName('')
+    setIsFolderModalOpen(false)
+    message.success('文件夹创建成功')
+  }
+
   const handleSelectPaper = (paperId) => {
     const paper = papers.find(p => p.id === paperId)
     setSelectedPaperId(paperId)
     setSelectedPaper(paper)
     if (paperId) {
-      setChatMessages(prev => [...prev, {
+      setChatMessages(prev => [...(Array.isArray(prev) ? prev : []), {
         role: 'system',
         content: `已选择论文：${paper?.title || '未知'}`
       }])
@@ -322,8 +345,8 @@ const AIAssistantPage = () => {
   // 添加消息时限制历史长度
   const addChatMessage = (newMessages) => {
     setChatMessages(prev => {
-      const updated = [...prev, ...newMessages]
-      // 限制消息数量，保留system消息和最后MAX_CHAT_HISTORY条
+      const prevArr = Array.isArray(prev) ? prev : []
+      const updated = [...prevArr, ...newMessages]
       if (updated.length > MAX_CHAT_HISTORY + 1) {
         return [updated[0], ...updated.slice(-MAX_CHAT_HISTORY)]
       }
@@ -333,36 +356,69 @@ const AIAssistantPage = () => {
 
   return (
     <div className="h-full flex gap-4">
-      {/* 左侧论文列表 */}
+      {/* 左侧论文项目 - 文件夹结构 */}
       <Card
         className="w-64 flex-shrink-0 !rounded-lg"
         title={
           <Space>
-            <FileTextOutlined className="text-blue-500" />
+            <FolderOutlined className="text-blue-500" />
             <span className="text-sm">论文项目</span>
           </Space>
         }
         extra={
-          <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)} />
+          <Space>
+            <Tooltip title="新建文件夹"><Button type="text" size="small" icon={<PlusOutlined />} onClick={() => setIsFolderModalOpen(true)} /></Tooltip>
+            <Tooltip title="新建论文"><Button type="text" size="small" icon={<FileTextOutlined />} onClick={() => setIsCreateModalOpen(true)} /></Tooltip>
+          </Space>
         }
         styles={{ body: { padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}}
       >
-        {papers.length === 0 ? (
+        {folders.length === 0 && papers.length === 0 ? (
           <div className="p-4 text-center">
-            <Text type="secondary" className="text-xs">暂无论文</Text>
-            <Button type="link" size="small" onClick={() => setIsCreateModalOpen(true)}>创建论文</Button>
+            <Text type="secondary" className="text-xs">暂无论文项目</Text>
+            <div className="mt-2 space-x-1">
+              <Button type="link" size="small" onClick={() => setIsFolderModalOpen(true)}>新建文件夹</Button>
+              <Button type="link" size="small" onClick={() => setIsCreateModalOpen(true)}>新建论文</Button>
+            </div>
           </div>
         ) : (
-          <List
-            size="small"
-            dataSource={papers}
-            renderItem={paper => (
-              <List.Item
-                className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${selectedPaperId === paper.id ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''}`}
-                onClick={() => handleSelectPaper(paper.id)}
-              >
-                <Text ellipsis className="text-sm">{paper.title || '未命名'}</Text>
-              </List.Item>
+          <Tree
+            treeData={folders.map(folder => ({
+              title: folder.name,
+              key: `folder_${folder.id}`,
+              icon: <FolderOutlined className="text-blue-500" />,
+              selectable: false,
+              children: papers
+                .filter(p => p.folderId === folder.id || (!p.folderId && folder.id === 'default'))
+                .map(paper => ({
+                  title: paper.title || '未命名',
+                  key: paper.id,
+                  icon: selectedPaperId === paper.id ? <FolderOpenOutlined style={{ color: '#1890ff' }} /> : <FolderOutlined />,
+                  children: paper.sections?.slice(0, 5).map(section => ({
+                    title: section.title || '未命名章节',
+                    key: `${paper.id}_${section.id}`,
+                    icon: <FileTextOutlined className="text-gray-400" />,
+                    isLeaf: true,
+                  })),
+                })),
+            }))}
+            selectedKeys={[selectedPaperId]}
+            onSelect={(keys) => {
+              if (keys.length > 0) {
+                const key = keys[0]
+                if (!String(key).startsWith('folder_') && !String(key).includes('_')) {
+                  handleSelectPaper(key)
+                }
+              }
+            }}
+            blockNode
+            showIcon
+            className="paper-folder-tree"
+            titleRender={(nodeData) => (
+              <span style={{ fontSize: '13px', fontWeight: nodeData.icon?.props?.className?.includes('blue') ? 600 : 'normal' }}>
+                {nodeData.title}
+                {nodeData.children && <Text type="secondary" className="ml-1" style={{ fontSize: '11px' }}>({nodeData.children.length})</Text>}
+              </span>
             )}
           />
         )}
@@ -407,7 +463,7 @@ const AIAssistantPage = () => {
 
         {/* 消息列表 */}
         <div className="flex-1 overflow-y-auto px-4 py-2" style={{ minHeight: 0 }}>
-          {chatMessages.map((msg, index) => (
+          {(Array.isArray(chatMessages) ? chatMessages : []).map((msg, index) => (
             <MessageBubble key={index} message={msg} onCopy={handleCopy} />
           ))}
           {chatSending && (
@@ -521,14 +577,45 @@ const AIAssistantPage = () => {
         onOk={handleCreatePaper}
         okText="创建"
       >
+        <div className="py-4 space-y-3">
+          <div>
+            <Text strong>论文标题</Text>
+            <Input
+              className="mt-2"
+              placeholder="请输入论文标题"
+              value={newPaperTitle}
+              onChange={(e) => setNewPaperTitle(e.target.value)}
+              onPressEnter={() => handleCreatePaper()}
+            />
+          </div>
+          <div>
+            <Text strong>保存到文件夹</Text>
+            <Select
+              className="mt-2 !w-full"
+              value={createPaperFolderId}
+              onChange={setCreatePaperFolderId}
+              options={folders.map(f => ({ label: f.name, value: f.id }))}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* 新建文件夹弹窗 */}
+      <Modal
+        title="新建文件夹"
+        open={isFolderModalOpen}
+        onCancel={() => setIsFolderModalOpen(false)}
+        onOk={handleCreateFolder}
+        okText="创建"
+      >
         <div className="py-4">
-          <Text strong>论文标题</Text>
+          <Text strong>文件夹名称</Text>
           <Input
             className="mt-2"
-            placeholder="请输入论文标题"
-            value={newPaperTitle}
-            onChange={(e) => setNewPaperTitle(e.target.value)}
-            onPressEnter={() => handleCreatePaper()}
+            placeholder="例如：研究笔记、参考文献"
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            onPressEnter={() => handleCreateFolder()}
           />
         </div>
       </Modal>

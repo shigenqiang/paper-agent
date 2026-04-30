@@ -10,6 +10,7 @@ import {
   LeftOutlined,
 } from '@ant-design/icons'
 import { useProjectStore } from '../store/projectStore'
+import { useWritingStore } from '../store/writingStore'
 import { paperAPI } from '../services/api'
 import { useNavigate } from 'react-router-dom'
 import { DEFAULT_SECTIONS } from '../constants/paper'
@@ -19,10 +20,9 @@ const { Title, Text } = Typography
 const OutlinePage = () => {
   const navigate = useNavigate()
   const { project, setProject, addSection, deleteSection } = useProjectStore()
+  const { selectedSection, setSelectedSection, sectionContent, setSectionContent } = useWritingStore()
   const [paperTitle, setPaperTitle] = useState(project?.title || '新论文')
   const [generating, setGenerating] = useState(false)
-  const [selectedSection, setSelectedSection] = useState(null)
-  const [sectionContent, setSectionContent] = useState('')
 
   // 生成大纲
   const handleGenerateOutline = async () => {
@@ -42,6 +42,7 @@ const OutlinePage = () => {
       if (result.success && result.data) {
         let newSections = []
         const outlineData = result.data.outline || result.data
+        // Handle array format
         if (Array.isArray(outlineData)) {
           outlineData.forEach(item => {
             newSections.push({
@@ -72,6 +73,17 @@ const OutlinePage = () => {
                 })
               })
             }
+          })
+        } else if (outlineData && typeof outlineData === 'object') {
+          // Handle dict format from OutlineAgent: {chapters: [...], structure: {...}}
+          const chapters = outlineData.chapters || []
+          chapters.forEach((chapter, idx) => {
+            newSections.push({
+              id: String(idx + 1),
+              title: chapter.name || chapter.title || `章节${idx + 1}`,
+              parentId: null,
+              content: ''
+            })
           })
         }
         if (newSections.length > 0) {

@@ -561,6 +561,10 @@ def create_app() -> web.Application:
     from src.agents_v2.api.knowledge_graph_api import setup_knowledge_graph_routes
     setup_knowledge_graph_routes(app)
 
+    # Workflow API
+    from src.agents_v2.api.workflow_api import register_routes as register_workflow_routes
+    register_workflow_routes(app)
+
     return app
 
 

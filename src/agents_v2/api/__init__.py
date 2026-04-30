@@ -19,6 +19,7 @@ from .gateway import (
 from .paper_api import setup_paper_routes
 from .reports_api import setup_reports_routes
 from .knowledge_graph_api import setup_knowledge_graph_routes
+from .workflow_api import register_routes as register_workflow_routes
 
 __all__ = [
     "APIGateway",
@@ -30,4 +31,5 @@ __all__ = [
     "setup_paper_routes",
     "setup_reports_routes",
     "setup_knowledge_graph_routes",
+    "register_workflow_routes",
 ]

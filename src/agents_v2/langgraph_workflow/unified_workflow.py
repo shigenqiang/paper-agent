@@ -361,6 +361,10 @@ class UnifiedWorkflow:
             "errors": [],
         }
 
+        # 如果明确指定了报告类型或关键词，跳过路由直接走报告路径
+        if keywords or report_type != "daily":
+            initial_state["route_path"] = "report"
+
         result = await self.app.ainvoke(initial_state)
 
         # 结束追踪

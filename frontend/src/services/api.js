@@ -148,6 +148,12 @@ export const settingsAPI = {
   updateSettings: (settings) => apiClient.put('/settings', settings),
 }
 
+// 模型配置API
+export const modelsAPI = {
+  // 获取可用模型列表
+  getModels: () => apiClient.get('/models'),
+}
+
 // 学术资讯快报API
 export const reportsAPI = {
   // 获取资讯列表
@@ -218,6 +224,7 @@ export default {
   literatureAPI,
   aiAPI,
   settingsAPI,
+  modelsAPI,
   reportsAPI,
   knowledgeGraphAPI,
 }
