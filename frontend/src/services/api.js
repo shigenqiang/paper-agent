@@ -5,7 +5,7 @@ const DEFAULT_API_KEY = 'dev-api-key'
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 180000,
   headers: {
     'Content-Type': 'application/json',
   },

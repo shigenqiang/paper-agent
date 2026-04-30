@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Form, Switch, Select, Input, Button, Space, Typography, Divider, message, Tag, Row, Col, Alert, Tooltip, Spin } from 'antd'
+import { Card, Form, Switch, Select, Input, Button, Space, Typography, Divider, App, Tag, Row, Col, Alert, Tooltip, Spin, message } from 'antd'
 const { OptGroup, Option } = Select
 import {
   SaveOutlined,
@@ -53,6 +53,7 @@ const SettingsPage = () => {
   const [availableModels, setAvailableModels] = useState([])
   const [modelCategories, setModelCategories] = useState({})
   const [modelsLoading, setModelsLoading] = useState(true)
+  const [messageApi, contextHolder] = message.useMessage()
 
   // 加载设置和模型列表
   useEffect(() => {
@@ -120,9 +121,9 @@ const SettingsPage = () => {
         sources: sources
       }
       await settingsAPI.updateSettings(settings)
-      message.success('设置已保存')
+      messageApi.success('设置已保存')
     } catch (e) {
-      message.error('保存失败')
+      messageApi.error('保存失败')
     } finally {
       setLoading(false)
     }
@@ -162,6 +163,8 @@ const SettingsPage = () => {
   }
 
   return (
+    <App>
+      {contextHolder}
     <div className="max-w-4xl space-y-4">
       {/* 基本设置 */}
       <Card
@@ -484,6 +487,7 @@ const SettingsPage = () => {
         </Space>
       </Card>
     </div>
+    </App>
   )
 }
 

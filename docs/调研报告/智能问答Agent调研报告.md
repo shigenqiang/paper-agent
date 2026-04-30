@@ -1551,25 +1551,25 @@ if final_score < threshold:
 
 ```yaml
 # 数据层
-文档处理: Unstructured / PDFPlumber
+文档处理: Unstructured / PDFPlumber / Marker
 分块: RecursiveCharacterTextSplitter
-向量化: BGE-M3 / OpenAI-embedding
+向量化: BGE-M3 / OpenAI-embedding-3 / DeepSeek-embedding
 
 # 存储层
-向量数据库: Milvus / Qdrant
+向量数据库: Milvus 2.6 / Qdrant / pgvector
 元数据存储: PostgreSQL / Redis
 
 # 检索层
 向量检索: ANN (HNSW/IVF)
-关键词检索: BM25 / ElasticSearch
-重排序: BGE-Reranker
+关键词检索: BM25 / BM25S / ElasticSearch
+重排序: BGE-Reranker-v2 / ColBERT-v2
 
 # Agent层
-框架: LangGraph / LangChain
-LLM: GPT-4 / Claude-3.5 / Qwen2.5
+框架: LangGraph / Claude Agent SDK / CrewAI
+LLM: Claude Opus 4.7 / DeepSeek-R1 / DeepSeek-V4 / GPT-4o / Qwen 3.5-Max
 
 # 评估层
-评估框架: RAGAs / TruLens
+评估框架: RAGAs / TruLens / DeepSearchQA
 监控: Prometheus / Grafana
 
 # 部署层
@@ -1579,7 +1579,154 @@ API服务: FastAPI
 
 ---
 
-## 参考资源
+## 十七、2026年推理模型新进展 (新增补充)
+
+> 补充时间: 2026-05-01
+> 聚焦 DeepSeek-R1、Prompt Caching、Gemini Deep Research 等最新技术
+
+### 17.1 推理模型时代的 RAG
+
+2025-2026 年推理模型（Reasoning Models）的兴起深刻改变了 RAG 系统的设计范式。传统 RAG 依赖 LLM 检索-生成流水线，推理模型引入了"先思考再回答"的内部推理链（Internal Chain-of-Thought），可以自行发现检索盲区并主动补充查询。
+
+**推理模型 vs 传统 LLM 的核心差异**:
+
+| 维度 | 传统 LLM (GPT-4, Claude 3.5) | 推理模型 (DeepSeek-R1, o3, Gemini 3.1) |
+|------|---------------------------|--------------------------------------|
+| 生成方式 | 直接输出答案 | 先内部推理，再输出答案 |
+| 多跳问题 | 需显式分解为子问题 | 内部自动分解和推理 |
+| 检索策略 | 依赖 Query Decomposition | 自主识别信息缺失并补查 |
+| 输出质量 | 依赖提示词设计 | 推理链保证，对提示词依赖较低 |
+| 成本 | 较低 | 较高（推理Token + 输出Token） |
+| 延迟 | 低 | 高（推理过程额外耗时） |
+
+**Paper Agent 使用建议**: 复杂多跳问题（如"对比Method A和Method B在数据集X上的性能"）使用推理模型，简单事实查询仍用传统模型。
+
+### 17.2 DeepSeek-R1: 开源推理标杆
+
+DeepSeek-R1 由深度求索于 2025 年 1 月 20 日发布，是首个通过纯强化学习（RL）训练出强大推理能力的开源模型。
+
+**核心创新**:
+
+| 创新点 | 说明 |
+|--------|------|
+| **纯 RL 训练 (R1-Zero)** | 完全跳过 SFT，仅通过奖励信号发展推理能力 |
+| **冷启动 + 多阶段训练 (R1)** | 少量高质量数据冷启动 → RL → 拒绝采样+监督数据 → 最终RL |
+| **模型蒸馏** | 将 R1 推理能力蒸馏到 Qwen/Llama 小模型，7B/14B 即可获得强推理 |
+| **MIT 开源** | 模型权重和蒸馏模型全部开源，可商用 |
+
+**RAG 场景性能对比**:
+
+| 测试 | DeepSeek-R1 | GPT-4o | Claude Opus 4 |
+|------|-----------|--------|---------------|
+| AIME 2024 (数学) | 79.8% | 13.4% | 42.1% |
+| MATH-500 | 97.3% | 76.6% | 87.8% |
+| SWE-bench Verified | 49.2% | 38.8% | 55.4% |
+| GPQA Diamond (科学) | 71.5% | 50.5% | 65.2% |
+
+**RAG 系统集成**:
+
+```python
+# DeepSeek-R1 的 RAG 集成模式
+class DeepSeekR1RAG:
+    def __init__(self):
+        self.client = OpenAI(
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url="https://api.deepseek.com"
+        )
+
+    async def answer_with_reasoning(self, query: str, documents: list) -> dict:
+        """使用 DeepSeek-R1 进行带推理的 RAG 回答"""
+        response = await self.client.chat.completions.create(
+            model="deepseek-reasoner",  # DeepSeek-R1
+            messages=[
+                {"role": "system", "content": "你是一个专业的学术问答助手。"},
+                {"role": "user", "content": f"""基于以下文献回答问题:
+
+文献:
+{self._format_docs(documents)}
+
+问题: {query}
+
+请先分析每篇文献的相关性，进行多步骤推理，然后给出最终答案。"""}
+            ],
+            temperature=0.6,  # R1 推荐温度
+        )
+
+        return {
+            "answer": response.choices[0].message.content,
+            "reasoning": response.choices[0].message.reasoning_content,
+            "tokens": response.usage
+        }
+```
+
+### 17.3 Prompt Caching: 降低 RAG 成本的关键技术
+
+Prompt Caching 是 Anthropic 于 2025 年中推出的重要功能，对 RAG 系统成本优化意义重大。
+
+**工作原理**: 对于重复出现的 Prompt 前缀（如 System Prompt + RAG 上下文框架），API 自动缓存，后续请求只需支付增量 Token 的费用。
+
+**RAG 场景的收益**:
+
+| 场景 | 缓存命中率 | 成本节省 |
+|------|-----------|---------|
+| System Prompt 固定部分 | 100% | -90% |
+| 知识库文档（不变部分） | 高 | -70~80% |
+| 多轮对话历史 | 逐轮递增 | -50~60% |
+
+**实现策略**:
+
+```python
+# Prompt Caching 友好的 RAG Prompt 设计
+class CacheOptimizedRAG:
+    CACHEABLE_PREFIX = """你是一个专业的学术论文问答助手。回答规则:
+1. 仅基于提供的文献内容回答
+2. 引用文献时注明具体段落和作者
+3. 如文献不足回答，明确说明
+
+## 当前对话文献集合:
+"""
+
+    def build_prompt(self, query: str, documents: list) -> str:
+        """构建缓存友好的 Prompt"""
+        # 1. 缓存命中层: 固定前缀+文献内容（放在前面，可被缓存）
+        cacheable = self.CACHEABLE_PREFIX + self._format_docs(documents)
+
+        # 2. 增量层: 用户查询（每次不同，放在后面）
+        transient = f"\n\n## 当前问题:\n{query}"
+
+        return cacheable + transient
+```
+
+**Paper Agent 具体应用**:
+- 论文文献集合作为可缓存前缀
+- 多轮写作对话中历史章节可缓存
+- MCP 工具的输入 Schema 定义可缓存
+
+### 17.4 Gemini Deep Research: 自主研究 Agent 标杆
+
+Google 于 2025-2026 年持续迭代 Gemini Deep Research:
+
+| 版本 | 发布时间 | 核心升级 |
+|------|---------|---------|
+| Gemini 2.0 Flash Deep Research | 2025-03 | 向免费用户开放，分钟级生成研究报告 |
+| Gemini 2.5 Pro Deep Research | 2025-11 | 访问 Gmail/Drive/Chat，多模态数据源 |
+| Deep Research Max (Gemini 3.1) | 2026-04 | 基于 Gemini 3.1 Pro，自主研究 Agent，支持 MCP |
+| DeepSearchQA Benchmark | 2025-12 | 配套评估基准，标准化深度搜索评估 |
+
+**核心理念**: 模拟人类研究员的多步骤流程——搜索→阅读→分析→交叉验证→生成报告。
+
+**Paper Agent 借鉴意义**:
+- Deep Research 的"多轮搜索-阅读-综合"工作流可直接集成
+- MCP 原生支持使 Gemini 版 Deep Research 可接入外部数据源
+- DeepSearchQA 基准可用于评估 Paper Agent 的深度研究能力
+
+### 17.5 推理模型时代的 RAG 设计原则
+
+1. **区分简单查询和复杂推理**: 简单查询用传统 RAG（低成本），复杂推理用推理模型增强 RAG
+2. **充分利用内部推理链**: 推理模型的 reasoning_content 可用于诊断检索是否充分
+3. **Prompt Caching 优先**: 将可缓存内容前置，动态查询后置
+4. **蒸馏模型降低延迟**: DeepSeek-R1-Distill 等小模型可在本地部署，大幅降低推理延迟
+5. **模型路由**: 根据查询复杂度动态选择模型，平衡成本和质量
 
 | 资源 | 说明 |
 |------|------|
@@ -1588,7 +1735,10 @@ API服务: FastAPI
 | [RAGAs Evaluation Framework](https://docs.ragas.io/) | RAG 评估工具 |
 | [BGE-M3 Embedding Model](https://github.com/AI-Godel/BGE-M3) | 向量模型 |
 | [arXiv API](https://arxiv.org/help/api) | 论文搜索 API |
-| [PubMed E-utilities](https://www.ncbi.nlm.nih.gov/home/develop/api/) | 生物医学文献 API |
+| [DeepSeek API](https://api.deepseek.com/) | DeepSeek-R1/V3 推理/对话模型 |
+| [Anthropic Prompt Caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching) | Prompt 缓存机制 |
+| [Gemini Deep Research](https://deepmind.google/technologies/gemini/deep-research/) | 自主研究 Agent |
+| [SWE-bench](https://www.swebench.com/) | Agent 编码评估基准 |
 
 ---
 

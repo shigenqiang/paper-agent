@@ -578,3 +578,331 @@ src/agents_v2/
 **文档版本**: v1.0  
 **更新日期**: 2026-04-29  
 **基于代码版本**: fresh-start branch
+
+---
+
+## 附录：服务依赖分析
+
+**项目**: Paper Agent
+
+---
+
+## 1. 服务概览
+
+### 1.1 当前运行服务
+
+| 服务 | 镜像 | 状态 | 端口 |
+|------|------|------|------|
+| Redis | redis:7-alpine | ✅ 运行中 | 6379 |
+| Neo4j | neo4j:5-community | ✅ 运行中 | 7474, 7687 |
+
+### 1.2 Docker Compose 完整服务列表
+
+| 服务 | 用途 | 默认端口 | 内存配置 |
+|------|------|----------|----------|
+| **paper-agent** | 主应用 | 8000 | 1G-4G |
+| **postgres** | 关系数据库 | 5432 | 1G |
+| **redis** | 缓存/会话 | 6379 | 512M |
+| **neo4j** | 图数据库 | 7474, 7687 | 2G |
+| **prometheus** | 指标收集 | 9090 | 512M |
+| **grafana** | 可视化监控 | 3000 | 256M |
+
+---
+
+## 2. 核心服务详细分析
+
+### 2.1 Redis (缓存服务)
+
+```
+当前内存: 3.4MB / 512MB (0.67%)
+配置内存: 512MB
+```
+
+| 维度 | 分析 |
+|------|------|
+| **重要性** | ⭐⭐⭐⭐⭐ 核心必需 |
+| **功能** | 会话缓存、向量缓存、限流、任务队列 |
+| **依赖方** | paper-agent, 所有需要缓存的组件 |
+| **故障影响** | 高 - 缓存失效，性能严重下降 |
+| **替代方案** | 无（必须） |
+
+**为什么必须**：
+- LLM响应缓存，减少API调用成本
+- 会话状态存储
+- 限流器状态
+- 任务队列（Celery等）
+
+**内存估算**：
+```yaml
+# docker-compose.yml 配置
+maxmemory: 512mb
+maxmemory-policy: allkeys-lru
+```
+实际使用远低于配置，512MB足够。
+
+---
+
+### 2.2 Neo4j (图数据库)
+
+```
+当前内存: 475.6MB / 7.4GB (6.24%)
+配置内存: 512MB heap + 256MB pagecache
+```
+
+| 维度 | 分析 |
+|------|------|
+| **重要性** | ⭐⭐⭐⭐⭐ 核心必需 |
+| **功能** | 知识图谱、论文关系存储、GraphRAG |
+| **依赖方** | paper-agent, literature_agent |
+| **故障影响** | 高 - 知识图谱功能不可用 |
+| **替代方案** | PostgreSQL + JSON (性能下降) |
+
+**为什么必须**：
+- 论文引用关系图构建
+- 知识图谱增强检索（GraphRAG）
+- 多跳推理查询
+- 实体关系管理
+
+**内存优化配置**：
+```yaml
+# 生产环境推荐配置
+NEO4J_PLUGINS: ["apoc"]  # 插件
+server.memory.heap.initial_size: 256m  # 堆内存
+server.memory.heap.max_size: 512m      # 最大堆
+server.memory.pagecache.size: 256m     # 页缓存
+```
+
+**当前问题**：原始配置要求2G堆内存，超出大多数开发机内存，已调整为512M。
+
+---
+
+### 2.3 PostgreSQL (关系数据库)
+
+| 维度 | 分析 |
+|------|------|
+| **重要性** | ⭐⭐⭐⭐ 重要 |
+| **功能** | 持久化存储、用户数据、论文数据、审计日志 |
+| **依赖方** | paper-agent |
+| **故障影响** | 高 - 无法持久化数据 |
+| **替代方案** | SQLite (开发), Cloud SQL (生产) |
+
+**配置**：
+```yaml
+POSTGRES_USER: paper
+POSTGRES_PASSWORD: paper
+POSTGRES_DB: paperagent
+# 端口: 5432
+```
+
+**内存配置**：1G（固定）
+
+---
+
+### 2.4 Paper Agent (主应用)
+
+| 维度 | 分析 |
+|------|------|
+| **重要性** | ⭐⭐⭐⭐⭐ 核心必需 |
+| **功能** | Agent推理、LLM调用、任务编排 |
+| **依赖方** | 上游服务调用 |
+| **故障影响** | 整个系统不可用 |
+
+**配置**：
+```yaml
+OPENAI_API_KEY: ${OPENAI_API_KEY}
+REDIS_URL: redis://redis:6379
+NEO4J_URI: bolt://neo4j:7687
+POSTGRES_URI: postgresql://paper:paper@postgres:5432/paperagent
+```
+
+**内存配置**：1G-4G（弹性）
+
+---
+
+## 3. 可选服务分析
+
+### 3.1 Prometheus (监控)
+
+| 维度 | 分析 |
+|------|------|
+| **重要性** | ⭐⭐ 可选 |
+| **功能** | 指标收集、时间序列存储 |
+| **资源消耗** | ~200MB |
+| **故障影响** | 无 - 仅影响监控功能 |
+| **启动方式** | `docker-compose up -d --profile monitoring` |
+
+### 3.2 Grafana (可视化)
+
+| 维度 | 分析 |
+|------|------|
+| **重要性** | ⭐⭐ 可选 |
+| **功能** | 监控仪表板展示 |
+| **资源消耗** | ~150MB |
+| **故障影响** | 无 - 仅影响监控展示 |
+| **启动方式** | 与Prometheus一起启动 |
+
+---
+
+## 4. 内存使用汇总
+
+### 4.1 当前实际使用
+
+```
+Neo4j:     475.6 MB
+Redis:       3.4 MB
+------------------------
+总计:      479.0 MB
+```
+
+### 4.2 推荐最小配置
+
+| 服务 | 最小内存 | 推荐内存 | 说明 |
+|------|----------|----------|------|
+| Redis | 256MB | 512MB | 缓存+持久化 |
+| Neo4j | 512MB | 1GB | 图数据库 |
+| Postgres | 512MB | 1GB | 关系数据 |
+| Paper Agent | 1GB | 2GB | 主应用 |
+| **总计** | **2.5GB** | **4.5GB** | 最小开发环境 |
+
+### 4.3 生产环境配置
+
+| 服务 | 内存配置 |
+|------|----------|
+| Redis | 1GB |
+| Neo4j | 2GB |
+| Postgres | 2GB |
+| Paper Agent | 4GB |
+| Prometheus | 512MB |
+| Grafana | 256MB |
+| **总计** | **~10GB** |
+
+---
+
+## 5. 启动策略
+
+### 5.1 开发环境（最小）
+
+```bash
+# 只启动核心服务
+docker-compose up -d redis neo4j
+```
+
+**适用场景**：仅开发Agent核心功能，不需要持久化
+
+### 5.2 开发环境（完整）
+
+```bash
+# 启动所有服务
+docker-compose up -d
+```
+
+**适用场景**：完整功能开发，需要Postgres存储
+
+### 5.3 生产环境
+
+```bash
+# 使用优化配置
+docker-compose -f docker-compose.yml up -d
+```
+
+**注意**：建议调整Neo4j内存配置：
+```yaml
+# docker-compose.yml 中修改
+neo4j:
+  environment:
+    - server.memory.heap.initial_size=512m
+    - server.memory.heap.max_size=1G
+    - server.memory.pagecache.size=512m
+```
+
+---
+
+## 6. 服务依赖关系图
+
+```
+                    ┌─────────────────┐
+                    │  User Request  │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │  Paper Agent    │
+                    │   (主应用)       │
+                    └────────┬────────┘
+                             │
+         ┌───────────────────┼───────────────────┐
+         │                   │                   │
+         ▼                   ▼                   ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│     Redis       │ │     Neo4j       │ │   PostgreSQL    │
+│   (缓存/会话)    │ │   (知识图谱)    │ │   (持久存储)     │
+│   ⭐⭐⭐⭐⭐     │ │   ⭐⭐⭐⭐⭐     │ │   ⭐⭐⭐⭐      │
+│   512MB         │ │   512MB-1GB    │ │   1GB          │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+         │                   │                   │
+         └───────────────────┴───────────────────┘
+                             │
+                    ┌────────┴────────┐
+                    │   Prometheus    │ (可选)
+                    │   Grafana      │ (可选)
+                    └─────────────────┘
+```
+
+---
+
+## 7. 快速命令参考
+
+```bash
+# 查看运行中的容器
+docker ps
+
+# 查看资源使用
+docker stats
+
+# 启动核心服务（Redis + Neo4j）
+docker-compose up -d redis neo4j
+
+# 启动所有服务
+docker-compose up -d
+
+# 停止所有服务
+docker-compose down
+
+# 查看日志
+docker-compose logs -f paper-agent
+
+# 进入Redis CLI
+docker exec -it paper-agent-redis redis-cli
+
+# 进入Neo4j cypher-shell
+docker exec -it paper-agent-neo4j cypher-shell -u neo4j -p paperagent
+```
+
+---
+
+## 8. 结论与建议
+
+### 核心结论
+
+1. **Redis 和 Neo4j 是核心必需服务**
+   - 无替代方案
+   - 必须首先启动
+
+2. **PostgreSQL 是重要但可暂缓的服务**
+   - 开发阶段可用SQLite替代
+   - 生产环境必须
+
+3. **监控服务是可选的**
+   - 开发环境可跳过
+   - 生产环境建议启用
+
+### 最低启动要求
+
+| 优先级 | 服务 | 原因 |
+|--------|------|------|
+| P0 | Redis | 缓存、会话、限流 |
+| P0 | Neo4j | 知识图谱、GraphRAG |
+| P1 | PostgreSQL | 持久化存储 |
+| P2 | Prometheus/Grafana | 监控 |
+
+**最小内存需求：~1.5GB（Redis 512MB + Neo4j 512MB + 系统 500MB）**

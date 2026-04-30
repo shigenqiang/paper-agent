@@ -1,6 +1,6 @@
 {
-  "daily_e8423a52": {
-    "id": "daily_e8423a52",
+  "daily_68dbadc0": {
+    "id": "daily_68dbadc0",
     "type": "daily",
     "title": "2026-04-30 每日学术资讯",
     "date_range": "2026-04-30",
@@ -10,8 +10,8 @@
     "sources": [],
     "progress": 0,
     "status": "generating",
-    "created_at": "2026-04-30T15:44:39.349163",
-    "updated_at": "2026-04-30T15:44:39.349163",
+    "created_at": "2026-04-30T21:05:33.746603",
+    "updated_at": "2026-04-30T21:05:33.746603",
     "error": null
   }
 }

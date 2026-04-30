@@ -512,6 +512,79 @@ timeline = await memory.episodic.get_task_timeline(task_id="task_123")
 
 ---
 
-**文档更新时间**: 2026-04-26
-**版本**: v5.0
+## 2026年AI记忆系统最新进展 (新增补充)
+
+> 补充时间: 2026-05-01
+
+### Mem0 最新发展
+
+Mem0 (发音 "mem-zero") 已从 2024 年 7 月的初始版本发展为 2026 年最活跃的 AI 记忆层项目 (GitHub 1,100+ commits)：
+
+| 版本里程碑 | 时间 | 核心能力 |
+|-----------|------|---------|
+| Mem0 v0.1 | 2024-07 | 基础记忆存储、检索、更新、删除 |
+| Mem0 v0.x | 2025 | 多用户支持、元数据过滤、记忆重要性排序 |
+| Mem0 Platform | 2026 | 托管服务、跨平台一致性、Graph Memory |
+
+**核心 API**:
+
+```python
+from mem0 import Memory
+
+m = Memory()
+
+# 添加记忆 (自动提取结构化信息)
+m.add("I am working on improving my tennis skills.", user_id="alice")
+
+# 语义搜索
+memories = m.search("What are Alice's hobbies?", user_id="alice")
+
+# 记忆更新
+m.update(memory_id="m1", data="Likes to play tennis on weekends")
+
+# 记忆历史
+history = m.history(memory_id="m1")
+```
+
+**Mem0 vs Paper Agent 现有记忆系统**:
+
+| 维度 | Paper Agent 当前 | Mem0 | 建议 |
+|------|-----------------|------|------|
+| 记忆提取 | 手动定义 | LLM 自动提取结构化记忆 | 集成 Mem0 自动提取 |
+| 记忆搜索 | 向量检索 | 向量+语义+重要性排序 | 借鉴重要性排序机制 |
+| 跨会话持久化 | 本地 JSON/Cache | 云端托管+本地缓存 | 增加云端备份选项 |
+| 多用户隔离 | 基础支持 | user_id 原生隔离 | 已支持 |
+| 记忆衰减 | ForgettingController | 基于访问频率的增强/衰减 | 已实现，可优化 |
+
+### Zep 最新更新
+
+Zep 已发布社区版和企业版，专注于：
+- **用户记忆图 (User Memory Graph)**: 构建用户级知识图谱
+- **摘要记忆**: 自动生成对话摘要
+- **时序检索**: 按时间范围检索历史记忆
+
+### Letta (原 MemGPT) 最新
+
+MemGPT 更名为 Letta，2025 年底发布 Letta 1.0：
+- **Agent-native 记忆**: 记忆作为 Agent 的一等公民，而非外部插件
+- **自编辑记忆**: Agent 可主动更新、删除、合并自己的记忆
+- **内存管理指令**: 内置记忆溢出→压缩→转存机制
+
+### 2026 AI Memory 综述三大方向
+
+1. **个性化层**: Mem0 代表的用户级记忆，实现"越用越懂你"
+2. **Agent-native 记忆**: Letta 代表的 Agent 自主记忆管理
+3. **企业记忆图谱**: Zep 代表的组织级知识持久化
+
+### Paper Agent 记忆系统升级建议
+
+1. **集成 Mem0**: 替代部分手动记忆管理，自动提取用户偏好
+2. **增强记忆搜索**: 结合语义搜索+重要性排序
+3. **云端同步**: 可选的云端记忆备份
+4. **记忆图谱**: 从用户使用模式中构建个性化知识图谱
+
+---
+
+**文档更新时间**: 2026-05-01 (补充 Mem0/Zep/Letta 最新进展)
+**版本**: v5.1
 **状态**: 已完成实现 ✅

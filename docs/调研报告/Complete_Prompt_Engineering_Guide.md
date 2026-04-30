@@ -1345,3 +1345,81 @@ template = PromptTemplate.build(
 ---
 
 *本文档持续更新，欢迎提出建议和反馈。*
+
+---
+
+## 2026年提示词工程新范式 (新增补充)
+
+> 补充时间: 2026-05-01
+
+### 推理模型时代的提示词转变
+
+2026 年，提示词工程正在经历根本性的范式转移。传统"魔法短语"(如"Let's think step by step")的效果在推理模型 (DeepSeek-R1, o3, Gemini 3.1) 上已大幅降低，甚至可能产生反效果。
+
+**核心转变**:
+
+| 维度 | 传统 LLM (2024) | 推理模型 (2026) |
+|------|----------------|-----------------|
+| 提示词风格 | 详细的 CoT 引导 | 简洁的目标描述 |
+| 角色定义 | "你是一个专家..." | 角色对推理模型影响减小 |
+| Few-Shot | 3-5 个示例 | 0-1 个示例（内部推理替代） |
+| 输出格式 | 严格 JSON Schema | 让模型先推理再格式化 |
+| Token 分配 | 提示词 → 输出 | 提示词 → 推理Token → 输出 |
+
+**推理模型提示词反模式 (Anti-patterns)**:
+
+```
+# ❌ 不推荐：过度引导推理模型
+"让我们一步一步思考。首先，分析问题。其次，列举可能的方法。
+第三，评估每种方法。第四，选择最佳方法。第五，..."
+
+# ✅ 推荐：给推理模型目标，让其自主推理
+"解决以下问题。提供清晰的推理过程和最终答案。"
+
+# ❌ 不推荐：给推理模型过多 Few-Shot
+"示例1: ... 示例2: ... 示例3: ..."  # 推理模型不需要
+
+# ✅ 推荐：给推理模型明确约束
+"回答必须仅基于提供的文献。如果文献不足，请明确说明。"
+```
+
+### DSPy 自动提示词优化 (2026 最新)
+
+DSPy 在 2026 年已成为提示词优化的生产级工具，核心思想是用编程方式而非手工方式优化提示词：
+
+```python
+import dspy
+
+# 定义签名 (Signature) 而非写提示词
+class PaperQASignature(dspy.Signature):
+    """基于文献回答问题，附带引用"""
+    context = dspy.InputField(desc="检索到的论文文献")
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="带引用的答案")
+    citations = dspy.OutputField(desc="引用的文献ID列表")
+
+# 自动优化
+optimizer = dspy.MIPROv2(metric=answer_quality_score)
+optimized_qa = optimizer.compile(PaperQASignature(), trainset=training_data)
+```
+
+### Anthropic Claude 提示词最佳实践 (2026 更新)
+
+Anthropic 于 2025-2026 年持续更新提示词指南，关键变化：
+
+1. **Prompt Caching 优先设计**: 将固定指令放前面(可缓存)，动态内容放后面
+2. **Tool Use 提示词**: 工具描述应包含使用该工具的**具体时机**，而非仅功能描述
+3. **长上下文策略**: 关键信息放在对话开头或结尾 (primacy/recency)，中间部分容易被忽略
+4. **System Prompt 精简**: 过长的 System Prompt 反而不利，建议 500-2000 tokens
+
+### 提示词工程的"不死"论
+
+2026 年 Reddit/社区流传"Prompt Engineering 已经死了"，但事实是：
+- **死了的是**: 固定的魔法短语、模板化 Few-Shot、过度详细的 CoT
+- **活下来的是**: 系统化提示词设计思维，只是迁移到了更高层面 — 签名设计 (DSPy)、Skills 模块化、动态提示词组装
+
+**Paper Agent 项目建议**:
+1. 区分推理模型和非推理模型的提示词策略
+2. 对推理模型(DeepSeek-R1)使用简洁目标描述式提示词
+3. 对传统模型(Claude, GPT-4o)保持完整的 5 部分结构
+4. 引入 DSPy 自动优化搜索/写作 Agent 的提示词

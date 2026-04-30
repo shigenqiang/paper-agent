@@ -1149,3 +1149,174 @@ result = await agent.execute({
 **文档版本**: v2.0
 **创建日期**: 2026-04-26
 **最后更新**: 2026-04-28
+
+---
+
+## 附录：前后端接口对照表
+
+
+本项目采用 React + Vite 前端与 Python aiohttp 后端架构，通过 RESTful API 进行通信。前端使用 axios 封装请求，后端采用 API Key 认证。
+
+---
+
+## 论文相关接口 (Paper API)
+
+| 前端方法 | 请求方式 | 后端路由 | 功能说明 |
+|---------|---------|---------|---------|
+| `paperAPI.createPaper` | POST | `/api/papers` | 创建新论文 |
+| `paperAPI.uploadPaper` | POST | `/api/papers/upload` | 上传论文文件 (FormData) |
+| `paperAPI.getPapers` | GET | `/api/papers` | 获取论文列表 |
+| `paperAPI.getPaper` | GET | `/api/papers/{id}` | 获取论文详情 |
+| `paperAPI.updatePaper` | PUT | `/api/papers/{id}` | 更新论文 |
+| `paperAPI.deletePaper` | DELETE | `/api/papers/{id}` | 删除论文 |
+| `paperAPI.getOutline` | GET | `/api/papers/{id}/outline` | 获取论文大纲 |
+| `paperAPI.generateOutline` | POST | `/api/papers/{id}/outline/generate` | AI 生成大纲 |
+| `paperAPI.generateContent` | POST | `/api/papers/{id}/sections/{sectionId}/generate` | AI 生成章节内容 |
+
+---
+
+## 文献相关接口 (Literature API)
+
+| 前端方法 | 请求方式 | 后端路由 | 功能说明 |
+|---------|---------|---------|---------|
+| `literatureAPI.search` | POST | `/api/literature/search` | 搜索文献 |
+| `literatureAPI.getDetail` | GET | `/api/literature/{id}` | 获取文献详情 |
+| `literatureAPI.addToLibrary` | POST | `/api/papers/{paperId}/literature` | 添加到文献库 |
+| `literatureAPI.getCitation` | GET | `/api/literature/{id}/citation` | 获取引用格式 |
+| `literatureAPI.uploadFile` | POST | `/api/literature/upload` | 上传文献文件 (FormData) |
+
+---
+
+## AI 助手接口 (AI Chat API)
+
+| 前端方法 | 请求方式 | 后端路由 | 功能说明 |
+|---------|---------|---------|---------|
+| `aiAPI.sendMessage` | POST | `/api/papers/{paperId}/chat` | 发送消息 (非流式) |
+| `aiAPI.streamMessage` | GET | `/api/papers/{paperId}/chat/stream` | 流式响应 (SSE) |
+| `aiAPI.getChatHistory` | GET | `/api/papers/{paperId}/chat/history` | 获取聊天历史 |
+
+---
+
+## 学术资讯接口 (Reports API)
+
+| 前端方法 | 请求方式 | 后端路由 | 功能说明 |
+|---------|---------|---------|---------|
+| `reportsAPI.getReports` | GET | `/api/reports` | 获取资讯列表 |
+| `reportsAPI.getReport` | GET | `/api/reports/{id}` | 获取资讯详情 |
+| `reportsAPI.createReport` | POST | `/api/reports` | 生成新资讯 |
+| `reportsAPI.updateReport` | PUT | `/api/reports/{id}` | 更新资讯 |
+| `reportsAPI.deleteReport` | DELETE | `/api/reports/{id}` | 删除资讯 |
+| `reportsAPI.getDailyReports` | GET | `/api/reports/daily` | 获取日报列表 |
+| `reportsAPI.getWeeklyReports` | GET | `/api/reports/weekly` | 获取周报列表 |
+| `reportsAPI.getMonthlyReports` | GET | `/api/reports/monthly` | 获取月报列表 |
+
+---
+
+## 知识图谱接口 (Knowledge Graph API)
+
+| 前端方法 | 请求方式 | 后端路由 | 功能说明 |
+|---------|---------|---------|---------|
+| `knowledgeGraphAPI.getLiteratureGraph` | POST/GET | `/api/knowledge-graph/generate` 或 `/api/knowledge-graph/literature` | 获取文献知识图谱 |
+| `knowledgeGraphAPI.generateGraph` | POST | `/api/knowledge-graph/generate` | 显式生成图谱 |
+| `knowledgeGraphAPI.getEntityRelations` | GET | `/api/knowledge-graph/entity/{entityId}` | 获取实体关联 |
+| `knowledgeGraphAPI.detectCommunities` | GET | `/api/knowledge-graph/communities` | 社区检测 |
+| `knowledgeGraphAPI.getCommunityPapers` | GET | `/api/knowledge-graph/communities/{communityId}/papers` | 获取社区内论文 |
+| `knowledgeGraphAPI.getCentrality` | GET | `/api/knowledge-graph/centrality` | 节点中心性分析 |
+| `knowledgeGraphAPI.findPaths` | GET | `/api/knowledge-graph/paths` | 路径查找 |
+| `knowledgeGraphAPI.getNeighbors` | GET | `/api/knowledge-graph/entity/{entityId}/neighbors` | 邻居分析 |
+
+---
+
+## 系统设置接口 (Settings API)
+
+| 前端方法 | 请求方式 | 后端路由 | 功能说明 |
+|---------|---------|---------|---------|
+| `settingsAPI.getSettings` | GET | `/api/settings` | 获取设置 |
+| `settingsAPI.updateSettings` | PUT | `/api/settings` | 更新设置 |
+
+---
+
+## 认证方式
+
+### API Key 认证
+
+所有接口（除流式响应外）通过请求头传递 API Key：
+
+```
+x-api-key: {api_key}
+```
+
+前端存储于 `localStorage.getItem('api_key')`，默认值 `dev-api-key`
+
+### 流式响应 (SSE)
+
+`streamMessage` 由于 EventSource 限制，API Key 通过 URL query 参数传递：
+
+```
+/api/papers/{paperId}/chat/stream?message={message}&api_key={api_key}
+```
+
+---
+
+## 请求示例
+
+### 创建论文
+```javascript
+paperAPI.createPaper({
+  title: '论文标题',
+  abstract: '摘要内容'
+})
+```
+
+### 上传论文文件
+```javascript
+const formData = new FormData()
+formData.append('file', file)
+paperAPI.uploadPaper(formData)
+```
+
+### 生成大纲
+```javascript
+paperAPI.generateOutline(paperId, '论文主题')
+```
+
+### 流式聊天
+```javascript
+const eventSource = aiAPI.streamMessage(paperId, '你好')
+eventSource.onmessage = (event) => {
+  console.log(event.data)
+}
+```
+
+---
+
+## 常见错误码
+
+| HTTP 状态码 | 说明 |
+|-------------|------|
+| 200 | 请求成功 |
+| 201 | 创建成功 |
+| 401 | 未授权 (API Key 缺失或无效) |
+| 500 | 服务器内部错误 |
+
+---
+
+## 前端 API 封装位置
+
+- **文件**: `frontend/src/services/api.js`
+- **导出对象**: `default { paperAPI, literatureAPI, aiAPI, settingsAPI, reportsAPI, knowledgeGraphAPI }`
+
+### 使用示例
+
+```javascript
+import { paperAPI, literatureAPI, aiAPI } from '../services/api'
+
+// 创建论文
+const result = await paperAPI.createPaper({ title: '新论文' })
+
+// 搜索文献
+const results = await literatureAPI.search('深度学习')
+
+// 流式聊天
+const eventSource = aiAPI.streamMessage(paperId, message)
+```

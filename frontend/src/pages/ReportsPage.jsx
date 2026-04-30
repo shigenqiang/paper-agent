@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Card, Tabs, Button, Space, Typography, List, Tag, Empty, Spin, message, Row, Col, Alert, Badge, Collapse, Tooltip } from 'antd'
+import { Card, Tabs, Button, Space, Typography, List, Tag, Empty, Spin, App, Row, Col, Alert, Badge, Collapse, Tooltip, message } from 'antd'
 import ReactMarkdown from 'react-markdown'
 import {
   ReloadOutlined,
@@ -74,6 +74,7 @@ const ReportsPage = () => {
   const [generating, setGenerating] = useState(false)
   const [lastUpdate, setLastUpdate] = useState(null)
   const [stats, setStats] = useState({ totalPapers: 0, newToday: 0, sources: [] })
+  const [messageApi, contextHolder] = message.useMessage()
 
   const loadDigests = async () => {
     setLoading(true)
@@ -116,11 +117,11 @@ const ReportsPage = () => {
     try {
       const response = await reportsAPI.createReport({ type: activeTab, topic: '' })
       if (response.success) {
-        message.success('资讯生成中，请稍候...')
+        messageApi.success('资讯生成中，请稍候...')
         pollDigestStatus(response.data.id)
       }
     } catch (error) {
-      message.error('生成失败')
+      messageApi.error('生成失败')
       setGenerating(false)
     }
   }
@@ -134,11 +135,11 @@ const ReportsPage = () => {
           if (digest.status === 'ready') {
             setGenerating(false)
             loadDigests()
-            message.success('资讯生成完成！')
+            messageApi.success('资讯生成完成！')
             return
           } else if (digest.status === 'error') {
             setGenerating(false)
-            message.error('资讯生成失败')
+            messageApi.error('资讯生成失败')
             return
           }
         }
@@ -154,17 +155,17 @@ const ReportsPage = () => {
     try {
       const response = await reportsAPI.deleteReport(digestId)
       if (response.success) {
-        message.success('已删除')
+        messageApi.success('已删除')
         if (selectedDigest?.id === digestId) setSelectedDigest(null)
         loadDigests()
       }
     } catch (error) {
-      message.error('删除失败')
+      messageApi.error('删除失败')
     }
   }
   const handleCopyReport = () => {
     if (!selectedDigest) return
-    navigator.clipboard.writeText(selectedDigest.summary || selectedDigest.content || '').then(() => message.success('报告已复制')).catch(() => message.error('复制失败'))
+    navigator.clipboard.writeText(selectedDigest.summary || selectedDigest.content || '').then(() => messageApi.success('报告已复制')).catch(() => messageApi.error('复制失败'))
   }
   const handleDownloadReport = () => {
     if (!selectedDigest) return
@@ -175,25 +176,30 @@ const ReportsPage = () => {
     link.download = `${selectedDigest.title || '学术资讯报告'}.md`
     link.click()
     URL.revokeObjectURL(url)
-    message.success('报告已下载')
+    messageApi.success('报告已下载')
   }
   const handleAddPaper = (paper) => {
-    if (literature.some(l => l.id === paper.paper_id)) { message.info('该文献已在库中'); return }
+    if (literature.some(l => l.id === paper.paper_id)) { messageApi.info('该文献已在库中'); return }
     addLiterature({ id: paper.paper_id || Date.now(), title: paper.title || '', authors: Array.isArray(paper.authors) ? paper.authors.join(', ') : (paper.authors || ''), year: paper.year || '', journal: paper.venue || paper.journal || '', url: paper.url || '', abstract: paper.abstract || '', source: Array.isArray(paper.sources) ? paper.sources[0] : (paper.sources || ''), citations: paper.citations || 0, status: 'pending' })
-    message.success('已添加到文献库')
+    messageApi.success('已添加到文献库')
   }
   const handleRemovePaper = (paperId) => {
     const item = literature.find(l => l.id === paperId)
-    if (item) { deleteLiterature(item.id); message.success('已从文献库删除') }
+    if (item) { deleteLiterature(item.id); messageApi.success('已从文献库删除') }
   }
   const getSourceColor = (source) => ({ 'arxiv': 'blue', 'pubmed': 'green', 'semantic_scholar': 'purple', 'openalex': 'orange' }[source] || 'default')
   const formatDate = (dateStr) => {
     if (!dateStr) return ''
     const date = new Date(dateStr)
-    return `${date.getMonth() + 1}-${date.getDate()}`
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
   }
 
   return (
+    <App>
+      {contextHolder}
     <div className="h-full flex flex-col bg-gray-50">
       {/* 顶部标题栏 */}
       <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
@@ -334,7 +340,7 @@ const ReportsPage = () => {
                  >
                    <div className="w-full">
                      <div className="flex items-center justify-between">
-                       <Text className="text-sm">{formatDate(item.created_at)} {item.title || item.topic || '报告'} {item.status === 'ready' ? '✅' : item.status === 'generating' ? '🔄' : ''}</Text>
+                       <Text className="text-sm">{item.title || item.topic || '报告'} {item.status === 'ready' ? '✅' : item.status === 'generating' ? '🔄' : ''}</Text>
                        <Button
                          type="text"
                          size="small"
@@ -429,6 +435,7 @@ const ReportsPage = () => {
         </div>
       </div>
     </div>
+    </App>
   )
 }
 

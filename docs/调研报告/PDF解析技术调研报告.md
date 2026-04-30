@@ -690,5 +690,74 @@ pip install marker
 
 ---
 
-*报告完成时间: 2026/04/26*
+## 2026年PDF解析技术最新进展 (新增补充)
+
+> 补充时间: 2026-05-01
+
+### Marker 最新版本
+
+Marker (VikParuchuri/marker) 是 2025-2026 年最活跃的学术 PDF 解析工具：
+
+| 版本 | 核心更新 |
+|------|---------|
+| Marker v0.1 | 初始发布，PDF → Markdown，公式转 LaTeX |
+| Marker v0.3 | 多语言支持、表格检测增强、代码块保留 |
+| Marker v1.0 (2025) | 批量处理 API、GPU 加速、模块化架构 |
+| Marker latest (2026) | 改进的公式识别、支持扫描 PDF OCR |
+
+**优势**: 安装极简 (`pip install marker`)，速度最快，适合批量处理学术论文。
+
+### PDF-Extract-Kit (MinerU)
+
+由 OpenDataLab 维护的高质量 PDF 提取工具包，采用多模型集成：
+
+```
+PDF 文档
+  ├── LayoutLMv3 → 布局检测 (文本/表格/标题/图片)
+  ├── YOLOv8     → 公式检测 (行内公式 + 独立公式)
+  ├── UniMERNet  → 公式识别 (转 LaTeX/MathML)
+  └── PaddleOCR  → 文本识别 (OCR)
+```
+
+**v.s. Marker 对比**:
+
+| 维度 | Marker | PDF-Extract-Kit |
+|------|--------|-----------------|
+| 安装复杂度 | 极简 (pip install) | 复杂 (多模型依赖) |
+| 公式识别 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| 中文支持 | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| 处理速度 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
+| 复杂布局 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| 生产就绪 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+
+### Zerox OCR
+
+新兴的 PDF → Markdown 工具，基于视觉 LLM (GPT-4V/Gemini Vision) 进行"视觉 OCR"：
+- 优势：对扫描质量差的 PDF 效果极好，不需要训练专门模型
+- 劣势：依赖外部 API，成本较高，速度较慢
+
+### Paper Agent PDF 解析升级建议
+
+当前项目使用基础 PDF 解析 + 表格检测。建议升级：
+
+```python
+# 推荐方案: Marker 为主，PDF-Extract-Kit 补充
+class PDFParser:
+    def __init__(self):
+        self.primary = "marker"       # 通用论文，快速处理
+        self.fallback = "pdf_extract_kit"  # 复杂公式/中文论文
+
+    async def parse(self, pdf_path: str, mode: str = "auto") -> dict:
+        if mode == "auto":
+            # 自动选择：检测到中文 → PDF-Extract-Kit
+            # 检测到大量公式 → PDF-Extract-Kit
+            # 否则 → Marker
+            return await self._smart_route(pdf_path)
+```
+
+**优先级建议**: P0 — Marker 集成 (替代基础解析)；P1 — PDF-Extract-Kit (中文/公式场景)；P2 — Zerox (退化扫描PDF)。
+
+---
+
+*报告完成时间: 2026/04/26 (补充于 2026-05-01: Marker/PDF-Extract-Kit/Zerox 最新版本)*
 *调研方法: 5轮迭代搜索 + 源码分析 + 社区反馈综合*

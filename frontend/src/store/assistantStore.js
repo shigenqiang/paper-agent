@@ -28,6 +28,10 @@ export const useAssistantStore = create(
         folders: state.folders.filter(f => f.id !== folderId),
         papers: state.papers.filter(p => p.folderId !== folderId),
       })),
+      deletePaper: (paperId) => set((state) => ({
+        papers: state.papers.filter(p => p.id !== paperId),
+        selectedPaperId: state.selectedPaperId === paperId ? null : state.selectedPaperId,
+      })),
       setPapers: (papers) => set({ papers }),
       setSelectedPaperId: (id) => set({ selectedPaperId: id }),
       togglePaperExpand: (id) => set((state) => ({

@@ -1,22 +1,20 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { Card, Button, Space, Typography, Input, Select, Divider, Tag, message, Spin, Empty, Avatar, Tooltip, Modal, List, Popconfirm, Tree } from 'antd'
+import React, { useState, useEffect, useRef } from 'react'
+import { Card, Button, Space, Typography, Input, Select, Tag, App, Spin, Avatar, message, Dropdown, Steps, Divider, Modal } from 'antd'
 import {
   SendOutlined,
-  ThunderboltOutlined,
-  SaveOutlined,
   ClearOutlined,
   CopyOutlined,
-  ScissorOutlined,
-  PlusOutlined,
   FileTextOutlined,
   RobotOutlined,
   UserOutlined,
   EditOutlined,
-  SwapOutlined,
-  DeleteOutlined,
-  DownloadOutlined,
-  FolderOutlined,
-  FolderOpenOutlined,
+  ScissorOutlined,
+  BookOutlined,
+  ProfileOutlined,
+  ThunderboltOutlined,
+  MessageOutlined,
+  CheckCircleOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons'
 import { aiAPI, paperAPI } from '../services/api'
 import { useAssistantStore } from '../store/assistantStore'
@@ -24,145 +22,78 @@ import { useAssistantStore } from '../store/assistantStore'
 const { Title, Text } = Typography
 const { TextArea } = Input
 
-// 模式配置
-const MODES = {
-  WRITE: 'write',
-  REVISE: 'revise'
-}
-
-const MODE_CONFIG = {
-  [MODES.WRITE]: {
-    label: '写作模式',
-    icon: <EditOutlined />,
+// Agent类型定义
+const AGENTS = {
+  OUTLINE: {
+    key: 'outline',
+    name: '大纲生成',
+    icon: <ProfileOutlined />,
     color: '#1890ff',
-    description: '生成大纲、续写内容'
+    description: '根据研究主题生成完整的论文大纲结构',
+    inputs: ['topic'],
+    outputs: 'outline'
   },
-  [MODES.REVISE]: {
-    label: '修改模式',
-    icon: <ScissorOutlined />,
+  LITERATURE: {
+    key: 'literature',
+    name: '文献综述',
+    icon: <BookOutlined />,
+    color: '#52c41a',
+    description: '搜索和分析相关文献，生成文献综述',
+    inputs: ['topic', 'keywords'],
+    outputs: 'literature_review'
+  },
+  DRAFT: {
+    key: 'draft',
+    name: '内容生成',
+    icon: <EditOutlined />,
     color: '#722ed1',
-    description: '润色、翻译、精简、扩展'
+    description: '根据大纲生成论文各章节内容',
+    inputs: ['outline', 'section'],
+    outputs: 'content'
+  },
+  REVISE: {
+    key: 'revise',
+    name: '智能改稿',
+    icon: <ScissorOutlined />,
+    color: '#fa8c16',
+    description: '润色、翻译、精简、扩展论文内容',
+    inputs: ['content', 'revise_type'],
+    outputs: 'revised_content'
   }
 }
 
-// 消息气泡组件
-const MessageBubble = ({ message, onCopy, onInsert }) => {
-  const isUser = message.role === 'user'
-  const isSystem = message.role === 'system'
-
-  if (isSystem) {
-    return (
-      <div className="flex justify-center my-2">
-        <div className="bg-gray-100 text-gray-500 text-xs px-3 py-1 rounded-full">
-          {message.content}
-        </div>
-      </div>
-    )
-  }
-
-  if (isSystem && message.isModeTip) {
-    return (
-      <div className="flex justify-center my-2">
-        <div className={`text-xs px-3 py-1 rounded-full ${message.mode === MODES.WRITE ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
-          {message.content}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className={`flex gap-3 my-3 ${isUser ? 'flex-row-reverse' : ''}`}>
-      <Avatar
-        size={32}
-        className={isUser ? '!bg-blue-500' : '!bg-gradient-to-br from-blue-400 to-purple-500'}
-        icon={isUser ? <UserOutlined /> : <RobotOutlined />}
-      />
-      <div className={`max-w-[80%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
-        <div
-          className={`px-4 py-2 rounded-2xl text-sm ${
-            isUser
-              ? '!bg-blue-500 text-white rounded-tr-sm'
-              : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm'
-          }`}
-          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: '1.6' }}
-        >
-          {message.content}
-        </div>
-        <div className={`text-xs text-gray-400 mt-1 ${isUser ? 'text-right' : ''}`}>
-          <Space size="small">
-            {message.time && <span>{message.time}</span>}
-            {!isUser && message.content && (
-              <Space size="small">
-                <Tooltip title="复制">
-                  <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => onCopy(message.content)} className="!text-gray-400 !w-6 !h-6" />
-                </Tooltip>
-              </Space>
-            )}
-          </Space>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// 快速操作按钮
-const QuickAction = ({ mode, onAction }) => {
-  const actions = mode === MODES.WRITE ? [
-    { key: 'outline', label: '生成大纲', icon: <FileTextOutlined /> },
-    { key: 'continue', label: 'AI续写', icon: <EditOutlined /> },
-  ] : [
-    { key: 'polish', label: '润色', icon: <EditOutlined /> },
-    { key: 'translate', label: '翻译', icon: <SwapOutlined /> },
-    { key: 'shorten', label: '精简', icon: <DeleteOutlined /> },
-    { key: 'expand', label: '扩展', icon: <PlusOutlined /> },
-  ]
-
-  return (
-    <div className="flex flex-wrap gap-2 mb-3">
-      {actions.map(action => (
-        <Tag
-          key={action.key}
-          className="cursor-pointer hover:bg-blue-50 border-dashed"
-          onClick={() => onAction(action.key)}
-        >
-          {action.icon} {action.label}
-        </Tag>
-      ))}
-    </div>
-  )
+const AGENT_COLORS = {
+  outline: '#1890ff',
+  literature: '#52c41a',
+  draft: '#722ed1',
+  revise: '#fa8c16'
 }
 
 const AIAssistantPage = () => {
   const {
-    mode, setMode,
-    folders, setFolders, addFolder, deleteFolder,
-    papers, setPapers,
+    papers, setPapers, deletePaper,
     selectedPaperId, setSelectedPaperId,
-    expandedPaperIds, togglePaperExpand,
-    chatMessages, setChatMessages,
-    chatInput, setChatInput,
-    contextText, setContextText,
-    reviseType, setReviseType,
+    clearChat,
   } = useAssistantStore()
   const [selectedPaper, setSelectedPaper] = useState(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false)
   const [newPaperTitle, setNewPaperTitle] = useState('')
-  const [newFolderName, setNewFolderName] = useState('')
-  const [createPaperFolderId, setCreatePaperFolderId] = useState('default')
   const [chatSending, setChatSending] = useState(false)
   const chatEndRef = useRef(null)
+  const { messageApi, contextHolder } = message.useMessage()
 
-  const userId = useMemo(() => {
-    let id = localStorage.getItem('chat_user_id')
-    if (!id) {
-      id = 'user_' + Math.random().toString(36).substr(2, 9)
-      localStorage.setItem('chat_user_id', id)
-    }
-    return id
-  }, [])
+  // Agent相关状态
+  const [activeAgent, setActiveAgent] = useState(null)
+  const [agentResult, setAgentResult] = useState(null)
+  const [agentLoading, setAgentLoading] = useState(false)
 
-  const sessionId = useMemo(() => 'ai_assistant_' + (selectedPaperId || 'no_paper'), [selectedPaperId])
+  // 各Agent的输入状态
+  const [topic, setTopic] = useState('')
+  const [keywords, setKeywords] = useState('')
+  const [sectionContent, setSectionContent] = useState('')
+  const [reviseType, setReviseType] = useState('polish')
+
+  const userId = 'user_' + Math.random().toString(36).substr(2, 9)
 
   useEffect(() => {
     loadPapers()
@@ -170,60 +101,25 @@ const AIAssistantPage = () => {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages])
+  }, [agentResult])
 
   const loadPapers = async () => {
     try {
       const response = await paperAPI.getPapers()
-      const data = (response.data || []).map(p => ({
-        ...p,
-        folderId: p.folderId || 'default',
-      }))
-      setPapers(data)
+      setPapers(response.data || [])
     } catch (e) {
       console.error('加载论文列表失败:', e)
     }
   }
 
-  const handleModeSwitch = (newMode) => {
-    setMode(newMode)
-    const modeConfig = MODE_CONFIG[newMode]
-    setChatMessages(prev => [...(Array.isArray(prev) ? prev : []), {
-      role: 'system',
-      content: `已切换到${modeConfig.label}：${modeConfig.description}`,
-      isModeTip: true,
-      mode: newMode
-    }])
-  }
-
-  const handleQuickAction = (action) => {
-    let prompt = ''
-    if (mode === MODES.WRITE) {
-      if (action === 'outline') {
-        prompt = '请帮我生成论文大纲，输入选题后我会为您生成详细的大纲结构。'
-      } else if (action === 'continue') {
-        prompt = '请续写论文内容。请提供当前章节的内容或写作方向，我会为您续写。'
-      }
-    } else {
-      // REVISE mode
-      const actionMap = {
-        polish: '润色 - 优化语言表达，使其更加流畅专业',
-        translate: '翻译 - 中英文互译，保持学术风格',
-        shorten: '精简 - 压缩冗余内容，保留核心观点',
-        expand: '扩展 - 丰富详细内容，增加细节和深度'
-      }
-      prompt = `请帮我进行【${actionMap[action]}】操作。请提供需要修改的文本。`
-      if (action === 'polish') setReviseType('polish')
-      else if (action === 'translate') setReviseType('translate')
-      else if (action === 'shorten') setReviseType('shorten')
-      else if (action === 'expand') setReviseType('expand')
-    }
-    setChatInput(prompt)
+  const handleSelectPaper = (paper) => {
+    setSelectedPaperId(paper.id)
+    setSelectedPaper(paper)
   }
 
   const handleCreatePaper = async () => {
     if (!newPaperTitle.trim()) {
-      message.warning('请输入论文标题')
+      messageApi.warning('请输入论文标题')
       return
     }
     try {
@@ -232,353 +128,405 @@ const AIAssistantPage = () => {
         topic: '待定'
       })
       if (response.success && response.data) {
-        const paper = { ...response.data, folderId: createPaperFolderId }
+        const paper = response.data
         setPapers(prev => [paper, ...prev])
-        setSelectedPaperId(response.data.id)
+        setSelectedPaperId(paper.id)
         setSelectedPaper(paper)
         setIsCreateModalOpen(false)
         setNewPaperTitle('')
         message.success('论文创建成功')
       }
     } catch (e) {
-      message.error('创建论文失败')
+      messageApi.error('创建论文失败')
     }
   }
 
-  const handleCreateFolder = () => {
-    if (!newFolderName.trim()) {
-      message.warning('请输入文件夹名称')
-      return
-    }
-    addFolder({ name: newFolderName })
-    setNewFolderName('')
-    setIsFolderModalOpen(false)
-    message.success('文件夹创建成功')
-  }
-
-  const handleSelectPaper = (paperId) => {
-    const paper = papers.find(p => p.id === paperId)
-    setSelectedPaperId(paperId)
-    setSelectedPaper(paper)
-    if (paperId) {
-      setChatMessages(prev => [...(Array.isArray(prev) ? prev : []), {
-        role: 'system',
-        content: `已选择论文：${paper?.title || '未知'}`
-      }])
-    }
-  }
-
-  const handleChatSend = async () => {
-    if (!chatInput.trim() || chatSending) return
+  // 执行Agent
+  const executeAgent = async () => {
     if (!selectedPaperId) {
-      message.warning('请先选择或创建论文项目')
+      messageApi.warning('请先选择论文')
       return
     }
-    setChatSending(true)
 
-    const msg = chatInput
-    setChatInput('')
-    addChatMessage([{
-      role: 'user',
-      content: msg,
-      time: new Date().toLocaleTimeString()
-    }])
-
-    // 构建prompt
-    let prompt = msg
-    if (contextText.trim()) {
-      prompt = `【上下文】\n${contextText}\n\n【请求】\n${msg}`
+    if (!activeAgent) {
+      messageApi.warning('请选择要使用的功能')
+      return
     }
 
-    // 如果是修改模式，添加修改类型提示
-    if (mode === MODES.REVISE && reviseType) {
-      const reviseHints = {
-        polish: '请润色以下内容，使其更加流畅专业：',
-        translate: '请翻译以下内容，保持学术风格：',
-        shorten: '请精简以下内容，保留核心观点：',
-        expand: '请扩展以下内容，增加细节和深度：'
-      }
-      if (reviseHints[reviseType] && !msg.startsWith('请')) {
-        prompt = reviseHints[reviseType] + '\n\n' + (contextText.trim() || msg)
-      }
-    }
+    setAgentLoading(true)
+    setAgentResult(null)
 
     try {
-      const response = await aiAPI.sendMessage(selectedPaperId, prompt, userId, sessionId)
+      let result = ''
+      let prompt = ''
 
-      if (response.success && response.data) {
-        const content = response.data.response || ''
-        addChatMessage([{
-          role: 'assistant',
-          content: content,
-          time: new Date().toLocaleTimeString()
-        }])
-        // 清空上下文
-        setContextText('')
-      } else {
-        throw new Error(response.error)
+      switch (activeAgent) {
+        case 'outline':
+          if (!topic.trim()) {
+            messageApi.warning('请输入研究主题')
+            setAgentLoading(false)
+            return
+          }
+          // 调用后端生成大纲
+          const outlineResult = await paperAPI.generateOutline(selectedPaperId, topic)
+          if (outlineResult.success) {
+            result = outlineResult.data?.outline || '大纲生成完成'
+          } else {
+            result = outlineResult.error || '大纲生成失败'
+          }
+          break
+
+        case 'literature':
+          prompt = `请搜索并分析以下主题的文献：${topic}\n关键词：${keywords}`
+          break
+
+        case 'draft':
+          prompt = `请根据以下大纲生成内容：\n${topic}`
+          break
+
+        case 'revise':
+          if (!sectionContent.trim()) {
+            messageApi.warning('请输入要修改的内容')
+            setAgentLoading(false)
+            return
+          }
+          const reviseResult = await paperAPI.formatContent(
+            selectedPaperId,
+            selectedPaper?.sections?.[0]?.id || '1',
+            sectionContent
+          )
+          if (reviseResult.success) {
+            const revisedContent = reviseResult.data?.content || reviseResult.data?.revised_text
+            result = revisedContent || '修改完成'
+          } else {
+            result = reviseResult.error || '修改失败'
+          }
+          setAgentLoading(false)
+          return
+
+        default:
+          result = '未知功能'
       }
-    } catch (error) {
-      message.error('发送失败')
-      addChatMessage([{
-        role: 'assistant',
-        content: '抱歉，发送失败，请稍后重试。',
-        time: new Date().toLocaleTimeString()
-      }])
+
+      // 其他Agent使用通用chat接口
+      if (prompt) {
+        const response = await aiAPI.sendMessage(selectedPaperId, prompt, userId, `agent_${activeAgent}`)
+        if (response.success) {
+          result = response.data?.response || ''
+        } else {
+          result = response.error || '执行失败'
+        }
+      }
+
+      setAgentResult(result)
+    } catch (e) {
+      console.error('Agent执行失败:', e)
+      setAgentResult('执行出错：' + e.message)
     } finally {
-      setChatSending(false)
+      setAgentLoading(false)
     }
+  }
+
+  const getRevisePrompt = () => {
+    const prompts = {
+      polish: '请润色以下内容，使其更加流畅专业：\n\n',
+      translate: '请翻译以下内容，保持学术风格：\n\n',
+      shorten: '请精简以下内容，保留核心观点：\n\n',
+      expand: '请扩展以下内容，增加细节和深度：\n\n'
+    }
+    return prompts[reviseType] || prompts.polish
   }
 
   const handleCopy = (content) => {
     navigator.clipboard.writeText(content)
-    message.success('已复制到剪贴板')
+    message.success('已复制')
   }
 
-  const MAX_CHAT_HISTORY = 10
+  const paperMenuItems = papers.map(paper => ({
+    key: paper.id,
+    label: (
+      <Space>
+        {selectedPaperId === paper.id ? <FileTextOutlined style={{ color: '#1890ff' }} /> : <FileTextOutlined />}
+        <span>{paper.title || '未命名'}</span>
+      </Space>
+    ),
+    onClick: () => handleSelectPaper(paper)
+  }))
 
-  const handleClearChat = () => {
-    setChatMessages([{ role: 'system', content: '对话已清空' }])
-    setContextText('')
-  }
+  const paperDropdownContent = (
+    <div className="p-2 w-72">
+      <div className="text-xs text-gray-500 mb-2">选择论文</div>
+      {papers.length === 0 ? (
+        <Text type="secondary" className="text-xs">暂无论文</Text>
+      ) : (
+        papers.map(paper => (
+          <div
+            key={paper.id}
+            className={`flex items-center justify-between p-2 rounded hover:bg-gray-50 cursor-pointer ${selectedPaperId === paper.id ? 'bg-blue-50' : ''}`}
+            onClick={() => handleSelectPaper(paper)}
+          >
+            <Space>
+              <FileTextOutlined style={{ color: selectedPaperId === paper.id ? '#1890ff' : '#999' }} />
+              <span className="text-sm">{paper.title || '未命名'}</span>
+            </Space>
+          </div>
+        ))
+      )}
+      <div className="mt-2 pt-2 border-t">
+        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => setIsCreateModalOpen(true)} className="!pl-0">
+          新建论文
+        </Button>
+      </div>
+    </div>
+  )
 
-  // 添加消息时限制历史长度
-  const addChatMessage = (newMessages) => {
-    setChatMessages(prev => {
-      const prevArr = Array.isArray(prev) ? prev : []
-      const updated = [...prevArr, ...newMessages]
-      if (updated.length > MAX_CHAT_HISTORY + 1) {
-        return [updated[0], ...updated.slice(-MAX_CHAT_HISTORY)]
-      }
-      return updated
-    })
+  // 渲染Agent输入面板
+  const renderAgentInput = () => {
+    if (!activeAgent) {
+      return (
+        <div className="text-center py-8 text-gray-400">
+          <RobotOutlined className="text-4xl mb-3" />
+          <div>选择左侧功能开始使用</div>
+        </div>
+      )
+    }
+
+    switch (activeAgent) {
+      case 'outline':
+        return (
+          <div className="space-y-4">
+            <div>
+              <Text strong>研究主题 *</Text>
+              <TextArea
+                placeholder="请输入论文的研究主题，例如：基于深度学习的图像识别技术研究"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                rows={3}
+                className="mt-2"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="primary"
+                icon={<ThunderboltOutlined />}
+                onClick={executeAgent}
+                loading={agentLoading}
+              >
+                生成大纲
+              </Button>
+            </div>
+          </div>
+        )
+
+      case 'revise':
+        return (
+          <div className="space-y-4">
+            <div>
+              <Text strong>修改类型</Text>
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {['polish', 'translate', 'shorten', 'expand'].map(type => (
+                  <Tag
+                    key={type}
+                    color={reviseType === type ? AGENT_COLORS.revise : 'default'}
+                    className="cursor-pointer"
+                    onClick={() => setReviseType(type)}
+                  >
+                    {type === 'polish' && '润色'}
+                    {type === 'translate' && '翻译'}
+                    {type === 'shorten' && '精简'}
+                    {type === 'expand' && '扩展'}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Text strong>待修改内容 *</Text>
+              <TextArea
+                placeholder="粘贴要修改的原文..."
+                value={sectionContent}
+                onChange={(e) => setSectionContent(e.target.value)}
+                rows={6}
+                className="mt-2"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="primary"
+                icon={<ScissorOutlined />}
+                onClick={executeAgent}
+                loading={agentLoading}
+                style={{ backgroundColor: AGENT_COLORS.revise }}
+              >
+                执行修改
+              </Button>
+            </div>
+          </div>
+        )
+
+      default:
+        return (
+          <div className="text-center py-8 text-gray-400">
+            <MessageOutlined className="text-4xl mb-3" />
+            <div>该功能开发中...</div>
+          </div>
+        )
+    }
   }
 
   return (
-    <div className="h-full flex gap-4">
-      {/* 左侧论文项目 - 文件夹结构 */}
-      <Card
-        className="w-64 flex-shrink-0 !rounded-lg"
-        title={
-          <Space>
-            <FolderOutlined className="text-blue-500" />
-            <span className="text-sm">论文项目</span>
-          </Space>
-        }
-        extra={
-          <Space>
-            <Tooltip title="新建文件夹"><Button type="text" size="small" icon={<PlusOutlined />} onClick={() => setIsFolderModalOpen(true)} /></Tooltip>
-            <Tooltip title="新建论文"><Button type="text" size="small" icon={<FileTextOutlined />} onClick={() => setIsCreateModalOpen(true)} /></Tooltip>
-          </Space>
-        }
-        styles={{ body: { padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}}
-      >
-        {folders.length === 0 && papers.length === 0 ? (
-          <div className="p-4 text-center">
-            <Text type="secondary" className="text-xs">暂无论文项目</Text>
-            <div className="mt-2 space-x-1">
-              <Button type="link" size="small" onClick={() => setIsFolderModalOpen(true)}>新建文件夹</Button>
-              <Button type="link" size="small" onClick={() => setIsCreateModalOpen(true)}>新建论文</Button>
-            </div>
-          </div>
-        ) : (
-          <Tree
-            treeData={folders.map(folder => ({
-              title: folder.name,
-              key: `folder_${folder.id}`,
-              icon: <FolderOutlined className="text-blue-500" />,
-              selectable: false,
-              children: papers
-                .filter(p => p.folderId === folder.id || (!p.folderId && folder.id === 'default'))
-                .map(paper => ({
-                  title: paper.title || '未命名',
-                  key: paper.id,
-                  icon: selectedPaperId === paper.id ? <FolderOpenOutlined style={{ color: '#1890ff' }} /> : <FolderOutlined />,
-                  children: paper.sections?.slice(0, 5).map(section => ({
-                    title: section.title || '未命名章节',
-                    key: `${paper.id}_${section.id}`,
-                    icon: <FileTextOutlined className="text-gray-400" />,
-                    isLeaf: true,
-                  })),
-                })),
-            }))}
-            selectedKeys={[selectedPaperId]}
-            onSelect={(keys) => {
-              if (keys.length > 0) {
-                const key = keys[0]
-                if (!String(key).startsWith('folder_') && !String(key).includes('_')) {
-                  handleSelectPaper(key)
-                }
-              }
-            }}
-            blockNode
-            showIcon
-            className="paper-folder-tree"
-            titleRender={(nodeData) => (
-              <span style={{ fontSize: '13px', fontWeight: nodeData.icon?.props?.className?.includes('blue') ? 600 : 'normal' }}>
-                {nodeData.title}
-                {nodeData.children && <Text type="secondary" className="ml-1" style={{ fontSize: '11px' }}>({nodeData.children.length})</Text>}
-              </span>
-            )}
-          />
-        )}
-      </Card>
-
-      {/* 中间主对话区 */}
-      <Card
-        className="flex-1 !rounded-lg"
-        styles={{ body: { display: 'flex', flexDirection: 'column', padding: 0, height: 'calc(100vh - 120px)' }}}
-      >
-        {/* 模式切换 */}
-        <div className="px-4 py-3 border-b bg-gradient-to-r from-blue-50 to-purple-50 flex-shrink-0">
+    <App>
+      {contextHolder}
+      <div className="h-full flex flex-col bg-gray-50">
+        {/* 顶部导航 */}
+        <div className="bg-white border-b px-4 py-3 flex-shrink-0">
           <div className="flex items-center justify-between">
             <Space>
-              <RobotOutlined className="text-lg text-blue-500" />
-              <Text strong>AI写作助手</Text>
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <RobotOutlined className="text-white text-sm" />
+              </div>
+              <div>
+                <Title level={5} className="!mb-0">AI论文助手</Title>
+              </div>
             </Space>
-            <Space>
-              <Tooltip title="写作：生成大纲、续写内容">
-                <Tag
-                  color={mode === MODES.WRITE ? 'blue' : 'default'}
-                  className={`cursor-pointer ${mode !== MODES.WRITE ? 'opacity-60' : ''}`}
-                  onClick={() => handleModeSwitch(MODES.WRITE)}
-                >
-                  <EditOutlined /> 写作
-                </Tag>
-              </Tooltip>
-              <Tooltip title="修改：润色、翻译、精简、扩展">
-                <Tag
-                  color={mode === MODES.REVISE ? 'purple' : 'default'}
-                  className={`cursor-pointer ${mode !== MODES.REVISE ? 'opacity-60' : ''}`}
-                  onClick={() => handleModeSwitch(MODES.REVISE)}
-                >
-                  <ScissorOutlined /> 修改
-                </Tag>
-              </Tooltip>
-            </Space>
+
+            {/* 论文选择 */}
+            <Dropdown
+              dropdownRender={() => paperDropdownContent}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <Button className="!min-w-[160px]">
+                <Space>
+                  <FileTextOutlined />
+                  <span className="truncate max-w-[120px]">
+                    {selectedPaper?.title || '选择论文'}
+                  </span>
+                </Space>
+              </Button>
+            </Dropdown>
           </div>
-          {/* 快速操作 */}
-          <QuickAction mode={mode} onAction={handleQuickAction} />
         </div>
 
-        {/* 消息列表 */}
-        <div className="flex-1 overflow-y-auto px-4 py-2" style={{ minHeight: 0 }}>
-          {(Array.isArray(chatMessages) ? chatMessages : []).map((msg, index) => (
-            <MessageBubble key={index} message={msg} onCopy={handleCopy} />
-          ))}
-          {chatSending && (
-            <div className="flex gap-3 my-3">
-              <Avatar size={32} className="!bg-gradient-to-br from-blue-400 to-purple-500" icon={<RobotOutlined />} />
-              <div className="px-4 py-2 rounded-2xl bg-white border border-gray-200">
-                <Spin size="small" /> <Text type="secondary" className="ml-2">思考中...</Text>
+        {/* 主内容区 - 三栏布局 */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* 左侧：Agent选择 */}
+          <div className="w-64 bg-white border-r flex-shrink-0 overflow-y-auto">
+            <div className="p-4">
+              <Text type="secondary" className="text-xs uppercase tracking-wider">选择功能</Text>
+              <div className="mt-3 space-y-2">
+                {Object.values(AGENTS).map(agent => (
+                  <Card
+                    key={agent.key}
+                    size="small"
+                    className={`cursor-pointer transition-all hover:shadow-md ${
+                      activeAgent === agent.key ? 'ring-2' : ''
+                    }`}
+                    style={{
+                      borderColor: activeAgent === agent.key ? agent.color : undefined,
+                      ringColor: activeAgent === agent.key ? agent.color : undefined
+                    }}
+                    onClick={() => {
+                      setActiveAgent(activeAgent === agent.key ? null : agent.key)
+                      setAgentResult(null)
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center"
+                        style={{ backgroundColor: agent.color + '15', color: agent.color }}
+                      >
+                        {agent.icon}
+                      </div>
+                      <div>
+                        <div className="font-medium text-sm">{agent.name}</div>
+                        <div className="text-xs text-gray-400">{agent.description}</div>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
               </div>
             </div>
-          )}
-          <div ref={chatEndRef} />
+
+            {/* 已选论文信息 */}
+            {selectedPaper && (
+              <>
+                <Divider className="!my-2" />
+                <div className="p-4">
+                  <Text type="secondary" className="text-xs uppercase tracking-wider">当前论文</Text>
+                  <div className="mt-2">
+                    <div className="font-medium text-sm truncate">{selectedPaper.title}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      章节：{selectedPaper.sections?.length || 0} 个
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 中间：输入面板 */}
+          <div className="flex-1 flex flex-col bg-white overflow-hidden">
+            <div className="p-4 border-b flex-shrink-0">
+              <div className="flex items-center gap-2">
+                {activeAgent && (
+                  <>
+                    {AGENTS[activeAgent].icon}
+                    <Text strong>{AGENTS[activeAgent].name}</Text>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {renderAgentInput()}
+
+              {/* 结果展示 */}
+              {agentResult && (
+                <div className="mt-6">
+                  <Divider>
+                    <Space>
+                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                      <span>执行结果</span>
+                    </Space>
+                  </Divider>
+                  <Card className="bg-gray-50">
+                    <div
+                      className="whitespace-pre-wrap text-sm"
+                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                    >
+                      {agentResult}
+                    </div>
+                  </Card>
+                  <div className="mt-2 flex justify-end">
+                    <Button
+                      size="small"
+                      icon={<CopyOutlined />}
+                      onClick={() => handleCopy(agentResult)}
+                    >
+                      复制结果
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {agentLoading && (
+                <div className="mt-6 text-center">
+                  <Spin indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />} />
+                  <div className="mt-2 text-gray-500">AI正在处理中...</div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* 输入区域 */}
-        <div className="p-3 border-t bg-gray-50 flex-shrink-0">
-          {mode === MODES.REVISE && (
-            <div className="mb-2">
-              <Select
-                size="small"
-                value={reviseType}
-                onChange={setReviseType}
-                className="!w-32"
-                options={[
-                  { label: '润色', value: 'polish' },
-                  { label: '翻译', value: 'translate' },
-                  { label: '精简', value: 'shorten' },
-                  { label: '扩展', value: 'expand' },
-                ]}
-              />
-              <Text type="secondary" className="ml-2 text-xs">选择修改类型</Text>
-            </div>
-          )}
-          {mode === MODES.REVISE && (
-            <TextArea
-              placeholder="粘贴要修改的原文（可选，提供上下文可获得更好的结果）..."
-              rows={2}
-              value={contextText}
-              onChange={(e) => setContextText(e.target.value)}
-              className="mb-2 !text-sm"
-            />
-          )}
-          <Space.Compact className="w-full">
-            <Input
-              placeholder={mode === MODES.WRITE ? "输入选题或写作要求..." : "输入修改要求或直接发送要修改的内容..."}
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onPressEnter={() => handleChatSend()}
-              disabled={chatSending || !selectedPaperId}
-            />
-            <Button
-              type="primary"
-              icon={<SendOutlined />}
-              onClick={handleChatSend}
-              loading={chatSending}
-              disabled={!selectedPaperId}
-            />
-          </Space.Compact>
-          <div className="flex justify-between items-center mt-2">
-            <Text type="secondary" className="text-xs">
-              {!selectedPaperId ? '请先选择论文项目' : `当前模式：${MODE_CONFIG[mode].label}`}
-            </Text>
-            <Button type="text" size="small" icon={<ClearOutlined />} onClick={handleClearChat}>
-              清空对话
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      {/* 右侧：当前论文信息 */}
-      <Card
-        className="w-64 flex-shrink-0 !rounded-lg"
-        title={
-          <Space>
-            <FileTextOutlined className="text-purple-500" />
-            <span className="text-sm">当前论文</span>
-          </Space>
-        }
-        styles={{ body: { padding: 0, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}}
-      >
-        {selectedPaper ? (
-          <div className="p-3">
-            <Text strong className="text-sm block mb-2">{selectedPaper.title}</Text>
-            <Text type="secondary" className="text-xs block mb-2">
-              章节：{selectedPaper.sections?.length || 0} 个
-            </Text>
-            <Divider className="!my-2" />
-            <Text strong className="text-xs">快速导航</Text>
-            <div className="mt-2 space-y-1">
-              <Button type="link" size="small" className="!p-0 !h-auto text-xs" icon={<EditOutlined />} onClick={() => window.location.href = '/writing'}>
-                前往写作
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="p-4 text-center">
-            <Text type="secondary" className="text-xs">未选择论文</Text>
-            <div className="mt-2">
-              <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
-                新建论文
-              </Button>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* 创建论文弹窗 */}
-      <Modal
-        title="新建论文"
-        open={isCreateModalOpen}
-        onCancel={() => setIsCreateModalOpen(false)}
-        onOk={handleCreatePaper}
-        okText="创建"
-      >
-        <div className="py-4 space-y-3">
-          <div>
+        {/* 新建论文弹窗 */}
+        <Modal
+          title="新建论文"
+          open={isCreateModalOpen}
+          onCancel={() => setIsCreateModalOpen(false)}
+          onOk={handleCreatePaper}
+          okText="创建"
+        >
+          <div className="py-4">
             <Text strong>论文标题</Text>
             <Input
               className="mt-2"
@@ -588,38 +536,9 @@ const AIAssistantPage = () => {
               onPressEnter={() => handleCreatePaper()}
             />
           </div>
-          <div>
-            <Text strong>保存到文件夹</Text>
-            <Select
-              className="mt-2 !w-full"
-              value={createPaperFolderId}
-              onChange={setCreatePaperFolderId}
-              options={folders.map(f => ({ label: f.name, value: f.id }))}
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* 新建文件夹弹窗 */}
-      <Modal
-        title="新建文件夹"
-        open={isFolderModalOpen}
-        onCancel={() => setIsFolderModalOpen(false)}
-        onOk={handleCreateFolder}
-        okText="创建"
-      >
-        <div className="py-4">
-          <Text strong>文件夹名称</Text>
-          <Input
-            className="mt-2"
-            placeholder="例如：研究笔记、参考文献"
-            value={newFolderName}
-            onChange={(e) => setNewFolderName(e.target.value)}
-            onPressEnter={() => handleCreateFolder()}
-          />
-        </div>
-      </Modal>
-    </div>
+        </Modal>
+      </div>
+    </App>
   )
 }
 

@@ -48,6 +48,7 @@ COPY src/ ./src/
 COPY docs/ ./docs/
 COPY tests/ ./tests/
 COPY readme.md .
+COPY config.yaml .
 COPY .env.example .env
 
 # 设置环境变量
@@ -66,8 +67,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# 默认启动命令
-CMD ["python", "-m", "src.agents_v2.demo"]
+# 默认启动命令 - 使用 src.main 入口
+CMD ["python", "-m", "src.main"]
 
 
 # ============================================
@@ -105,6 +106,7 @@ COPY src/ ./src/
 COPY docs/ ./docs/
 COPY tests/ ./tests/
 COPY readme.md .
+COPY config.yaml .
 COPY .env.example .env
 
 # 设置环境变量
@@ -124,8 +126,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# GPU启动命令
-CMD ["python", "-m", "src.agents_v2.demo"]
+# GPU启动命令 - 使用 src.main 入口
+CMD ["python", "-m", "src.main"]
 
 
 # ============================================
@@ -156,4 +158,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["python", "-m", "src.agents_v2.demo"]
+CMD ["python", "-m", "src.main"]

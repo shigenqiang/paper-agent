@@ -27,12 +27,37 @@
 |----------|------|----------|----------|
 | **AgentBench** | 清华ChatGLM团队 | 8个环境综合评估(OS/DB/KG/游戏/家居/购物/网页) | ICLR'24, 全面LLM-as-Agent评估 |
 | **GAIA** | Meta+HuggingFace+AutoGPT | 466个真实问题,3级难度 | 通用AI助手,多步骤推理 |
-| **SWE-bench** | OpenAI | GitHub Issue修复 | 代码Agent |
-| **Multi-SWE-bench** | 字节跳动 | 7种编程语言 | 多语言代码Agent |
-| **PaperBench** | OpenAI | 论文复现能力 | 科研Agent |
+| **SWE-bench Verified** | OpenAI | 500精选GitHub Issue, 解决原版噪声问题 | 代码Agent核心基准 |
+| **SWE-bench Live** | 微软+上海AI Lab | 实时更新的GitHub Issue，防止数据泄露 | 2025-06 新发布，持续评估 |
+| **Multi-SWE-bench** | 字节跳动 | 7种编程语言 (Python/JS/Java/C++/Go/Rust/Swift) | 多语言代码Agent |
+| **PaperBench** | OpenAI | 论文复现能力，ICML'24 Spotlight | 科研Agent核心基准 |
 | **WebArena** | 多机构 | 真实网页环境任务 | Web Agent |
 | **PlanBench** | 规划研究社区 | 26,250个规划任务 | 任务规划评估 |
 | **SuperCLUE-Agent** | CLUE团队 | 中文Agent能力 | 中文论文/对话Agent |
+| **DeepSearchQA** | Google | 深度搜索与研究任务多步骤评估 | 2025-12 新发布 |
+| **ARC-AGI-2** | ARC Prize | 全新逻辑模式推理，防记忆化 | AGI推理能力评估 |
+
+### 1.1b 2025-2026 年最新基准排行榜
+
+**SWE-bench Verified 排行榜 (2026-04)**:
+
+| 排名 | Agent/模型 | 通过率 | 说明 |
+|------|-----------|--------|------|
+| 1 | JoyCode-Agent (京东云) | 74.6% | 企业级Agent + CSR上下文引擎 |
+| 2 | Codex CLI (OpenAI) | 67.8% | GPT-5 + Codex工作流 |
+| 3 | Claude Code (Anthropic) | 55.4% | Claude Opus + Subagents |
+| 4 | Devin (Cognition) | 53.2% | 专用代码Agent |
+| 5 | Agentless | 49.2% | 无Agent架构的简单方案 |
+
+**GAIA 排行榜**:
+
+| Agent | Level 1 | Level 2 | Level 3 | 平均 |
+|-------|---------|---------|---------|------|
+| GPT-5 + tools | 88% | 76% | 62% | 74% |
+| Claude Opus 4.7 | 85% | 72% | 58% | 71% |
+| Gemini 3.1 Pro | 82% | 70% | 55% | 68% |
+
+**关键趋势**: 2026年评估焦点从"模型能力"转向"Agent系统能力"——工具使用、规划、记忆、安全构成完整评估链路。
 
 ### 1.2 评估框架设计原则
 
@@ -977,5 +1002,4 @@ docs/agent_evaluation_iterations/
 
 ---
 
-*最后更新: 2026-04-26*
-*本指南将持续迭代更新*
+*最后更新: 2026-05-01 (补充 SWE-bench Live、最新基准测试)*

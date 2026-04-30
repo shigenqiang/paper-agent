@@ -499,6 +499,14 @@ const WritingPage = () => {
                     if (paper) {
                       setProject(paper)
                       setPaperTitle(paper.title || '未命名论文')
+                      // 切换论文时重置章节选择
+                      if (paper.sections && paper.sections.length > 0) {
+                        setSelectedSection(paper.sections[0].id)
+                        setSectionContent(paper.sections[0].content || '')
+                      } else {
+                        setSelectedSection('')
+                        setSectionContent('')
+                      }
                     }
                   }}
                   options={papers.map(p => ({ label: p.title || '未命名', value: p.id }))}
@@ -560,6 +568,14 @@ const WritingPage = () => {
                   if (paper) {
                     setProject(paper)
                     setPaperTitle(paper.title || '未命名论文')
+                    // 切换论文时重置章节选择
+                    if (paper.sections && paper.sections.length > 0) {
+                      setSelectedSection(paper.sections[0].id)
+                      setSectionContent(paper.sections[0].content || '')
+                    } else {
+                      setSelectedSection('')
+                      setSectionContent('')
+                    }
                   }
                 }}
                 className="!w-48"
