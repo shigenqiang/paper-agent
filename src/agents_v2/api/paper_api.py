@@ -416,31 +416,43 @@ async def format_content(request: web.Request) -> web.Response:
         paper_id = request.match_info["id"]
         section_id = request.match_info["sectionId"]
 
+        # 解析请求体获取要格式化的内容
+        data = await request.json()
+        provided_content = data.get("content", "")
+
+        # 尝试获取论文，但即使论文不存在，只要有content就可以处理
         paper = get_paper_or_404(paper_id)
-        if not paper:
+        if not paper and not provided_content:
             return web.json_response({
                 "success": False,
-                "error": "Paper not found"
+                "error": "Paper not found and no content provided"
             }, status=404)
 
         # 获取章节信息
-        sections = paper.get("sections", []) or paper.get("outline", [])
         section_title = section_id
         section_content = ""
 
-        for s in sections:
-            if s.get("id") == section_id:
-                section_title = s.get("title", section_id)
-                section_content = s.get("content", "")
-                break
+        if paper:
+            sections = paper.get("sections", []) or paper.get("outline", [])
+            for s in sections:
+                if s.get("id") == section_id:
+                    section_title = s.get("title", section_id)
+                    section_content = s.get("content", "")
+                    break
 
+        # 如果章节内容为空但提供了content参数，使用提供的content
+        if not section_content and provided_content:
+            section_content = provided_content
+
+        # 如果仍然没有内容，返回错误
         if not section_content:
             return web.json_response({
                 "success": False,
                 "error": "章节内容为空"
             }, status=400)
 
-        # 使用 LLM 直接修正格式
+        # 直接调用 LanguagePolisherAgent 修正格式
+        from src.agents_v2.writing import LanguagePolisherAgent
         from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
 
         llm_config = LLMConfig(
@@ -451,46 +463,30 @@ async def format_content(request: web.Request) -> web.Response:
             base_url=DEFAULT_BASE_URL
         )
 
-        # 构建修正 prompt
-        prompt = f"""请修正以下学术论文内容中的公式和格式问题：
-
-## 章节标题
-{section_title}
-
-## 当前内容
-{section_content}
-
-## 修正要求
-1. 修正公式格式，确保 LaTeX 公式语法正确
-2. 统一格式风格（标题层级、段落间距等）
-3. 保持学术写作规范
-4. 只返回修正后的内容，不要解释
-
-请直接返回修正后的 Markdown 格式内容："""
-
         try:
-            from src.agents_v2.base_agent import get_llm_client
-            client = get_llm_client(llm_config)
-            response = client.chat.completions.create(
-                model=llm_config.model_name or "MiniMax-M2.7",
-                messages=[
-                    {"role": "system", "content": "你是一个专业的学术论文格式修正助手。"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=llm_config.temperature or 0.3,
-                max_tokens=4000
-            )
-            corrected_content = response.choices[0].message.content.strip()
-
-            return web.json_response({
-                "success": True,
-                "data": {
-                    "content": corrected_content,
-                    "section_id": section_id
-                },
+            agent = LanguagePolisherAgent(llm_config)
+            result = await agent.execute({
+                "text": section_content,
+                "language": "zh",
+                "polish_level": "medium"
             })
+
+            if result.success and result.result:
+                corrected_content = result.result.get("polished_text", section_content)
+                return web.json_response({
+                    "success": True,
+                    "data": {
+                        "content": corrected_content,
+                        "section_id": section_id
+                    },
+                })
+            else:
+                return web.json_response({
+                    "success": False,
+                    "error": result.error or "格式修正失败"
+                }, status=500)
         except Exception as llm_error:
-            logger.error(f"LLM format correction failed: {llm_error}")
+            logger.error(f"LanguagePolisherAgent format correction failed: {llm_error}")
             return web.json_response({
                 "success": False,
                 "error": f"格式修正失败: {str(llm_error)}"

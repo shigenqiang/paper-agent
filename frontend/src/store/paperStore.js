@@ -1,133 +1,71 @@
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+/**
+ * Paper Store - 统一导出
+ *
+ * 为了保持向后兼容，此文件重新导出各个拆分后的store。
+ * 新代码应直接从对应的store文件导入。
+ *
+ * 拆分后的store：
+ * - useProjectStore: 项目管理（sections, citations, status）
+ * - useChatStore: 对话消息（messages, isStreaming）
+ * - useLiteratureStore: 文献管理（literature）
+ * - useUIStore: UI状态（sidebarCollapsed, theme）
+ */
 
-const DEFAULT_SECTIONS = [
-  { id: '1', title: '第1章 引言', parentId: null, content: '' },
-  { id: '1-1', title: '1.1 研究背景', parentId: '1', content: '' },
-  { id: '1-2', title: '1.2 研究意义', parentId: '1', content: '' },
-  { id: '1-3', title: '1.3 研究目标', parentId: '1', content: '' },
-  { id: '2', title: '第2章 文献综述', parentId: null, content: '' },
-  { id: '2-1', title: '2.1 国内研究现状', parentId: '2', content: '' },
-  { id: '2-2', title: '2.2 国外研究现状', parentId: '2', content: '' },
-  { id: '3', title: '第3章 研究方法', parentId: null, content: '' },
-  { id: '4', title: '第4章 实验结果', parentId: null, content: '' },
-  { id: '5', title: '第5章 讨论', parentId: null, content: '' },
-  { id: '6', title: '第6章 结论', parentId: null, content: '' },
-]
+import { useProjectStore } from './projectStore'
+import { useChatStore } from './chatStore'
+import { useLiteratureStore } from './literatureStore'
+import { useUIStore } from './uiStore'
 
-export const usePaperStore = create(
-  persist(
-    (set, get) => ({
-  project: {
-    id: null,
-    title: '',
-    sections: DEFAULT_SECTIONS,
-    citations: [],
-    status: 'idle'
-  },
-  messages: [],
-  isStreaming: false,
-  literature: [],
-  sidebarCollapsed: false,
-  theme: 'light',
+// 向后兼容：保留原始的usePaperStore接口
+// @deprecated 请使用上述各个专门的store
+export const usePaperStore = () => {
+  console.warn('usePaperStore is deprecated. Please use useProjectStore, useChatStore, useLiteratureStore, or useUIStore instead.')
 
-  setProject: (project) => set({ project }),
+  // 返回一个合并的对象，保持原有接口
+  const projectStore = useProjectStore()
+  const chatStore = useChatStore()
+  const literatureStore = useLiteratureStore()
+  const uiStore = useUIStore()
 
-  setTitle: (title) => set((state) => ({
-    project: { ...state.project, title }
-  })),
-
-  addSection: (section) => set((state) => ({
-    project: {
-      ...state.project,
-      sections: [...state.project.sections, section]
-    }
-  })),
-
-  updateSection: (id, content) => set((state) => ({
-    project: {
-      ...state.project,
-      sections: state.project.sections.map(s =>
-        s.id === id ? { ...s, content } : s
-      )
-    }
-  })),
-
-  deleteSection: (id) => set((state) => ({
-    project: {
-      ...state.project,
-      sections: state.project.sections.filter(s => s.id !== id)
-    }
-  })),
-
-  addMessage: (message) => set((state) => ({
-    messages: [...state.messages, message]
-  })),
-
-  updateMessage: (id, updates) => set((state) => ({
-    messages: state.messages.map(m =>
-      m.id === id ? { ...m, ...updates } : m
-    )
-  })),
-
-  setStreaming: (isStreaming) => set({ isStreaming }),
-
-  addCitation: (citation) => set((state) => ({
-    project: {
-      ...state.project,
-      citations: [...state.project.citations, citation]
-    }
-  })),
-
-  addLiterature: (item) => set((state) => ({
-    literature: [...state.literature, item]
-  })),
-
-  deleteLiterature: (id) => set((state) => ({
-    literature: state.literature.filter(item => item.id !== id)
-  })),
-
-  setLiterature: (items) => set({ literature: items }),
-
-  updateLiterature: (id, updates) => set((state) => ({
-    literature: state.literature.map(l =>
-      l.id === id ? { ...l, ...updates } : l
-    )
-  })),
-
-  removeCitation: (id) => set((state) => ({
-    project: {
-      ...state.project,
-      citations: state.project.citations.filter(c => c.id !== id)
-    }
-  })),
-
-  toggleSidebar: () => set((state) => ({
-    sidebarCollapsed: !state.sidebarCollapsed
-  })),
-
-  setTheme: (theme) => set({ theme }),
-
-  resetProject: () => set({
-    project: {
-      id: null,
-      title: '',
-      sections: DEFAULT_SECTIONS,
-      citations: [],
-      status: 'idle'
+  return {
+    // Project state
+    project: projectStore.project,
+    setProject: projectStore.setProject,
+    setTitle: projectStore.setTitle,
+    addSection: projectStore.addSection,
+    updateSection: projectStore.updateSection,
+    deleteSection: projectStore.deleteSection,
+    addCitation: projectStore.addCitation,
+    removeCitation: projectStore.removeCitation,
+    resetProject: () => {
+      projectStore.resetProject()
+      chatStore.resetChat()
     },
-    messages: [],
-    isStreaming: false
-  })
-}),
-    {
-      name: 'paper-agent-storage', // storage key
-      partialize: (state) => ({
-        literature: state.literature,
-        project: state.project,
-        messages: state.messages,
-        theme: state.theme,
-      }), // only persist these fields
-    }
-  )
-)
+
+    // Chat state
+    messages: chatStore.messages,
+    addMessage: chatStore.addMessage,
+    updateMessage: chatStore.updateMessage,
+    isStreaming: chatStore.isStreaming,
+    setStreaming: chatStore.setStreaming,
+
+    // Literature state
+    literature: literatureStore.literature,
+    addLiterature: literatureStore.addLiterature,
+    deleteLiterature: literatureStore.deleteLiterature,
+    setLiterature: literatureStore.setLiterature,
+    updateLiterature: literatureStore.updateLiterature,
+
+    // UI state
+    sidebarCollapsed: uiStore.sidebarCollapsed,
+    toggleSidebar: uiStore.toggleSidebar,
+    theme: uiStore.theme,
+    setTheme: uiStore.setTheme,
+  }
+}
+
+// 导出各个独立的store供新代码使用
+export { useProjectStore } from './projectStore'
+export { useChatStore } from './chatStore'
+export { useLiteratureStore } from './literatureStore'
+export { useUIStore } from './uiStore'

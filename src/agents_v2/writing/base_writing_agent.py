@@ -35,14 +35,8 @@ class WritingOutput(BaseModel):
     quality_score: float = Field(0.0, description="质量评分")
 
 
-class LLMConfig(BaseModel):
-    """LLM配置"""
-    provider: str = Field(default="openai", description="LLM提供商")
-    model_name: str = Field(default="gpt-4", description="模型名称")
-    temperature: float = Field(default=0.7, description="温度参数")
-    max_tokens: int = Field(default=4096, description="最大token数")
-    api_key: Optional[str] = Field(None, description="API密钥")
-    base_url: Optional[str] = Field(None, description="API基础URL")
+# 统一 LLMConfig - 从 base_agent 导入，避免重复定义
+from ..base_agent import LLMConfig
 
 
 class WritingAgentBase(ABC):

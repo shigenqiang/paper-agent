@@ -19,15 +19,30 @@ from .exceptions import ConfigurationError
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class LLMConfig:
-    """LLM配置"""
-    provider: str = "openai"
-    model_name: str = "minimax"
-    temperature: float = 0.7
-    max_tokens: int = 4096
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
+from typing import Optional
+
+# 导入统一的 LLMConfig (避免重复定义)
+# 实际定义在 base_agent.py
+# 此处重新导出以保持向后兼容
+try:
+    from ..base_agent import LLMConfig as BaseLLMConfig
+
+    @dataclass
+    class LLMConfig(BaseLLMConfig):
+        """LLM配置 - 统一使用 base_agent.py 中的定义"""
+        pass
+
+except ImportError:
+    # 如果 base_agent 导入失败，使用备用定义
+    @dataclass
+    class LLMConfig:
+        """LLM配置"""
+        provider: str = "openai"
+        model_name: str = "minimax"
+        temperature: float = 0.7
+        max_tokens: int = 4096
+        api_key: Optional[str] = None
+        base_url: Optional[str] = None
 
 
 @dataclass
