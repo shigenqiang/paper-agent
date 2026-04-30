@@ -2,13 +2,13 @@
 Agent链路追踪Mixin测试
 """
 import pytest
-from src.agents_v2.chain_tracer_mixin import (
+from src.agents_v2.monitoring.chain_tracer_mixin import (
     ChainTracerMixin,
     TracedAgentMixin,
     MultiAgentChainTracker,
     get_multi_agent_tracker
 )
-from src.agents_v2.chain_tracer import ChainPhase, ChainStatus
+from src.agents_v2.monitoring.chain_tracer import ChainPhase, ChainStatus
 
 
 class MockAgent(ChainTracerMixin):

@@ -194,7 +194,7 @@ class TestRetrievalV2:
     """Test Retrieval V2 Modules"""
 
     def test_enhanced_retrieval_chain(self):
-        from src.agents_v2.retrieval_v2.retrieval_chain import (
+        from src.agents_v2.retrieval.retrieval_chain import (
             EnhancedRetrievalChain,
             RetrievalStrategy,
             RetrievalResult
@@ -205,7 +205,7 @@ class TestRetrievalV2:
         assert chain.enable_expansion is True
 
     def test_retrieval_result_dataclass(self):
-        from src.agents_v2.retrieval_v2.retrieval_chain import RetrievalResult
+        from src.agents_v2.retrieval.retrieval_chain import RetrievalResult
 
         result = RetrievalResult(
             query="test",
@@ -216,13 +216,13 @@ class TestRetrievalV2:
         assert result.total_hits == 1
 
     def test_source_config(self):
-        from src.agents_v2.retrieval_v2.retrieval_chain import SourceConfig
+        from src.agents_v2.retrieval.retrieval_chain import SourceConfig
 
         source = SourceConfig(name="test", priority=1, max_results=10)
         assert source.enabled is True
 
     def test_rewrite_validator(self):
-        from src.agents_v2.retrieval_v2.rewrite_validator import (
+        from src.agents_v2.retrieval.rewrite_validator import (
             RewriteValidator,
             RewriteType,
             RewriteResult
@@ -238,7 +238,7 @@ class TestRetrievalV2:
         assert result.confidence >= 0
 
     def test_rewrite_type_enum(self):
-        from src.agents_v2.retrieval_v2.rewrite_validator import RewriteType
+        from src.agents_v2.retrieval.rewrite_validator import RewriteType
 
         assert RewriteType.EXPANSION.value == "expansion"
         assert RewriteType.RESTRICTION.value == "restriction"
@@ -246,7 +246,7 @@ class TestRetrievalV2:
         assert RewriteType.DECOMPOSITION.value == "decomposition"
 
     def test_empty_rewritten_query(self):
-        from src.agents_v2.retrieval_v2.rewrite_validator import (
+        from src.agents_v2.retrieval.rewrite_validator import (
             RewriteValidator,
             RewriteType
         )
@@ -256,7 +256,7 @@ class TestRetrievalV2:
         assert result.valid is False
 
     def test_batch_validate(self):
-        from src.agents_v2.retrieval_v2.rewrite_validator import (
+        from src.agents_v2.retrieval.rewrite_validator import (
             RewriteValidator,
             RewriteType
         )

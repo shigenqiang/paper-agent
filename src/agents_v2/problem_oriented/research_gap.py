@@ -675,11 +675,11 @@ class ResearchGapAnalyzer:
         """调用LLM"""
         try:
             # 使用全局LLM配置
-            from ..config import get_llm_config
+            from ..core.config import get_llm_config
             config = get_llm_config()
 
             # 创建简单的LLM调用
-            from src.agents_v2.base_agent import PaperAgentBase, AgentOutput, LLMConfig
+            from src.agents_v2.core.base_agent import PaperAgentBase, AgentOutput, LLMConfig
 
             class TempAgent(PaperAgentBase):
                 pass

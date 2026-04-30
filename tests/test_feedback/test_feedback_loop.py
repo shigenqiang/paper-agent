@@ -9,7 +9,7 @@ Tests for:
 """
 import pytest
 from datetime import datetime
-from src.agents_v2.feedback.feedback_loop import (
+from src.agents_v2._archive.feedback.feedback_loop import (
     FeedbackLoopProcessor,
     FeedbackClassifier,
     ActionableExtractor,

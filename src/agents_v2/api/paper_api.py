@@ -25,9 +25,60 @@ logger = logging.getLogger(__name__)
 DEFAULT_API_KEY = os.getenv("OPENAI_API_KEY", "dev-api-key")
 DEFAULT_BASE_URL = os.getenv("OPENAI_BASE_URL", None)
 
-# In-memory storage for demo (replace with database in production)
-PAPERS_STORAGE: Dict[str, Dict] = {}
-LITERATURE_STORAGE: Dict[str, Dict] = {}
+# 文件持久化路径
+STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+PAPERS_FILE = os.path.join(STORAGE_DIR, "papers_storage.json")
+LITERATURE_FILE = os.path.join(STORAGE_DIR, "literature_storage.json")
+
+# 确保存储目录存在
+os.makedirs(STORAGE_DIR, exist_ok=True)
+
+
+def load_papers_storage() -> Dict[str, Dict]:
+    """从文件加载论文存储"""
+    try:
+        if os.path.exists(PAPERS_FILE):
+            with open(PAPERS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                logger.info(f"Loaded {len(data)} papers from storage file")
+                return data
+    except Exception as e:
+        logger.warning(f"Failed to load papers from file: {e}")
+    return {}
+
+
+def save_papers_storage(storage: Dict[str, Dict]) -> None:
+    """保存论文存储到文件"""
+    try:
+        with open(PAPERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(storage, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save papers to file: {e}")
+
+
+def load_literature_storage() -> Dict[str, Dict]:
+    """从文件加载文献存储"""
+    try:
+        if os.path.exists(LITERATURE_FILE):
+            with open(LITERATURE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load literature from file: {e}")
+    return {}
+
+
+def save_literature_storage(storage: Dict[str, Dict]) -> None:
+    """保存文献存储到文件"""
+    try:
+        with open(LITERATURE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(storage, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save literature to file: {e}")
+
+
+# In-memory storage with file persistence
+PAPERS_STORAGE: Dict[str, Dict] = load_papers_storage()
+LITERATURE_STORAGE: Dict[str, Dict] = load_literature_storage()
 SETTINGS_STORAGE: Dict[str, Any] = {
     "language": "zh-CN",
     "theme": "light",
@@ -119,6 +170,8 @@ async def create_paper(request: web.Request) -> web.Response:
         }
 
         PAPERS_STORAGE[paper_id] = paper
+        save_papers_storage(PAPERS_STORAGE)
+        logger.info(f"Created paper {paper_id}, total papers: {len(PAPERS_STORAGE)}")
 
         return web.json_response({
             "success": True,
@@ -184,6 +237,9 @@ async def update_paper(request: web.Request) -> web.Response:
 
         paper["updated_at"] = datetime.now().isoformat()
 
+        save_papers_storage(PAPERS_STORAGE)
+        logger.info(f"Updated paper {paper_id}")
+
         return web.json_response({
             "success": True,
             "data": paper,
@@ -208,6 +264,8 @@ async def delete_paper(request: web.Request) -> web.Response:
             }, status=404)
 
         del PAPERS_STORAGE[paper_id]
+        save_papers_storage(PAPERS_STORAGE)
+        logger.info(f"Deleted paper {paper_id}, remaining papers: {len(PAPERS_STORAGE)}")
 
         return web.json_response({
             "success": True,
@@ -403,21 +461,84 @@ async def generate_content(request: web.Request) -> web.Response:
 
 async def format_content(request: web.Request) -> web.Response:
     """POST /papers/{id}/sections/{sectionId}/format - 修正格式（公式和格式）"""
+    from src.agents_v2.monitoring.chain_tracer import chain_trace, ChainPhase, ChainStatus
+
+    # 创建链路追踪上下文
+    trace_ctx = None
+    span_info = {}
+
     try:
         paper_id = request.match_info["id"]
         section_id = request.match_info["sectionId"]
 
-        # 解析请求体获取要格式化的内容
-        data = await request.json()
+        # 启动链路追踪
+        from src.agents_v2.monitoring.chain_tracer import get_chain_tracer
+        tracer = get_chain_tracer()
+        trace_ctx = tracer.start_trace()
+
+        # 创建输入处理span
+        input_span = trace_ctx.create_span(
+            phase=ChainPhase.INPUT,
+            operation="parse_format_request",
+            input_data={
+                "paper_id": paper_id,
+                "section_id": section_id,
+                "content_length": len(section_id)  # placeholder
+            }
+        )
+
+        logger.info(f"[FORMAT_REQUEST] paper_id={paper_id}, section_id={section_id}")
+
+        # 手动解析JSON，避免编码问题
+        body = await request.content.read()
+        body_text = body.decode('utf-8', errors='ignore')
+        try:
+            data = json.loads(body_text) if body_text else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        # 记录原始数据长度
+        input_span.add_attribute("body_length", len(body))
+        input_span.add_attribute("body_text_length", len(body_text))
+        input_span.add_attribute("data_keys", list(data.keys()))
+
         provided_content = data.get("content", "")
+        input_span.add_attribute("provided_content_length", len(provided_content))
+        input_span.add_attribute("provided_content_preview", provided_content[:100] if provided_content else "EMPTY")
+        input_span.add_attribute("raw_body_hex", body.hex()[:100] if body else "EMPTY")
+        input_span.add_attribute("body_text_preview", body_text[:100] if body_text else "EMPTY")
+        logger.info(f"[FORMAT_REQUEST] provided_content_length={len(provided_content)}, preview={provided_content[:50] if provided_content else 'EMPTY'}")
+        logger.info(f"[FORMAT_REQUEST] raw_body_hex={body.hex()[:80]}")
+
+        trace_ctx.finish_span(input_span.span_id)
+
+        # 创建获取论文span
+        fetch_span = trace_ctx.create_span(
+            phase=ChainPhase.RETRIEVAL,
+            operation="fetch_paper",
+            input_data={"paper_id": paper_id}
+        )
 
         # 尝试获取论文，但即使论文不存在，只要有content就可以处理
         paper = get_paper_or_404(paper_id)
+        fetch_span.add_attribute("paper_found", paper is not None)
+        fetch_span.add_attribute("has_sections", bool(paper.get("sections") if paper else False))
+        logger.info(f"[FORMAT_REQUEST] paper_id={paper_id}, found={paper is not None}")
+
+        trace_ctx.finish_span(fetch_span.span_id)
+
         if not paper and not provided_content:
             return web.json_response({
                 "success": False,
-                "error": "Paper not found and no content provided"
+                "error": "论文不存在或已过期，请刷新页面后重试。如果问题持续，请新建论文后重试。"
             }, status=404)
+
+        # 创建章节查找span
+        section_span = trace_ctx.create_span(
+            phase=ChainPhase.RETRIEVAL,
+            operation="find_section",
+            input_data={"section_id": section_id}
+        )
 
         # 获取章节信息
         section_title = section_id
@@ -425,24 +546,44 @@ async def format_content(request: web.Request) -> web.Response:
 
         if paper:
             sections = paper.get("sections", []) or paper.get("outline", [])
+            section_span.add_attribute("total_sections", len(sections))
             for s in sections:
                 if s.get("id") == section_id:
                     section_title = s.get("title", section_id)
                     section_content = s.get("content", "")
                     break
 
+        section_span.add_attribute("section_title", section_title)
+        section_span.add_attribute("section_content_length", len(section_content))
+        logger.info(f"[FORMAT_REQUEST] section_id={section_id}, title={section_title}, content_length={len(section_content)}")
+
+        trace_ctx.finish_span(section_span.span_id)
+
         # 如果章节内容为空但提供了content参数，使用提供的content
         if not section_content and provided_content:
             section_content = provided_content
+            logger.info(f"[FORMAT_REQUEST] Using provided content instead, length={len(section_content)}")
 
         # 如果仍然没有内容，返回错误
         if not section_content:
+            tracer.end_trace(ChainStatus.FAILED)
             return web.json_response({
                 "success": False,
                 "error": "章节内容为空"
             }, status=400)
 
-        # 直接调用 LanguagePolisherAgent 修正格式
+        # 创建LLM调用span
+        llm_span = trace_ctx.create_span(
+            phase=ChainPhase.GENERATION,
+            operation="language_polish",
+            input_data={
+                "text_length": len(section_content),
+                "language": "zh",
+                "polish_level": "medium"
+            }
+        )
+
+        # 直接调用 LanguagePolisherAgent 修正格式（使用writing中的融合版）
         from src.agents_v2.writing import LanguagePolisherAgent
         from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
 
@@ -456,14 +597,24 @@ async def format_content(request: web.Request) -> web.Response:
 
         try:
             agent = LanguagePolisherAgent(llm_config)
-            result = await agent.execute({
+            # 使用diagnose方法进行诊断和润色
+            result = await agent.diagnose({
                 "text": section_content,
                 "language": "zh",
-                "polish_level": "medium"
+                "domain": ""
             })
+
+            llm_span.add_attribute("result_success", result.success)
+            if result.error:
+                llm_span.add_attribute("result_error", result.error)
+
+            trace_ctx.finish_span(llm_span.span_id)
 
             if result.success and result.result:
                 corrected_content = result.result.get("polished_text", section_content)
+                logger.info(f"[FORMAT_REQUEST] Success, corrected_content_length={len(corrected_content)}")
+
+                tracer.end_trace(ChainStatus.COMPLETED)
                 return web.json_response({
                     "success": True,
                     "data": {
@@ -472,19 +623,27 @@ async def format_content(request: web.Request) -> web.Response:
                     },
                 })
             else:
+                logger.warning(f"[FORMAT_REQUEST] Agent failed: {result.error}")
+                tracer.end_trace(ChainStatus.FAILED)
                 return web.json_response({
                     "success": False,
                     "error": result.error or "格式修正失败"
                 }, status=500)
         except Exception as llm_error:
-            logger.error(f"LanguagePolisherAgent format correction failed: {llm_error}")
+            llm_span.set_error(llm_error)
+            trace_ctx.finish_span(llm_span.span_id)
+            logger.error(f"[FORMAT_REQUEST] LanguagePolisherAgent exception: {llm_error}")
+            tracer.end_trace(ChainStatus.FAILED)
             return web.json_response({
                 "success": False,
                 "error": f"格式修正失败: {str(llm_error)}"
             }, status=500)
 
     except Exception as e:
-        logger.error(f"Format content error: {e}")
+        logger.error(f"[FORMAT_REQUEST] Unexpected error: {e}", exc_info=True)
+        if trace_ctx:
+            trace_ctx.finish(error=Exception(str(e)))
+            tracer.end_trace(ChainStatus.FAILED)
         return web.json_response({
             "success": False,
             "error": str(e)
@@ -1199,7 +1358,7 @@ async def upload_paper_file(request: web.Request) -> web.Response:
 async def get_available_models(request: web.Request) -> web.Response:
     """GET /api/models - Get list of available LLM models"""
     try:
-        from src.agents_v2.config import (
+        from src.agents_v2.core.config import (
             get_all_models,
             get_default_model,
             MODEL_CATEGORIES,
@@ -1256,11 +1415,6 @@ def setup_paper_routes(app: web.Application):
     # Chat
     app.router.add_post('/api/papers/{paperId}/chat', chat)
     app.router.add_get('/api/papers/{paperId}/chat/history', get_chat_history)
-
-    # Knowledge Graph endpoints
-    app.router.add_get('/api/knowledge-graph/literature', get_literature_graph)
-    app.router.add_post('/api/knowledge-graph/generate', generate_literature_graph)
-    app.router.add_get('/api/knowledge-graph/entity/{entityId}', get_entity_relations)
 
     # Settings
     app.router.add_get('/api/settings', get_settings)

@@ -144,14 +144,11 @@ class DigestReportAgent(PaperAgentBase):
             else:  # monthly
                 report = await self._generate_monthly_report(sorted_papers, theme_groups, keywords, date_range, config)
 
-            # 5. 添加参考文献
-            references = self._format_references(sorted_papers)
-            final_report = report + "\n\n## 参考文献\n\n" + references
-
+                        # 5. 返回报告（不包含参考文献，由前端单独处理论文数据）
             return AgentOutput(
                 success=True,
                 result={
-                    "report": final_report,
+                    "report": report,
                     "theme_groups": {k: [{"title": p["title"], "citation_index": p.get("citation_index")} for p in v] for k, v in theme_groups.items()},
                     "paper_count": len(sorted_papers),
                     "themes": list(theme_groups.keys()),

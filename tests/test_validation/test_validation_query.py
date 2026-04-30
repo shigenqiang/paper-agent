@@ -4,7 +4,7 @@
 测试查询规范化功能
 """
 import pytest
-from src.agents_v2.validation.query_normalizer import (
+from src.agents_v2._archive.validation.query_normalizer import (
     QueryNormalizer,
     NormalizationResult,
     QueryType,

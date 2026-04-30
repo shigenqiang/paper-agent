@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-from ..exceptions import ValidationError
+from ..core.exceptions import ValidationError
 
 
 class IntentType(str, Enum):

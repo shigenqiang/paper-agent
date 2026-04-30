@@ -102,6 +102,12 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
         all_papers = []
         seen_ids = set()
 
+        # 根据报告类型决定每关键词搜索数量和总论文数量
+        paper_limits = {"daily": 20, "weekly": 40, "monthly": 60}
+        per_keyword_limit = {"daily": 15, "weekly": 15, "monthly": 15}
+        total_limit = paper_limits.get(digest_type, 20)
+        per_kw_limit = per_keyword_limit.get(digest_type, 15)
+
         for query in keywords:
             try:
                 # 根据用户选择的来源进行搜索
@@ -110,7 +116,7 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
                 for source in enabled_sources:
                     searcher = SearchFactory.get(source)
                     if searcher:
-                        result = await searcher.search(query, max_results=10)
+                        result = await searcher.search(query, max_results=per_kw_limit)
                         search_results.append(result)
 
                 # 合并去重
@@ -140,10 +146,9 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
                             "sources": r.sources,
                             "keywords": query.split()
                         })
-
-                # 限制数量
-                if len(all_papers) >= 50:
-                    break
+                        # 只有在超过总限制时才中断，而不是每个关键词后立即限制
+                        if len(all_papers) >= total_limit:
+                            break
 
             except Exception as e:
                 # API限流、超时等是预期内的错误，记录为WARNING而非ERROR
@@ -154,7 +159,11 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
                     logger.warning(f"Search error for query '{query}': {error_str}")
                 continue
 
-        return all_papers[:50]  # 最多返回50篇
+            # 如果已经达到总限制，跳出关键词循环
+            if len(all_papers) >= total_limit:
+                break
+
+        return all_papers
 
     except Exception as e:
         logger.error(f"Search papers for digest error: {e}")
@@ -520,6 +529,12 @@ async def generate_digest_content(digest_id: str, params: Dict):
 
         # 生成摘要
         summary = await generate_digest_summary(papers, params["type"])
+        
+        # 从报告内容中提取标题（第一行Markdown标题）
+        title_match = re.search(r'^#\s+(.+?)$', summary, re.MULTILINE)
+        if title_match:
+            digest["title"] = title_match.group(1).strip()
+        
         digest["summary"] = summary
         digest["content"] = summary  # 兼容旧字段
 

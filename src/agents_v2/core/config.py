@@ -8,7 +8,6 @@
 4. 配置合并
 """
 import os
-import yaml
 import logging
 from typing import Any, Dict, List, Optional
 from pathlib import Path
@@ -18,31 +17,28 @@ from .exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
+# yaml is optional - graceful fallback if not installed
+try:
+    import yaml
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+    logger.warning("pyyaml not installed, YAML config file support disabled")
+
 
 from typing import Optional
 
-# 导入统一的 LLMConfig (避免重复定义)
-# 实际定义在 base_agent.py
-# 此处重新导出以保持向后兼容
-try:
-    from ..base_agent import LLMConfig as BaseLLMConfig
-
-    @dataclass
-    class LLMConfig(BaseLLMConfig):
-        """LLM配置 - 统一使用 base_agent.py 中的定义"""
-        pass
-
-except ImportError:
-    # 如果 base_agent 导入失败，使用备用定义
-    @dataclass
-    class LLMConfig:
-        """LLM配置"""
-        provider: str = "openai"
-        model_name: str = "minimax"
-        temperature: float = 0.7
-        max_tokens: int = 4096
-        api_key: Optional[str] = None
-        base_url: Optional[str] = None
+# LLMConfig for configuration purposes (standalone dataclass, separate from base_agent.LLMConfig)
+@dataclass
+class LLMConfig:
+    """LLM配置"""
+    provider: str = "openai"
+    model_name: str = "minimax"
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    timeout: int = 120
 
 
 @dataclass
@@ -398,7 +394,7 @@ class ConfigLoader:
         config_data = self.DEFAULT_CONFIG.copy()
 
         # 2. 加载YAML文件（如果存在）
-        if config_path.exists():
+        if config_path.exists() and _HAS_YAML:
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     yaml_config = yaml.safe_load(f)
@@ -407,6 +403,8 @@ class ConfigLoader:
                         logger.info(f"Loaded config from {config_path}")
             except Exception as e:
                 logger.warning(f"Failed to load config from {config_path}: {e}")
+        elif config_path.exists() and not _HAS_YAML:
+            logger.warning(f"config.yaml exists but pyyaml not installed, using defaults")
 
         # 3. 环境变量覆盖
         config_data = self._apply_env_overrides(config_data)
@@ -465,6 +463,10 @@ class ConfigLoader:
 
     def save(self, config: AppConfig, config_file: str = "config.yaml"):
         """保存配置到YAML文件"""
+        if not _HAS_YAML:
+            logger.warning("Cannot save config: pyyaml not installed")
+            return
+
         config_path = self.config_dir / config_file
 
         config_data = {

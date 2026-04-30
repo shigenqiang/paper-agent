@@ -11,7 +11,7 @@ import pytest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
 
-from src.agents_v2.multi_agent import (
+from src.agents_v2._archive.multi_agent import (
     MultiAgentDebate,
     HierarchicalOrchestrator,
     AgentSkillLibrary,

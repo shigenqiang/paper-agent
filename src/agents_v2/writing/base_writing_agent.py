@@ -33,10 +33,13 @@ class WritingOutput(BaseModel):
     error: Optional[str] = Field(None, description="错误信息")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="元数据")
     quality_score: float = Field(0.0, description="质量评分")
+    # 诊断型Agent额外字段
+    diagnosed_issues: List[str] = Field(default_factory=list, description="发现的问题列表")
+    recommendations: List[str] = Field(default_factory=list, description="改进建议列表")
 
 
 # 统一 LLMConfig - 从 base_agent 导入，避免重复定义
-from ..base_agent import LLMConfig
+from ..core.base_agent import LLMConfig
 
 
 class WritingAgentBase(ABC):
@@ -93,7 +96,8 @@ class WritingAgentBase(ABC):
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
                     api_key=self.llm_config.api_key,
-                    base_url=self.llm_config.base_url
+                    base_url=self.llm_config.base_url,
+                    timeout=self.llm_config.timeout
                 )
             elif provider == "anthropic":
                 from langchain_anthropic import ChatAnthropic
@@ -101,7 +105,8 @@ class WritingAgentBase(ABC):
                     model=self.llm_config.model_name,
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
-                    api_key=self.llm_config.api_key
+                    api_key=self.llm_config.api_key,
+                    timeout=self.llm_config.timeout
                 )
             else:
                 raise ValueError(f"不支持的LLM提供商: {provider}")
@@ -137,12 +142,19 @@ class WritingAgentBase(ABC):
 
     def _clean_thinking_blocks(self, text: str) -> str:
         """清理思考块 (MiniMax等模型会输出)"""
-        import re
-        # 移除 <think>...</think> 块
-        cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-        # 清理多余的空白
-        cleaned = cleaned.strip()
-        return cleaned
+        if not text:
+            return text
+        try:
+            import re
+            # 检查是否包含思考块标记
+            marker = '<think>'
+            if marker not in text:
+                return text.strip()
+            cleaned = re.sub(r'<think>.*?', '', text, flags=re.DOTALL)
+            return cleaned.strip()
+        except Exception as e:
+            logger.warning(f"清理思考块失败: {e}")
+            return text
 
     def _setup_logging(self):
         """设置日志"""

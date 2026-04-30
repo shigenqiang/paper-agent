@@ -5,7 +5,7 @@ import pytest
 import json
 from unittest.mock import Mock, patch, AsyncMock
 
-from src.agents_v2.notification import (
+from src.agents_v2._archive.notification import (
     PushChannel,
     EmailChannel,
     SlackChannel,

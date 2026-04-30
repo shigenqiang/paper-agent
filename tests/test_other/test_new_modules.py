@@ -106,7 +106,7 @@ class TestErrorRecovery:
     """Test Error Recovery System"""
 
     def test_error_classification(self):
-        from src.agents_v2.error_recovery import GranularErrorRecovery, ErrorCategory
+        from src.agents_v2.unified.error_recovery import GranularErrorRecovery, ErrorCategory
 
         recovery = GranularErrorRecovery()
 
@@ -115,7 +115,7 @@ class TestErrorRecovery:
         assert isinstance(plan.steps, list)
 
     def test_retry_with_backoff_strategy(self):
-        from src.agents_v2.error_recovery import GranularErrorRecovery
+        from src.agents_v2.unified.error_recovery import GranularErrorRecovery
 
         recovery = GranularErrorRecovery()
         plan = recovery.get_recovery_plan(
@@ -128,7 +128,7 @@ class TestErrorRecovery:
         assert "wait" in step_names or "retry" in step_names
 
     def test_rate_limit_strategy(self):
-        from src.agents_v2.error_recovery import GranularErrorRecovery
+        from src.agents_v2.unified.error_recovery import GranularErrorRecovery
 
         recovery = GranularErrorRecovery()
         plan = recovery.get_recovery_plan(
@@ -139,7 +139,7 @@ class TestErrorRecovery:
         assert plan is not None
 
     def test_truncate_context_strategy(self):
-        from src.agents_v2.error_recovery import GranularErrorRecovery
+        from src.agents_v2.unified.error_recovery import GranularErrorRecovery
 
         recovery = GranularErrorRecovery()
         plan = recovery.get_recovery_plan(
@@ -150,7 +150,7 @@ class TestErrorRecovery:
         assert len(plan.steps) > 0
 
     def test_strategy_success_rate_recording(self):
-        from src.agents_v2.error_recovery import GranularErrorRecovery
+        from src.agents_v2.unified.error_recovery import GranularErrorRecovery
 
         recovery = GranularErrorRecovery()
         recovery.record_recovery_result("retry_with_backoff", True, 1.5)
@@ -219,7 +219,7 @@ class TestSkillEvolution:
     """Test Skill Evolution Engine"""
 
     def test_record_usage(self):
-        from src.agents_v2.evolution.skill_evolution import SkillEvolutionEngine
+        from src.agents_v2._archive.evolution.skill_evolution import SkillEvolutionEngine
 
         engine = SkillEvolutionEngine()
         engine.record_usage("writer", success=True, quality=0.8, latency=2.0)
@@ -229,7 +229,7 @@ class TestSkillEvolution:
         assert metrics.total_usage == 1
 
     def test_get_success_rate(self):
-        from src.agents_v2.evolution.skill_evolution import SkillEvolutionEngine
+        from src.agents_v2._archive.evolution.skill_evolution import SkillEvolutionEngine
 
         engine = SkillEvolutionEngine()
         for _ in range(5):
@@ -241,7 +241,7 @@ class TestSkillEvolution:
         assert rate == 0.5
 
     def test_improvement_suggestions(self):
-        from src.agents_v2.evolution.skill_evolution import SkillEvolutionEngine
+        from src.agents_v2._archive.evolution.skill_evolution import SkillEvolutionEngine
 
         engine = SkillEvolutionEngine(min_success_rate=0.8)
 
@@ -257,7 +257,7 @@ class TestTrustFeedbackSystem:
     """Test Trust Feedback System"""
 
     def test_record_feedback(self):
-        from src.agents_v2.trust.feedback import TrustFeedbackSystem
+        from src.agents_v2._archive.trust.feedback import TrustFeedbackSystem
 
         system = TrustFeedbackSystem()
         fb_id = system.record_feedback(
@@ -273,7 +273,7 @@ class TestTrustFeedbackSystem:
         assert trust.score > 0.5
 
     def test_trust_score_update(self):
-        from src.agents_v2.trust.feedback import TrustFeedbackSystem
+        from src.agents_v2._archive.trust.feedback import TrustFeedbackSystem
 
         system = TrustFeedbackSystem()
 

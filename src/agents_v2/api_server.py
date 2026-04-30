@@ -526,7 +526,7 @@ def create_app() -> web.Application:
     async def _get_settings():
         """获取设置"""
         try:
-            from src.agents_v2.config import get_settings
+            from src.agents_v2.core.config import get_settings
             return get_settings()
         except:
             return {"keywords": ["machine learning", "deep learning"]}

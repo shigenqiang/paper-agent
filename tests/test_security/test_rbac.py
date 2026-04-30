@@ -6,7 +6,7 @@ Tests for:
 - Permission: Permission definition
 """
 import pytest
-from src.agents_v2.rbac import (
+from src.agents_v2.core.rbac import (
     RBACManager,
     Permission,
     get_rbac_manager

@@ -5,7 +5,7 @@ import pytest
 import time
 from collections import defaultdict
 
-from src.agents_v2.recommendation import (
+from src.agents_v2._archive.recommendation import (
     UserInteraction,
     PaperProfile,
     UserProfile,

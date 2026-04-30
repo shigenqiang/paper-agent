@@ -10,7 +10,7 @@ Personalization模块测试
 """
 import pytest
 import time
-from src.agents_v2.personalization import (
+from src.agents_v2._archive.personalization import (
     ForgettingCurveMemory,
     MemoryStrength,
     MemoryItem,

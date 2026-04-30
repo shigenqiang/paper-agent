@@ -8,7 +8,7 @@ Tests for:
 """
 import pytest
 from datetime import datetime, timedelta
-from src.agents_v2.personalization import (
+from src.agents_v2._archive.personalization import (
     UserBehaviorAnalyzer,
     UserAction,
     UserPreferences,

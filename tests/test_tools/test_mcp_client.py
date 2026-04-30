@@ -2,7 +2,7 @@
 MCP Client 单元测试
 """
 import pytest
-from src.agents_v2.mcp.client import (
+from src.agents_v2._archive.mcp.client import (
     MCPClient,
     MCPClientPool,
     MCPConnectionState,

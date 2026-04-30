@@ -24,7 +24,7 @@ def test_cot_module_import():
     print("=" * 60)
 
     try:
-        from src.agents_v2.harness.agent_loop import (
+        from src.agents_v2.unified.agent_loop import (
             AgentLoop, COT_GUIDANCE, FEW_SHOT_EXAMPLES
         )
 
@@ -53,7 +53,7 @@ def test_agent_loop_cot_integration():
     print("Test 2: AgentLoop CoT Integration")
     print("=" * 60)
 
-    from src.agents_v2.harness.agent_loop import AgentLoop, COT_GUIDANCE, FEW_SHOT_EXAMPLES
+    from src.agents_v2.unified.agent_loop import AgentLoop, COT_GUIDANCE, FEW_SHOT_EXAMPLES
 
     # 检查类属性
     print(f"[CHECK] AgentLoop.enable_cot_guidance exists: {hasattr(AgentLoop, 'enable_cot_guidance')}")
@@ -104,7 +104,7 @@ def test_message_building():
     print("Test 4: Message Building Logic")
     print("=" * 60)
 
-    from src.agents_v2.harness.agent_loop import AgentLoop, COT_GUIDANCE, FEW_SHOT_EXAMPLES
+    from src.agents_v2.unified.agent_loop import AgentLoop, COT_GUIDANCE, FEW_SHOT_EXAMPLES
     from unittest.mock import MagicMock
     from langchain_core.messages import SystemMessage
 
@@ -143,7 +143,7 @@ def test_cot_config_switch():
     print("Test 5: CoT Config Switch")
     print("=" * 60)
 
-    from src.agents_v2.harness.agent_loop import AgentLoop
+    from src.agents_v2.unified.agent_loop import AgentLoop
     from unittest.mock import MagicMock
 
     mock_agent = MagicMock()

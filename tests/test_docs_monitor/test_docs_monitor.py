@@ -3,7 +3,7 @@
 """
 import pytest
 from pathlib import Path
-from src.agents_v2.docs_monitor import (
+from src.agents_v2.monitoring.docs_monitor import (
     DocsMonitor,
     DocInfo,
     DocStatus,

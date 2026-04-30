@@ -27,7 +27,7 @@ class AgentOutput(BaseModel):
 
 
 # 统一 LLMConfig - 从 base_agent 导入，避免重复定义
-from ..base_agent import LLMConfig
+from ..core.base_agent import LLMConfig
 
 
 class ProblemAgentBase(ABC):

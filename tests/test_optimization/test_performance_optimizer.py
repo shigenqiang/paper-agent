@@ -11,7 +11,7 @@ Tests for:
 import pytest
 import asyncio
 import time
-from src.agents_v2.optimization import (
+from src.agents_v2._archive.optimization import (
     PerformanceOptimizer,
     PerformanceMetrics,
     ObjectPool,

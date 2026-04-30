@@ -6,7 +6,7 @@ PubMed MCP 单元测试
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.agents_v2.mcp.search.pubmed_mcp import (
+from src.agents_v2._archive.mcp.search.pubmed_mcp import (
     PubmedMCPClient,
     PubmedArticle,
     PubmedSearchResult,

@@ -2,7 +2,7 @@
 全链路追踪测试
 """
 import pytest
-from src.agents_v2.chain_tracer import (
+from src.agents_v2.monitoring.chain_tracer import (
     ChainTracer,
     ChainTraceContext,
     ChainSpan,

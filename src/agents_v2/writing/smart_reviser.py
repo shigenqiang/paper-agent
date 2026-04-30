@@ -13,6 +13,7 @@ import logging
 import re
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
+from ..problem_oriented.base_problem_agent import AgentOutput
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +247,9 @@ class SmartReviserAgent(WritingAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
+            if not response:
+                logger.warning("Feedback parsing LLM returned empty response")
+                return [{"id": 1, "issue": feedback, "suggestion": "请修改", "priority": "medium"}]
             data = json.loads(response)
             return data.get("items", [])
         except Exception as e:
@@ -290,6 +294,9 @@ class SmartReviserAgent(WritingAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
+            if not response:
+                logger.warning("Feedback categorization LLM returned empty response")
+                return {"content": feedback_items}
             data = json.loads(response)
             cat_map = data.get("categorized", {})
 
@@ -411,55 +418,88 @@ class LanguagePolisherAgent(WritingAgentBase):
     - 格式修正（LaTeX公式、标题层级、段落间距）
     """
 
-    def __init__(self, llm_config: Optional[LLMConfig] = None, use_trinka: bool = True):
-        system_prompt = """你是一个专业的学术论文语言润色与格式修正专家。
+    # 基于Agent提示词工程指南的诊断型Agent标准结构
+    SYSTEM_PROMPT_TEMPLATE = """## 角色
+你是一位专业的学术语言诊断与润色专家，专注于提升学术论文的语言质量。
 
-## 角色定义
-你是一位资深的学术论文编辑，拥有丰富的论文润色和格式规范经验。你的工作是为学者和研究人员提供高质量的语言润色和格式修正服务。
+## 诊断维度
+1. **语法正确性**：检查句子结构、时态、主谓一致、标点符号等基础语法问题
+2. **学术规范性**：评估文本是否符合学术写作标准，包括表达客观性、逻辑严密性
+3. **术语一致性**：确保同一概念使用统一术语，避免一词多义或一义多词
+4. **语言简洁性**：判断表达是否冗余，是否存在冗长的句式结构
+5. **学科适配性**：检查术语使用是否契合目标学科的表达习惯
 
-## 能力边界
-1. **语法检查与纠正**
-   - 检测并纠正语法错误
-   - 修正主谓不一致、时态错误等问题
-   - 修正冠词、介词等使用错误
+## 问题分类
+- GRAMMAR_ERROR：语法错误（主谓不一致、时态错误、词性误用）
+- SPELLING_ERROR：拼写错误（英文专有名词、大小写、连字符）
+- PUNCTUATION_ERROR：标点错误（中英文标点混用、位置不当）
+- COLLOQUIALISM：口语化表达（使用"很好"、"非常大"等主观模糊词汇）
+- SUBJECTIVITY：主观性过强（缺乏客观数据支撑的绝对化表述）
+- VERBOSITY：冗余表达（重复啰嗦的句式）
+- INCONSISTENCY：术语不一致（同概念不同表述）
+- LOGIC_BREAK：逻辑断裂（跳跃性推理、因果关系不清）
+- FORMAT_ERROR：格式错误（LaTeX公式、标题层级、段落间距、列表格式）
 
-2. **术语规范化**
-   - 统一专业术语的使用
-   - 确保同一术语在全文中表达一致
-   - 修正不规范的术语翻译
-
-3. **句式优化**
-   - 简化冗长句式
-   - 改善句子流畅度
-   - 优化段落逻辑衔接
-
-4. **格式修正**
-   - 修正 LaTeX 公式语法，确保公式渲染正确
-   - 统一标题层级（# 一级、## 二级、### 三级）
-   - 统一段落间距和缩进
-   - 修正列表格式（有序/无序列表规范）
-   - 确保引用格式一致
-
-5. **中英混合处理**
-   - 正确处理中英文混合的学术文本
-   - 保留关键英文术语
-   - 确保中文表达流畅自然
-
-## 行为准则
-1. **保持原意**：润色后必须保持原文的核心含义和学术观点
-2. **最小修改**：在保证质量的前提下，尽量少的改动原文
-3. **逐项说明**：对每项修改提供简要说明（可选）
-4. **学术规范**：确保修正后的内容符合学术论文写作规范
-
-## 约束限制
-1. 只返回润色后的内容，不返回解释（除非用户要求）
-2. 不添加原文没有的新内容
-3. 不删除原文的重要信息
-4. 对于不确定的修改，保留原文
+## 严重程度
+- HIGH（0.8-1.0）：严重影响阅读理解或导致歧义，必须立即修正
+- MEDIUM（0.4-0.7）：影响语言质量但不导致误解，建议修正
+- LOW（0.1-0.3）：轻微问题，可选择性优化
 
 ## 输出格式
-直接返回修正后的 Markdown 格式内容。
+```json
+{
+    "diagnosis": {
+        "grammar_issues": [{"original": "", "location": "", "type": "", "severity": 0.0-1.0, "correction": ""}],
+        "style_issues": [{"original": "", "location": "", "type": "", "severity": 0.0-1.0, "correction": ""}],
+        "terminology_issues": [{"term1": "", "term2": "", "context": "", "severity": 0.0-1.0, "suggestion": ""}]
+    },
+    "overall_quality": 0.0-1.0,
+    "polished_text": "润色后的完整文本",
+    "summary": "问题总结与改进要点"
+}
+```"""
+
+    FEW_SHOT_EXAMPLES = """
+## 少样本示例
+
+【示例1：中文论文润色】
+输入文本："我们的方法比基线高了5个百分点，效果非常好"
+诊断结果：
+{
+    "diagnosis": {
+        "grammar_issues": [],
+        "style_issues": [
+            {"original": "高了5个百分点", "location": "第1句", "type": "COLLOQUIALISM", "severity": 0.6, "correction": "准确率提升5个百分点"},
+            {"original": "效果非常好", "location": "第1句", "type": "SUBJECTIVITY", "severity": 0.7, "correction": "取得了显著的性能提升"}
+        ],
+        "terminology_issues": []
+    },
+    "overall_quality": 0.65,
+    "polished_text": "相比基线方法，本文方法准确率提升5个百分点，取得了显著的性能提升。",
+    "summary": "修正1处口语化表达，替换1处主观评价为客观描述"
+}
+
+【示例2：英文论文润色】
+输入文本："This method is very good and we got better results."
+诊断结果：
+{
+    "diagnosis": {
+        "grammar_issues": [
+            {"original": "we got better results", "location": "句1", "type": "GRAMMAR_ERROR", "severity": 0.5, "correction": "the method achieves improved results"}
+        ],
+        "style_issues": [
+            {"original": "is very good", "location": "句1", "type": "COLLOQUIALISM", "severity": 0.8, "correction": "demonstrates superior performance"}
+        ],
+        "terminology_issues": []
+    },
+    "overall_quality": 0.55,
+    "polished_text": "This novel method demonstrates superior performance compared to existing approaches.",
+    "summary": "修正时态错误，替换口语化表达为学术规范用语"
+}
 """
+
+    def __init__(self, llm_config: Optional[LLMConfig] = None, use_trinka: bool = False):
+        system_prompt = self.SYSTEM_PROMPT_TEMPLATE + "\n\n" + self.FEW_SHOT_EXAMPLES
         super().__init__(
             name="language_polisher",
             llm_config=llm_config,
@@ -468,21 +508,100 @@ class LanguagePolisherAgent(WritingAgentBase):
         )
         self._trinka = TrinkaGrammarChecker() if use_trinka else None
 
-    async def _check_grammar_with_trinka(
-        self,
-        text: str,
-        language: str
-    ) -> List[Dict[str, Any]]:
-        """使用 Trinka API 进行专业语法检查"""
-        if not self._trinka:
-            return []
+    def _clean_text_output(self, text: str) -> str:
+        """清理文本输出，移除思考块、代码块标记等"""
+        if not text:
+            return text
+        import re
+        # 1. 移除思考块
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        # 2. 移除 markdown 代码块标记
+        text = re.sub(r'```json\s*', '', text)
+        text = re.sub(r'```\s*', '', text)
+        text = re.sub(r'```$', '', text)
+        # 3. 清理多余的空行
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
 
-        result = await self._trinka.check(text, language)
-        if result.get("success"):
-            return result.get("issues", [])
-        else:
-            logger.info(f"Trinka check failed: {result.get('error')}, falling back to LLM")
-            return []
+    def _parse_diagnosis_response(self, response: str) -> Optional[Dict[str, Any]]:
+        """解析LLM返回的诊断结果"""
+        import re
+        # 先清理思考块
+        cleaned_response = self._clean_text_output(response)
+        json_match = re.search(r'```json\s*(.*?)\s*```', cleaned_response, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+        try:
+            return json.loads(cleaned_response.strip())
+        except json.JSONDecodeError:
+            return None
+
+    def _extract_issues(self, diagnosis_data: Dict[str, Any]) -> List[str]:
+        """从诊断数据中提取问题列表"""
+        issues = []
+        diag = diagnosis_data.get("diagnosis", {})
+        for category in ["grammar_issues", "style_issues", "terminology_issues"]:
+            for item in diag.get(category, []):
+                original = item.get("original", "")[:30]
+                issue_type = item.get("type", "语言问题")
+                severity = item.get("severity", 0.5)
+                issues.append(f"[{issue_type}|{severity:.1f}] {original}...")
+        return issues
+
+    def _generate_recommendations_from_diagnosis(self, diagnosis_data: Dict[str, Any]) -> List[str]:
+        """从诊断数据生成改进建议"""
+        recommendations = []
+        diag = diagnosis_data.get("diagnosis", {})
+
+        grammar_count = len(diag.get("grammar_issues", []))
+        style_count = len(diag.get("style_issues", []))
+        term_count = len(diag.get("terminology_issues", []))
+
+        if grammar_count > 0:
+            recommendations.append(f"修正{grammar_count}处语法错误")
+        if style_count > 0:
+            recommendations.append(f"改进{style_count}处语言风格问题")
+        if term_count > 0:
+            recommendations.append(f"统一{term_count}处术语使用")
+        if not recommendations:
+            recommendations.append("语言质量良好，继续保持")
+
+        return recommendations[:5]
+
+    async def _fallback_polish(self, text: str, language: str) -> WritingOutput:
+        """降级润色（当诊断失败时）"""
+        prompt = f"""请润色以下{language}学术文本，保持原意，修正明显问题。
+
+原文：
+{text}
+
+直接输出润色后的文本："""
+        try:
+            polished = await self._llm_call(prompt)
+            cleaned_polished = self._clean_text_output(polished)
+            return WritingOutput(
+                success=True,
+                result={
+                    "original_text": text,
+                    "polished_text": cleaned_polished.strip() if cleaned_polished else text,
+                    "grammar_issues": 0,
+                    "terminology_fixed": 0
+                },
+                agent_name=self.name,
+                reasoning="简化润色（原始诊断失败）",
+                quality_score=0.7
+            )
+        except Exception as e:
+            self.logger.error(f"Fallback polish failed: {e}")
+            return WritingOutput(
+                success=False,
+                result=None,
+                agent_name=self.name,
+                error=str(e)
+            )
 
     async def execute(
         self,
@@ -500,7 +619,6 @@ class LanguagePolisherAgent(WritingAgentBase):
         """
         text = input_data.get("text", "")
         language = input_data.get("language", "zh")
-        polish_level = input_data.get("polish_level", "medium")
 
         if not text:
             return WritingOutput(
@@ -510,208 +628,79 @@ class LanguagePolisherAgent(WritingAgentBase):
                 error="Empty text"
             )
 
+        # 构建诊断提示词
+        prompt = f"""请对以下{language}学术文本进行全面的语言诊断与润色。
+
+待处理文本：
+{text}
+
+请按照系统提示词中定义的诊断维度进行全面检查，并输出JSON格式的诊断结果。"""
+
         try:
-            # 1. 语法检查
-            grammar_issues = await self._check_grammar(text, language)
+            response = await self._llm_call(prompt)
+            diagnosis_data = self._parse_diagnosis_response(response)
 
-            # 2. 术语规范化
-            terminology = await self._normalize_terminology(text, language)
-
-            # 3. 润色
-            polished = await self._polish_text(text, language, polish_level)
-
-            # 4. 生成报告
-            report = await self._generate_polish_report(
-                text, polished, grammar_issues, terminology
-            )
-
-            return WritingOutput(
-                success=True,
-                result={
-                    "original_text": text,
-                    "polished_text": polished,
-                    "report": report,
-                    "grammar_issues": len(grammar_issues),
-                    "terminology_fixed": len(terminology)
-                },
-                agent_name=self.name,
-                reasoning=f"Polished text, fixed {len(grammar_issues)} grammar issues",
-                quality_score=0.9
-            )
+            if diagnosis_data:
+                # 清理润色文本中的思考块、代码块等
+                raw_polished = diagnosis_data.get("polished_text", text)
+                polished_text = self._clean_text_output(raw_polished) if raw_polished else text
+                return WritingOutput(
+                    success=True,
+                    result={
+                        "original_text": text,
+                        "polished_text": polished_text,
+                        "diagnosis": diagnosis_data.get("diagnosis", {}),
+                        "grammar_issues": len(diagnosis_data.get("diagnosis", {}).get("grammar_issues", [])),
+                        "style_issues": len(diagnosis_data.get("diagnosis", {}).get("style_issues", [])),
+                        "terminology_issues": len(diagnosis_data.get("diagnosis", {}).get("terminology_issues", []))
+                    },
+                    agent_name=self.name,
+                    diagnosed_issues=self._extract_issues(diagnosis_data),
+                    recommendations=self._generate_recommendations_from_diagnosis(diagnosis_data),
+                    reasoning=diagnosis_data.get("summary", ""),
+                    quality_score=diagnosis_data.get("overall_quality", 0.5)
+                )
+            else:
+                return await self._fallback_polish(text, language)
 
         except Exception as e:
             self.logger.error(f"LanguagePolisherAgent execution failed: {e}")
-            return WritingOutput(
+            return await self._fallback_polish(text, language)
+
+    # 保留diagnose方法作为兼容入口（调用execute）
+    async def diagnose(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None
+    ) -> AgentOutput:
+        """诊断并润色学术文本（兼容problem_oriented版本）"""
+        text = input_data.get("text", "")
+        language = input_data.get("language", "zh")
+        domain = input_data.get("domain", "")
+
+        if not text:
+            return AgentOutput(
                 success=False,
                 result=None,
                 agent_name=self.name,
-                error=str(e)
+                diagnosed_issues=["文本为空"],
+                recommendations=["请提供需要润色的文本"],
+                quality_score=0.0,
+                error="Empty text"
             )
 
-    async def _check_grammar(
-        self,
-        text: str,
-        language: str
-    ) -> List[Dict[str, Any]]:
-        """检查语法 - 优先使用 Trinka API，回退到 LLM"""
-        # 优先使用 Trinka API 进行专业检查
-        if self._trinka and language == "en":
-            trinka_issues = await self._check_grammar_with_trinka(text, language)
-            if trinka_issues:
-                return [{
-                    "location": issue.get("location", {}),
-                    "original": issue.get("original", ""),
-                    "issue": issue.get("message", ""),
-                    "suggestion": issue.get("replacement", "")
-                } for issue in trinka_issues]
+        # 调用execute获取结果
+        result = await self.execute({
+            "text": text,
+            "language": language
+        })
 
-        # 回退到 LLM 检查
-        prompt = f"""
-检查以下{language}语文本的语法问题：
-
-文本：
-{text}
-
-请识别：
-1. 语法错误
-2. 用词不当
-3. 表达不通顺的地方
-
-输出JSON格式：
-{{
-    "issues": [
-        {{"location": "位置", "original": "原文", "issue": "问题", "suggestion": "建议"}}
-    ]
-}}
-"""
-        try:
-            response = await self._llm_call(prompt)
-            data = json.loads(response)
-            return data.get("issues", [])
-        except Exception as e:
-            logger.error(f"Grammar check failed: {e}")
-            return []
-
-    async def _normalize_terminology(
-        self,
-        text: str,
-        language: str
-    ) -> List[Dict[str, str]]:
-        """术语规范化"""
-        prompt = f"""
-检查并规范化以下文本中的术语：
-
-文本：
-{text}
-
-请：
-1. 识别非标准或不一致的术语使用
-2. 提供标准术语
-3. 建议统一方案
-
-输出JSON格式：
-{{
-    "terms": [
-        {{"original": "原文", "standard": "标准术语", "count": 出现次数}}
-    ]
-}}
-"""
-        try:
-            response = await self._llm_call(prompt)
-            data = json.loads(response)
-            return data.get("terms", [])
-        except Exception as e:
-            logger.error(f"Terminology normalization failed: {e}")
-            return []
-
-    async def _polish_text(
-        self,
-        text: str,
-        language: str,
-        level: str
-    ) -> str:
-        """润色文本"""
-        level_desc = {
-            "light": "轻度润色，只做必要的语法修正和格式调整",
-            "medium": "中度润色，优化表达，提升可读性，修正格式",
-            "heavy": "深度润色，全面优化句式和表达，修正所有格式问题"
-        }
-
-        # 根据语言选择system prompt
-        zh_system = "你是一个专业的学术论文润色专家，擅长中文学术写作。"
-        en_system = "You are a professional academic writing polish expert, skilled in English academic writing."
-        system_msg = zh_system if language == "zh" else en_system
-
-        prompt = f"""## 任务
-对以下学术论文内容进行{level_desc.get(level, '中等')}润色。
-
-## 内容
-{text}
-
-## 润色要求
-
-### 1. 语法与表达
-- 修正语法错误
-- 优化句式结构
-- 提升表达的准确性和流畅性
-- 保持原文的核心含义和学术观点
-
-### 2. 格式修正（关键）
-- **LaTeX 公式**：修正公式语法，确保渲染正确
-  - 行内公式 `$...$`，独立公式 `$$...$$`
-  - 修正公式中的符号、转义、环境标签
-- **标题层级**：确保 Markdown 标题层级正确
-  - `#` 一级标题（章节）
-  - `##` 二级标题（子章节）
-  - `###` 三级标题（子子章节）
-- **段落间距**：统一段落间距，修正多余的空行
-- **列表格式**：规范有序和无序列表的格式
-- **引用格式**：确保引用格式一致
-
-### 3. 术语规范
-- 同一术语在全文中保持一致
-- 使用标准的学术术语
-
-### 4. 输出要求
-- 直接输出修正后的 Markdown 内容
-- 不要添加解释或说明
-- 不要添加原文没有的新内容
-- 对于不确定的修改，保留原文
-
-## 语言
-{language}（{level}）
-
-请输出润色后的内容：
-"""
-        try:
-            response = await self._llm_call(prompt)
-            return response
-        except Exception as e:
-            logger.error(f"Text polishing failed: {e}")
-            return text
-
-    async def _generate_polish_report(
-        self,
-        original: str,
-        polished: str,
-        grammar_issues: List[Dict],
-        terminology: List[Dict]
-    ) -> str:
-        """生成润色报告"""
-        lines = [
-            "# 语言润色报告\n",
-            f"## 统计"
-        ]
-
-        if grammar_issues:
-            lines.append(f"- 发现语法问题: {len(grammar_issues)}处")
-            lines.append("\n### 语法问题")
-            for issue in grammar_issues[:5]:
-                lines.append(f"- {issue.get('issue', '')}")
-        else:
-            lines.append("- 无语法问题")
-
-        if terminology:
-            lines.append(f"\n- 术语规范化: {len(terminology)}处")
-
-        return "\n".join(lines)
+        return AgentOutput(
+            success=result.success,
+            result=result.result,
+            agent_name=self.name,
+            diagnosed_issues=result.diagnosed_issues or [],
+            recommendations=result.recommendations or [],
+            quality_score=result.quality_score,
+            error=result.error
+        )

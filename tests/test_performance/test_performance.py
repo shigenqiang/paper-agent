@@ -13,7 +13,7 @@ class TestPerformanceBenchmarks:
 
     def test_validator_performance(self):
         """测试验证器性能"""
-        from src.agents_v2.validators import InputValidator, ValidationType
+        from src.agents_v2.core.validators import InputValidator, ValidationType
 
         validator = InputValidator()
         validator.add_rule("name", ValidationType.STRING, min_length=1, max_length=100)
@@ -103,7 +103,7 @@ class TestPerformanceBenchmarks:
 
     def test_sanitizer_performance(self):
         """测试输入清理性能"""
-        from src.agents_v2.security import InputSanitizer
+        from src.agents_v2.core.security import InputSanitizer
 
         sanitizer = InputSanitizer()
         test_input = "<script>alert('xss');</script>" + "a" * 1000
@@ -204,7 +204,7 @@ class TestConcurrentStability:
     @pytest.mark.asyncio
     async def test_rate_limiter_stability(self):
         """测试限流器稳定性"""
-        from src.agents_v2.alerts import RateLimiter
+        from src.agents_v2.monitoring.alerts import RateLimiter
 
         limiter = RateLimiter(max_requests=10, window=1)
 

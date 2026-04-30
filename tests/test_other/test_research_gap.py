@@ -3,7 +3,7 @@
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.agents_v2.research_gap import (
+from src.agents_v2.problem_oriented.research_gap import (
     ResearchGapAnalyzer,
     ResearchGap,
     GapAnalysisResult,

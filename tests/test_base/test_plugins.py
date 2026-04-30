@@ -4,7 +4,7 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, patch
-from src.agents_v2.plugins import (
+from src.agents_v2.core.plugins import (
     PluginType,
     PluginState,
     PluginMetadata,
@@ -348,7 +348,7 @@ class TestGlobalManager:
     def test_get_plugin_manager(self):
         """测试获取全局管理器"""
         # 重置全局实例
-        import src.agents_v2.plugins as plugins_module
+        import src.agents_v2.core.plugins as plugins_module
         plugins_module._plugin_manager = None
 
         manager1 = get_plugin_manager()

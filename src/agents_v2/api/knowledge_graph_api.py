@@ -6,6 +6,7 @@
 - POST /knowledge-graph/generate - 生成知识图谱
 - GET /knowledge-graph/entity/{entityId} - 获取实体关联
 """
+import json
 import logging
 import time
 import re
@@ -260,8 +261,8 @@ async def handle_get_literature_graph(request: web.Request) -> web.Response:
         papers_param = request.query.get("papers", "[]")
 
         try:
-            papers = eval(papers_param)  # 安全注意：生产环境应用json.loads并验证
-        except:
+            papers = json.loads(papers_param)
+        except (json.JSONDecodeError, TypeError):
             papers = []
 
         if papers:

@@ -4,7 +4,7 @@
 测试文本清理功能
 """
 import pytest
-from src.agents_v2.validation.text_cleaner import (
+from src.agents_v2._archive.validation.text_cleaner import (
     TextCleaner,
     CleanResult,
     CleanLevel,

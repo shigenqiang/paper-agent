@@ -6,7 +6,7 @@ import asyncio
 import time
 from unittest.mock import Mock, patch
 
-from src.agents_v2.cache import (
+from src.agents_v2._archive.cache import (
     CacheEntry,
     MemoryCache,
     SearchResultCache,

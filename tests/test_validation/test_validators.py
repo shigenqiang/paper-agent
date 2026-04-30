@@ -9,7 +9,7 @@ class TestInputValidator:
 
     def test_validate_required_string(self):
         """测试必填字符串验证"""
-        from src.agents_v2.validators import InputValidator, ValidationType
+        from src.agents_v2.core.validators import InputValidator, ValidationType
 
         validator = InputValidator()
         validator.add_rule("name", ValidationType.STRING, required=True)
@@ -25,7 +25,7 @@ class TestInputValidator:
 
     def test_validate_string_length(self):
         """测试字符串长度验证"""
-        from src.agents_v2.validators import InputValidator, ValidationType
+        from src.agents_v2.core.validators import InputValidator, ValidationType
 
         validator = InputValidator()
         validator.add_rule("name", ValidationType.STRING, min_length=2, max_length=10)
@@ -44,7 +44,7 @@ class TestInputValidator:
 
     def test_validate_integer_range(self):
         """测试整数范围验证"""
-        from src.agents_v2.validators import InputValidator, ValidationType
+        from src.agents_v2.core.validators import InputValidator, ValidationType
 
         validator = InputValidator()
         validator.add_rule("age", ValidationType.INTEGER, min_value=0, max_value=150)
@@ -63,7 +63,7 @@ class TestInputValidator:
 
     def test_validate_list(self):
         """测试列表验证"""
-        from src.agents_v2.validators import InputValidator, ValidationType
+        from src.agents_v2.core.validators import InputValidator, ValidationType
 
         validator = InputValidator()
         validator.add_rule("tags", ValidationType.LIST, min_length=1, max_length=5)
@@ -78,7 +78,7 @@ class TestInputValidator:
 
     def test_validate_pattern(self):
         """测试正则验证"""
-        from src.agents_v2.validators import InputValidator, ValidationType
+        from src.agents_v2.core.validators import InputValidator, ValidationType
 
         validator = InputValidator()
         validator.add_rule("email", ValidationType.PATTERN,
@@ -98,7 +98,7 @@ class TestOutputFormatter:
 
     def test_format_success(self):
         """测试格式化成功响应"""
-        from src.agents_v2.validators import OutputFormatter
+        from src.agents_v2.core.validators import OutputFormatter
 
         result = OutputFormatter.format_success(
             data={"result": "test"},
@@ -111,7 +111,7 @@ class TestOutputFormatter:
 
     def test_format_error(self):
         """测试格式化错误响应"""
-        from src.agents_v2.validators import OutputFormatter
+        from src.agents_v2.core.validators import OutputFormatter
 
         result = OutputFormatter.format_error(
             error="Something went wrong",
@@ -124,7 +124,7 @@ class TestOutputFormatter:
 
     def test_format_paginated(self):
         """测试格式化分页响应"""
-        from src.agents_v2.validators import OutputFormatter
+        from src.agents_v2.core.validators import OutputFormatter
 
         result = OutputFormatter.format_paginated(
             data=[1, 2, 3],
@@ -140,7 +140,7 @@ class TestOutputFormatter:
 
     def test_format_agent_result(self):
         """测试格式化Agent结果"""
-        from src.agents_v2.validators import OutputFormatter
+        from src.agents_v2.core.validators import OutputFormatter
 
         class MockResult:
             success = True
@@ -161,7 +161,7 @@ class TestValidationRule:
 
     def test_validation_rule_creation(self):
         """测试验证规则创建"""
-        from src.agents_v2.validators import ValidationRule, ValidationType
+        from src.agents_v2.core.validators import ValidationRule, ValidationType
 
         rule = ValidationRule(
             name="test_field",
@@ -183,7 +183,7 @@ class TestValidationResult:
 
     def test_add_error(self):
         """测试添加错误"""
-        from src.agents_v2.validators import ValidationResult
+        from src.agents_v2.core.validators import ValidationResult
 
         result = ValidationResult()
         result.add_error("Field is required")
@@ -194,7 +194,7 @@ class TestValidationResult:
 
     def test_add_warning(self):
         """测试添加警告"""
-        from src.agents_v2.validators import ValidationResult
+        from src.agents_v2.core.validators import ValidationResult
 
         result = ValidationResult()
         result.add_warning("Consider using a stronger password")

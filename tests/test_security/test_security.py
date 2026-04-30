@@ -3,7 +3,7 @@
 """
 import pytest
 import time
-from src.agents_v2.security import (
+from src.agents_v2.core.security import (
     InputSanitizer, SecretManager, SecurityAudit, PermissionChecker,
     AuditEvent, AuditEventType, AuditSeverity, sanitize_input
 )

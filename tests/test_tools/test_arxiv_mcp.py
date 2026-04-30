@@ -6,7 +6,7 @@ ArXiv MCP 单元测试
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.agents_v2.mcp.search.arxiv_mcp import (
+from src.agents_v2._archive.mcp.search.arxiv_mcp import (
     ArxivMCPClient,
     ArxivQuery,
     ArxivPaper,

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
-from ..exceptions import ValidationError
+from ...core.exceptions import ValidationError
 
 
 class CleanLevel(str, Enum):

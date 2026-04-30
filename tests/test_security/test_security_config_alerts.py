@@ -9,7 +9,7 @@ class TestInputSanitizer:
 
     def test_basic_sanitization(self):
         """测试基础清理"""
-        from src.agents_v2.security import InputSanitizer
+        from src.agents_v2.core.security import InputSanitizer
 
         sanitizer = InputSanitizer()
 
@@ -18,7 +18,7 @@ class TestInputSanitizer:
 
     def test_dangerous_pattern_removal(self):
         """测试危险模式移除"""
-        from src.agents_v2.security import InputSanitizer
+        from src.agents_v2.core.security import InputSanitizer
 
         sanitizer = InputSanitizer()
 
@@ -29,7 +29,7 @@ class TestInputSanitizer:
 
     def test_null_byte_removal(self):
         """测试空字节移除"""
-        from src.agents_v2.security import InputSanitizer
+        from src.agents_v2.core.security import InputSanitizer
 
         sanitizer = InputSanitizer()
         result = sanitizer.sanitize("test\x00value")
@@ -38,7 +38,7 @@ class TestInputSanitizer:
 
     def test_whitespace_normalization(self):
         """测试空白符规范化"""
-        from src.agents_v2.security import InputSanitizer
+        from src.agents_v2.core.security import InputSanitizer
 
         sanitizer = InputSanitizer()
         result = sanitizer.sanitize("test    \n\nvalue")
@@ -47,7 +47,7 @@ class TestInputSanitizer:
 
     def test_sanitize_dict(self):
         """测试字典清理"""
-        from src.agents_v2.security import InputSanitizer
+        from src.agents_v2.core.security import InputSanitizer
 
         sanitizer = InputSanitizer()
         data = {"name": "<script>", "age": 25}
@@ -62,7 +62,7 @@ class TestSecretManager:
 
     def test_set_and_get(self):
         """测试设置和获取"""
-        from src.agents_v2.security import SecretManager
+        from src.agents_v2.core.security import SecretManager
 
         secrets = SecretManager()
         secrets.set("TEST_KEY", "test_value")
@@ -72,8 +72,8 @@ class TestSecretManager:
 
     def test_get_or_raise(self):
         """测试获取或抛出"""
-        from src.agents_v2.security import SecretManager
-        from src.agents_v2.exceptions import ConfigurationError
+        from src.agents_v2.core.security import SecretManager
+        from src.agents_v2.core.exceptions import ConfigurationError
 
         secrets = SecretManager()
 
@@ -86,7 +86,7 @@ class TestSecurityConfig:
 
     def test_default_config(self):
         """测试默认配置"""
-        from src.agents_v2.security import SecurityConfig
+        from src.agents_v2.core.security import SecurityConfig
 
         config = SecurityConfig()
         assert config.sanitize_input is True
@@ -99,7 +99,7 @@ class TestRateLimiter:
 
     def test_rate_limiter_init(self):
         """测试限流器初始化"""
-        from src.agents_v2.alerts import RateLimiter
+        from src.agents_v2.monitoring.alerts import RateLimiter
 
         limiter = RateLimiter(max_requests=10, window=60)
         assert limiter.max_requests == 10
@@ -107,7 +107,7 @@ class TestRateLimiter:
 
     def test_is_allowed(self):
         """测试请求允许"""
-        from src.agents_v2.alerts import RateLimiter
+        from src.agents_v2.monitoring.alerts import RateLimiter
 
         limiter = RateLimiter(max_requests=3, window=60)
 
@@ -121,7 +121,7 @@ class TestRateLimiter:
 
     def test_get_remaining(self):
         """测试剩余请求数"""
-        from src.agents_v2.alerts import RateLimiter
+        from src.agents_v2.monitoring.alerts import RateLimiter
 
         limiter = RateLimiter(max_requests=5, window=60)
 
@@ -132,7 +132,7 @@ class TestRateLimiter:
 
     def test_reset(self):
         """测试重置"""
-        from src.agents_v2.alerts import RateLimiter
+        from src.agents_v2.monitoring.alerts import RateLimiter
 
         limiter = RateLimiter(max_requests=2, window=60)
 
@@ -149,7 +149,7 @@ class TestAlertManager:
 
     def test_trigger(self):
         """测试触发告警"""
-        from src.agents_v2.alerts import AlertManager, AlertType, AlertSeverity
+        from src.agents_v2.monitoring.alerts import AlertManager, AlertType, AlertSeverity
 
         manager = AlertManager()
 
@@ -164,7 +164,7 @@ class TestAlertManager:
 
     def test_record_metric(self):
         """测试记录指标"""
-        from src.agents_v2.alerts import AlertManager
+        from src.agents_v2.monitoring.alerts import AlertManager
 
         manager = AlertManager()
         manager.record_metric("errors", 1.0)
@@ -179,7 +179,7 @@ class TestAlertSeverity:
 
     def test_alert_severity_values(self):
         """测试告警级别枚举值"""
-        from src.agents_v2.alerts import AlertSeverity
+        from src.agents_v2.monitoring.alerts import AlertSeverity
 
         assert AlertSeverity.INFO.value == "info"
         assert AlertSeverity.WARNING.value == "warning"
@@ -192,7 +192,7 @@ class TestAlertType:
 
     def test_alert_type_values(self):
         """测试告警类型枚举值"""
-        from src.agents_v2.alerts import AlertType
+        from src.agents_v2.monitoring.alerts import AlertType
 
         assert AlertType.ERROR_RATE.value == "error_rate"
         assert AlertType.LATENCY_HIGH.value == "latency_high"
@@ -204,7 +204,7 @@ class TestHealthChecker:
 
     def test_register_check(self):
         """测试注册检查"""
-        from src.agents_v2.alerts import HealthChecker
+        from src.agents_v2.monitoring.alerts import HealthChecker
 
         checker = HealthChecker()
         checker.register_check("test", lambda: True)
@@ -213,7 +213,7 @@ class TestHealthChecker:
 
     def test_check(self):
         """测试执行检查"""
-        from src.agents_v2.alerts import HealthChecker
+        from src.agents_v2.monitoring.alerts import HealthChecker
 
         checker = HealthChecker()
         checker.register_check("healthy", lambda: True)
@@ -230,7 +230,7 @@ class TestConfigLoader:
 
     def test_default_config(self):
         """测试默认配置"""
-        from src.agents_v2.config import ConfigLoader
+        from src.agents_v2.core.config import ConfigLoader
 
         loader = ConfigLoader()
         config = loader.load("nonexistent.yaml")  # 使用默认配置
@@ -241,7 +241,7 @@ class TestConfigLoader:
 
     def test_build_config(self):
         """测试构建配置"""
-        from src.agents_v2.config import AppConfig, LLMConfig, CacheConfig
+        from src.agents_v2.core.config import AppConfig, LLMConfig, CacheConfig
 
         config = AppConfig(
             log_level="DEBUG",
@@ -259,7 +259,7 @@ class TestConfigValidator:
 
     def test_validate_valid_config(self):
         """测试验证有效配置"""
-        from src.agents_v2.config import ConfigLoader, ConfigValidator
+        from src.agents_v2.core.config import ConfigLoader, ConfigValidator
 
         loader = ConfigLoader()
         config = loader.load("nonexistent.yaml")
@@ -271,7 +271,7 @@ class TestConfigValidator:
 
     def test_validate_invalid_temperature(self):
         """测试验证无效温度"""
-        from src.agents_v2.config import AppConfig, LLMConfig, ConfigValidator
+        from src.agents_v2.core.config import AppConfig, LLMConfig, ConfigValidator
 
         config = AppConfig(llm=LLMConfig(temperature=5.0))
 

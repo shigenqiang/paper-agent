@@ -4,7 +4,7 @@
 测试输入验证功能
 """
 import pytest
-from src.agents_v2.validation.input_validator import (
+from src.agents_v2._archive.validation.input_validator import (
     InputValidator,
     ValidationRule,
     ValidationResult,

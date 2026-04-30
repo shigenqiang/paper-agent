@@ -49,6 +49,7 @@ class LLMConfig(BaseModel):
     max_tokens: int = Field(default=2048, description="最大token数")
     api_key: Optional[str] = Field(None, description="API密钥")
     base_url: Optional[str] = Field(None, description="API基础URL")
+    timeout: Optional[int] = Field(default=120, description="请求超时时间(秒)")
 
 
 class Tool(BaseModel):

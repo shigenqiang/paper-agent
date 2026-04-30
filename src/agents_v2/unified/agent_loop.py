@@ -16,7 +16,7 @@ from langchain_core.messages import (
 )
 
 from src.models.state import AgentContext, AgentState, ToolCall
-from ..base_agent import BaseAgent, VirtualTool
+from ..core.base_agent import BaseAgent, VirtualTool
 from ..tools.registry import ToolRegistry, get_tool_registry
 
 logger = logging.getLogger(__name__)

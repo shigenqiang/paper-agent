@@ -45,6 +45,7 @@ class LLMConfig(BaseModel):
     max_tokens: int = Field(default=4096, description="最大token数")
     api_key: Optional[str] = Field(None, description="API密钥")
     base_url: Optional[str] = Field(None, description="API基础URL")
+    timeout: int = Field(default=180, description="超时时间(秒)")
 
 
 # ============ Agent基类 ============
@@ -195,61 +196,26 @@ class PaperAgentBase(ABC):
             raise
 
     def _clean_thinking_blocks(self, text: str) -> str:
-        """清理思考块 (MiniMax等模型会输出)
-
-        MiniMax模型会将实际输出放在<think>...</think>块内部，
-        而不是之后。需要从块内提取实际内容。
-        """
+        """清理思考块和参考文献，只保留markdown报告内容"""
         import re
 
-        # 首先检查是否有<think>...</think>块
-        thinking_match = re.search(r'<think>(.*?)</think>', text, flags=re.DOTALL)
+        # 1. 移除<think>...</think>块（如果实际内容在块之后，会保留）
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
 
-        if thinking_match:
-            thinking_content = thinking_match.group(1)
+        # 2. 移除参考文献部分（从 "参考文献" 或 "## 参考文献" 到结尾）
+        refs_pattern = r'(?:\n|^)##?\s*参考文献.*$'
+        text = re.sub(refs_pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
 
-            # 从思考内容中提取实际输出
-            # 尝试多种模式来找到实际内容
-            output_patterns = [
-                r'Thus output:\s*(\{[^}]+\})',
-                r'output:\s*(\{[^}]+\})',
-                r'Output:\s*(\{[^}]+\})',
-                r'respond with:\s*(\{[^}]+\})',
-                r'So (?:we|I) (?:should|would|need to) (?:output|respond with|return):\s*(\{[^}]+\})',
-            ]
+        # 3. 移除开头的分隔线或空行
+        text = text.lstrip('-\n')
 
-            cleaned = None
-            for pattern in output_patterns:
-                match = re.search(pattern, thinking_content, flags=re.DOTALL)
-                if match:
-                    cleaned = match.group(1)
-                    break
+        # 4. 清理代码块标记
+        text = self._remove_code_fences(text)
 
-            # 如果没找到特定模式，尝试查找JSON对象
-            if not cleaned:
-                # 在思考内容中查找JSON对象
-                json_match = re.search(r'\{[^{}]*\}', thinking_content)
-                if json_match:
-                    cleaned = json_match.group()
+        # 5. 修复UTF-8转义
+        text = self._fix_utf8_escapes(text)
 
-            # 如果还是没找到，尝试在思考内容之后的部分找
-            if not cleaned:
-                after_thinking = text.split('</think>')[1] if ']]' in text else ''
-                if after_thinking.strip():
-                    cleaned = after_thinking.strip()
-
-            if cleaned:
-                # 修复UTF-8转义并清理
-                cleaned = self._fix_utf8_escapes(cleaned)
-                cleaned = self._remove_code_fences(cleaned)
-                return cleaned
-
-        # 情况2: 没有思考块，内容直接在text中
-        cleaned = text.strip()
-        cleaned = self._fix_utf8_escapes(cleaned)
-        cleaned = self._remove_code_fences(cleaned)
-
-        return cleaned
+        return text.strip()
 
     def _remove_code_fences(self, text: str) -> str:
         """移除代码块标记 (```json ... ``` 或 ``` ... ```)"""

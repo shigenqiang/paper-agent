@@ -7,8 +7,8 @@ LanguagePolisher Agent Skill 集成
 import logging
 from typing import Dict, Any, Optional
 
-from ..writing import LanguagePolisherAgent
-from ..paper_agents.base_paper_agent import LLMConfig
+from ...writing import LanguagePolisherAgent
+from ...paper_agents.base_paper_agent import LLMConfig
 
 logger = logging.getLogger(__name__)
 

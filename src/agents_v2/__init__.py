@@ -1,5 +1,5 @@
 """新架构Agent模块"""
-from .base_agent import (
+from .core.base_agent import (
     BaseAgent,
     AgentInput,
     AgentOutput,
@@ -39,6 +39,28 @@ from .qa import (
     Citation
 )
 
+# Agent Skills (SKILL.md standard)
+from .skills import SkillsLoader, SkillDefinition
+
+# Claude Agent SDK-style framework
+from .sdk import (
+    tool,
+    Agent,
+    AgentConfig,
+    AgentState,
+    Permission,
+    ToolDefinition,
+    ToolRegistry,
+    ToolCallRequest,
+    ToolCallResult,
+    ContextCompressor,
+    get_tool,
+    list_tools,
+    get_tool_schemas,
+    get_mcp_tool_schemas,
+    estimate_tokens,
+)
+
 __all__ = [
     # Base agent
     "BaseAgent",
@@ -71,5 +93,24 @@ __all__ = [
     "SearchResult",
     "PaperReport",
     "DailyPaperReport",
-    "Citation"
+    "Citation",
+    # Agent Skills
+    "SkillsLoader",
+    "SkillDefinition",
+    # Claude Agent SDK
+    "tool",
+    "Agent",
+    "AgentConfig",
+    "AgentState",
+    "Permission",
+    "ToolDefinition",
+    "ToolRegistry",
+    "ToolCallRequest",
+    "ToolCallResult",
+    "ContextCompressor",
+    "get_tool",
+    "list_tools",
+    "get_tool_schemas",
+    "get_mcp_tool_schemas",
+    "estimate_tokens",
 ]

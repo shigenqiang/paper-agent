@@ -32,8 +32,8 @@ from .monitoring import (
 )
 
 # 重新导出 circuit_breaker
-from ..unified.circuit_breaker import CircuitBreaker as CircuitBreakerClass
-from ..unified.circuit_breaker import CircuitState, CircuitBreakerOpen
+from ...unified.circuit_breaker import CircuitBreaker as CircuitBreakerClass
+from ...unified.circuit_breaker import CircuitState, CircuitBreakerOpen
 
 __all__ = [
     # 限流器
