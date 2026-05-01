@@ -162,7 +162,7 @@ class ResearchGapAnalyzer:
             )
 
         except Exception as e:
-            self.logger.error(f"Gap analysis failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:165] Gap analysis failed: {e}")
             return GapAnalysisResult(
                 topic=topic,
                 total_papers_analyzed=len(paper_analyses),
@@ -232,7 +232,7 @@ class ResearchGapAnalyzer:
                 ))
             return gaps
         except Exception as e:
-            self.logger.error(f"Methodological gap identification failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:235] Methodological gap identification failed: {e}")
             return []
 
     async def _identify_empirical_gaps(
@@ -303,7 +303,7 @@ class ResearchGapAnalyzer:
                 ))
             return gaps
         except Exception as e:
-            self.logger.error(f"Empirical gap identification failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:306] Empirical gap identification failed: {e}")
             return []
 
     async def _identify_theoretical_gaps(
@@ -366,7 +366,7 @@ class ResearchGapAnalyzer:
                 ))
             return gaps
         except Exception as e:
-            self.logger.error(f"Theoretical gap identification failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:369] Theoretical gap identification failed: {e}")
             return []
 
     async def _identify_application_gaps(
@@ -428,7 +428,7 @@ class ResearchGapAnalyzer:
                 ))
             return gaps
         except Exception as e:
-            self.logger.error(f"Application gap identification failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:431] Application gap identification failed: {e}")
             return []
 
     async def _identify_comparative_gaps(
@@ -490,7 +490,7 @@ class ResearchGapAnalyzer:
                 ))
             return gaps
         except Exception as e:
-            self.logger.error(f"Comparative gap identification failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:493] Comparative gap identification failed: {e}")
             return []
 
     async def _score_and_rank_gaps(
@@ -581,7 +581,7 @@ class ResearchGapAnalyzer:
             return scored_gaps
 
         except Exception as e:
-            self.logger.error(f"Gap scoring failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:584] Gap scoring failed: {e}")
             return gaps
 
     async def _generate_recommendations(
@@ -639,7 +639,7 @@ class ResearchGapAnalyzer:
                 for r in recs
             ]
         except Exception as e:
-            self.logger.error(f"Recommendation generation failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:642] Recommendation generation failed: {e}")
             return [f"建议探索: {g.potential_direction}" for g in gaps[:3]]
 
     def _calculate_confidence(
@@ -694,7 +694,7 @@ class ResearchGapAnalyzer:
             response = await agent._llm_call(prompt)
             return response
         except Exception as e:
-            self.logger.error(f"LLM call failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:697] LLM call failed: {e}")
             raise
 
 

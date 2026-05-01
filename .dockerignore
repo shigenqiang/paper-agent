@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.eggs
+dist
+build
+*.egg
+
+# Virtual environments
+venv
+.venv
+env
+.env
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Node (frontend stuff in docker build时不需要)
+frontend/node_modules
+
+# Docs (可选，如不需要可以删除)
+docs/_build
+docs/.doctrees
+
+# Data (运行时数据)
+data
+*.json
+
+# Logs
+*.log
+logs

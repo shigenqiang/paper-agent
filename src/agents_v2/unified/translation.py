@@ -14,6 +14,7 @@ Translation Wrapper - 翻译封装
 import asyncio
 from typing import Any, Dict, Optional, Callable
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +35,36 @@ class TranslationWrapper:
     def _init_translator(self):
         """初始化翻译用LLM"""
         try:
+            # 尝试加载 .env 文件
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+            except ImportError:
+                pass
+
             from langchain_openai import ChatOpenAI
-            self._translator_llm = ChatOpenAI(
-                model="minimax",
-                temperature=0.3,
-                max_tokens=4096
-            )
+            # 优先使用 llm_config 中的配置
+            if self.llm_config:
+                api_key = getattr(self.llm_config, 'api_key', None) or os.getenv("OPENAI_API_KEY")
+                base_url = getattr(self.llm_config, 'base_url', None) or os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
+                model = getattr(self.llm_config, 'model_name', 'minimax')
+                self._translator_llm = ChatOpenAI(
+                    model=model,
+                    temperature=0.3,
+                    max_tokens=4096,
+                    api_key=api_key,
+                    base_url=base_url
+                )
+            else:
+                api_key = os.getenv("OPENAI_API_KEY")
+                base_url = os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
+                self._translator_llm = ChatOpenAI(
+                    model="minimax",
+                    temperature=0.3,
+                    max_tokens=4096,
+                    api_key=api_key,
+                    base_url=base_url
+                )
         except Exception as e:
             logger.warning(f"Translator LLM init failed: {e}")
 

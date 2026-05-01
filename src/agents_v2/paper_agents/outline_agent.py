@@ -95,7 +95,8 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"OutlineAgent execution failed: {e}")
+            cls_name = self.__class__.__name__
+            self.logger.error(f"[{cls_name}:98] OutlineAgent execution failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,
@@ -145,7 +146,8 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
                 raise ValueError("LLM returned empty structure")
             return structure
         except Exception as e:
-            self.logger.error(f"Structure design failed: {e}")
+            cls_name = self.__class__.__name__
+            self.logger.error(f"[{cls_name}:148] Structure design failed: {type(e).__name__}: {e}")
             raise
 
     async def _plan_chapters(
@@ -234,8 +236,22 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
 ]}}"""
         try:
             response = await self._llm_call(prompt)
+            if not response or not response.strip():
+                self.logger.warning("LLM返回空响应")
+                return []
             data = json.loads(response)
             return data.get("key_arguments", [])
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Key arguments identification failed (JSON解析错误): {e}")
+            try:
+                import re
+                match = re.search(r'\{.*\}', response, re.DOTALL)
+                if match:
+                    data = json.loads(match.group())
+                    return data.get("key_arguments", [])
+            except Exception:
+                pass
+            return []
         except Exception as e:
             self.logger.error(f"Key arguments identification failed: {e}")
             return []

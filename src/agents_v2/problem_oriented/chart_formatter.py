@@ -106,7 +106,7 @@ class ChartFormatterAgent(ProblemAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"Chart formatting check failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:109] Chart formatting check failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,
@@ -151,7 +151,7 @@ class ChartFormatterAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Single chart check failed: {e}")
+            logger.error(f"[ChartFormatterAgent:154] Single chart check failed: {e}")
             return {"score": 5.0, "issues": ["检查失败"], "suggestions": []}
 
     async def _generate_recommendations(self, chart_checks: List[Dict]) -> List[str]:

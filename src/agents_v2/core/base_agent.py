@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 import json
+import os
 
 from src.models.state import AgentContext, AgentState, AgentMessage
 from src.models.task import Task
@@ -44,7 +45,7 @@ class AgentCapability(BaseModel):
 class LLMConfig(BaseModel):
     """LLM配置"""
     provider: str = Field(default="openai", description="LLM提供商")
-    model_name: str = Field(default="gpt-4", description="模型名称")
+    model_name: str = Field(default="MiniMax-M2.7", description="模型名称")
     temperature: float = Field(default=0.7, description="温度参数")
     max_tokens: int = Field(default=2048, description="最大token数")
     api_key: Optional[str] = Field(None, description="API密钥")
@@ -196,7 +197,18 @@ class BaseAgent(ABC):
     def _init_llm(self):
         """初始化LLM"""
         try:
+            # 尝试加载 .env 文件
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+            except ImportError:
+                pass
+
             provider = self.llm_config.provider.lower()
+
+            # 加载环境变量作为后备
+            api_key = self.llm_config.api_key or os.getenv("OPENAI_API_KEY")
+            base_url = self.llm_config.base_url or os.getenv("OPENAI_BASE_URL")
 
             if provider == "openai":
                 from langchain_openai import ChatOpenAI
@@ -204,8 +216,8 @@ class BaseAgent(ABC):
                     model=self.llm_config.model_name,
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
-                    api_key=self.llm_config.api_key,
-                    base_url=self.llm_config.base_url
+                    api_key=api_key,
+                    base_url=base_url
                 )
             elif provider == "anthropic":
                 from langchain_anthropic import ChatAnthropic
@@ -213,7 +225,7 @@ class BaseAgent(ABC):
                     model=self.llm_config.model_name,
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
-                    api_key=self.llm_config.api_key
+                    api_key=api_key
                 )
             else:
                 raise ValueError(f"不支持的LLM提供商: {provider}")
@@ -226,7 +238,10 @@ class BaseAgent(ABC):
     async def _llm_call(self, prompt: str) -> str:
         """LLM调用封装"""
         if not self.llm:
-            raise RuntimeError("LLM未初始化")
+            logger.warning("LLM未初始化，尝试重新初始化...")
+            self._init_llm()
+            if not self.llm:
+                raise RuntimeError("LLM未初始化")
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
@@ -245,7 +260,7 @@ class BaseAgent(ABC):
             return content
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
-            raise
+            return ""  # 返回空字符串而不是抛出异常
 
     def _clean_thinking_blocks(self, text: str) -> str:
         """清理思考块 (MiniMax等模型会输出)"""

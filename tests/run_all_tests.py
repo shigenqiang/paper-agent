@@ -1,90 +1,141 @@
 """
-Paper Agent - 统一测试入口
+Paper Agent - 统一管理脚本
 
-运行方式:
-    python tests/run_all_tests.py          # 运行所有测试
-    python tests/run_all_tests.py api      # 只运行API测试
-    python tests/run_all_tests.py e2e      # 只运行端到端测试
-    python tests/run_all_tests.py quick    # 快速测试（跳过慢测试）
+用法:
+    python tests/run_all_tests.py              # 运行所有测试
+    python tests/run_all_tests.py test         # 运行所有测试
+    python tests/run_all_tests.py test-api     # 只运行API测试
+    python tests/run_all_tests.py test-e2e     # 只运行端到端测试
+    python tests/run_all_tests.py test-quick   # 快速测试（遇错即停）
+    python tests/run_all_tests.py start        # 同时启动前后端
+    python tests/run_all_tests.py backend      # 只启动后端
+    python tests/run_all_tests.py frontend     # 只启动前端
 """
 import sys
 import os
+import subprocess
 import pytest
 
-# 确保项目根目录在路径中
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 项目根目录
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT_DIR)
 
 
-def run_all():
+# ============ 测试命令 ============
+
+def test_all():
     """运行所有测试"""
     return pytest.main([
         'tests/test_api_comprehensive.py',
         'tests/test_e2e_paper_generation.py',
-        '-v',
-        '--tb=short',
+        '-v', '--tb=short',
     ])
 
 
-def run_api_only():
-    """只运行API CRUD测试"""
+def test_api():
+    """只运行API测试"""
     return pytest.main([
         'tests/test_api_comprehensive.py',
-        '-v',
-        '--tb=short',
+        '-v', '--tb=short',
     ])
 
 
-def run_e2e_only():
-    """只运行端到端论文生成测试"""
+def test_e2e():
+    """只运行端到端测试"""
     return pytest.main([
         'tests/test_e2e_paper_generation.py',
-        '-v',
-        '-s',
-        '--tb=short',
+        '-v', '-s', '--tb=short',
     ])
 
 
-def run_quick():
-    """快速测试（跳过标记为slow的测试）"""
+def test_quick():
+    """快速测试（遇错即停）"""
     return pytest.main([
         'tests/test_api_comprehensive.py',
         'tests/test_e2e_paper_generation.py',
-        '-v',
-        '--tb=short',
-        '-x',  # 遇到第一个失败就停止
+        '-v', '--tb=short', '-x',
     ])
 
 
-def run_with_report():
-    """运行测试并生成覆盖率报告"""
-    return pytest.main([
-        'tests/test_api_comprehensive.py',
-        'tests/test_e2e_paper_generation.py',
-        '-v',
-        '--tb=short',
-        '--durations=10',  # 显示最慢的10个测试
-    ])
+# ============ 启动命令 ============
 
+def start_backend():
+    """启动后端 API 服务"""
+    print("启动后端 API 服务...")
+    subprocess.run([sys.executable, '-m', 'src.main'], cwd=ROOT_DIR)
+
+
+def start_frontend():
+    """启动前端开发服务器"""
+    print("启动前端开发服务器...")
+    frontend_dir = os.path.join(ROOT_DIR, 'frontend')
+    subprocess.run(['npm', 'run', 'dev'], cwd=frontend_dir, shell=True)
+
+
+def start_all():
+    """同时启动前后端"""
+    import threading
+
+    print("=" * 50)
+    print("同时启动前端和后端...")
+    print("  后端: http://localhost:8000")
+    print("  前端: http://localhost:5173")
+    print("=" * 50)
+
+    # 后端线程
+    backend_thread = threading.Thread(target=start_backend, daemon=True)
+    backend_thread.start()
+
+    # 前端（主线程）
+    start_frontend()
+
+
+# ============ 命令注册 ============
 
 COMMANDS = {
-    'all': run_all,
-    'api': run_api_only,
-    'e2e': run_e2e_only,
-    'quick': run_quick,
-    'report': run_with_report,
+    # 测试
+    'test': test_all,
+    'test-all': test_all,
+    'test-api': test_api,
+    'test-e2e': test_e2e,
+    'test-quick': test_quick,
+    # 启动
+    'start': start_all,
+    'backend': start_backend,
+    'frontend': start_frontend,
 }
 
 
+HELP_TEXT = """
+可用命令:
+
+  测试:
+    test            运行所有测试（默认）
+    test-api        只运行 API 测试
+    test-e2e        只运行端到端测试
+    test-quick      快速测试（遇错即停）
+
+  启动:
+    start           同时启动前端和后端
+    backend         只启动后端 API 服务
+    frontend        只启动前端开发服务器
+"""
+
+
 if __name__ == '__main__':
-    cmd = sys.argv[1] if len(sys.argv) > 1 else 'all'
+    cmd = sys.argv[1] if len(sys.argv) > 1 else 'test'
 
     if cmd in COMMANDS:
-        print(f"\n{'='*60}")
-        print(f"Paper Agent 测试套件 - 模式: {cmd}")
-        print(f"{'='*60}\n")
+        if cmd.startswith('test'):
+            print(f"\n{'='*50}")
+            print(f"Paper Agent 测试 - {cmd}")
+            print(f"{'='*50}\n")
         exit_code = COMMANDS[cmd]()
-        sys.exit(exit_code)
+        if exit_code is not None:
+            sys.exit(exit_code)
+    elif cmd in ('help', '-h', '--help'):
+        print(HELP_TEXT)
     else:
         print(f"未知命令: {cmd}")
-        print(f"可用命令: {', '.join(COMMANDS.keys())}")
+        print(HELP_TEXT)
         sys.exit(1)

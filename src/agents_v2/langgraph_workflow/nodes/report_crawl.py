@@ -23,7 +23,7 @@ class ReportCrawlNode:
 
     def __init__(self):
         """初始化报告爬取节点"""
-        from ...qa.paper_search import PaperSearchAgent
+        from ...paper_search.paper_search import PaperSearchAgent
         self.search_agent = PaperSearchAgent()
 
     async def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:

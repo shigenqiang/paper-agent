@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Callable
 from enum import Enum
 import croniter
 
-from ..qa import (
+from ..paper_search import (
     DailyWatcher,
     WeeklyReportGenerator,
     MonthlyReportGenerator,

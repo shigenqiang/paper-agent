@@ -105,7 +105,7 @@ class PlagiarismCheckerAgent(ProblemAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"Plagiarism check failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:108] Plagiarism check failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,
@@ -153,7 +153,7 @@ class PlagiarismCheckerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data.get("high_risk", [])
         except Exception as e:
-            logger.error(f"High risk identification failed: {e}")
+            logger.error(f"[PlagiarismCheckerAgent:156] High risk identification failed: {e}")
             return []
 
     async def _assess_originality(self, text: str, high_risk: List[Dict]) -> Dict[str, Any]:
@@ -204,7 +204,7 @@ class PlagiarismCheckerAgent(ProblemAgentBase):
             data = json.loads(response)
             return [p.get("improvement", "") for p in data.get("points", [])]
         except Exception as e:
-            logger.error(f"Improvement points identification failed: {e}")
+            logger.error(f"[PlagiarismCheckerAgent:207] Improvement points identification failed: {e}")
             return []
 
     async def _generate_rewrite_suggestions(self, high_risk: List[Dict]) -> List[str]:
@@ -261,7 +261,7 @@ class PlagiarismCheckerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data.get("suggestions", [])
         except Exception as e:
-            logger.error(f"Originality suggestions failed: {e}")
+            logger.error(f"[PlagiarismCheckerAgent:264] Originality suggestions failed: {e}")
             return []
 
     def _truncate(self, text: str, max_length: int) -> str:

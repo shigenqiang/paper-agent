@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
 import json
+import xml.etree.ElementTree as ET
 
 from .base_qa_agent import BaseQAAgent
 
@@ -170,44 +171,80 @@ class PaperSearchAgent(BaseQAAgent):
         try:
             import urllib.request
             import urllib.parse
-            import xml.etree.ElementTree as ET
             import ssl
+            import time
 
             # 创建SSL上下文（忽略证书验证）
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
-            # 构建arXiv API查询 - 使用更宽泛的类别搜索
-            base_url = "http://export.arxiv.org/api/query"
-            # 搜索标题和摘要，不限制类别
+            # 优先使用HTTPS
+            base_url = "https://export.arxiv.org/api/query"
+            start = (page - 1) * max_results
+
+            # 尝试不同查询策略，从精确到宽泛
+            queries_to_try = []
+
+            # 策略1: 完整查询（带日期过滤）
             search_query = f"ti:{query} OR abs:{query}"
             start_date = datetime.now() - timedelta(days=time_range)
             date_query = f"submittedDate:[{start_date.strftime('%Y%m%d')} TO NOW]"
+            queries_to_try.append(f"({search_query}) AND {date_query}")
 
-            start = (page - 1) * max_results
+            # 策略2: 去掉日期过滤
+            queries_to_try.append(search_query)
 
-            params = urllib.parse.urlencode({
-                "search_query": f"({search_query}) AND {date_query}",
-                "start": start,
-                "max_results": max_results,
-                "sortBy": "relevance"
-            })
+            # 策略3: 仅用all字段搜索（最宽泛）
+            queries_to_try.append(f"all:{query}")
 
-            url = f"{base_url}?{params}"
-            self.logger.debug(f"arXiv URL: {url}")
+            max_retries = 3
+            for idx, search_query_str in enumerate(queries_to_try):
+                for retry in range(max_retries):
+                    try:
+                        params = urllib.parse.urlencode({
+                            "search_query": search_query_str,
+                            "start": start,
+                            "max_results": max_results,
+                            "sortBy": "relevance"
+                        })
+                        url = f"{base_url}?{params}"
+                        self.logger.info(f"[PaperSearchAgent:214] arXiv请求 [{idx+1}/3]: {url[:150]}...")
 
-            # 发起请求
-            with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
-                data = response.read().decode("utf-8")
+                        with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
+                            data = response.read().decode("utf-8")
+                            self.logger.info(f"[PaperSearchAgent:219] arXiv响应长度: {len(data)} bytes")
 
-            # 解析XML
-            papers = self._parse_arxiv_xml(data, query)
-            self.logger.info(f"arXiv找到 {len(papers)} 篇论文")
-            return papers
+                        papers = self._parse_arxiv_xml(data, query)
+                        if papers:
+                            self.logger.info(f"[PaperSearchAgent:221] arXiv找到 {len(papers)} 篇论文")
+                            return papers
+                        # 没有结果但没有报错，继续尝试下一个策略
+                        self.logger.warning(f"[PaperSearchAgent:222] 策略{idx+1}返回0结果，继续...")
+                        break
+                    except urllib.error.HTTPError as e:
+                        if e.code == 429:
+                            # Rate limiting，等待后重试
+                            wait_time = (retry + 1) * 5
+                            self.logger.warning(f"[PaperSearchAgent:229] arXiv API限流，等待{wait_time}秒后重试...")
+                            time.sleep(wait_time)
+                            continue
+                        elif e.code == 500:
+                            # HTTP 500可能是查询格式问题，尝试简化
+                            self.logger.warning(f"[PaperSearchAgent:233] arXiv查询策略{idx+1}失败 (HTTP 500)")
+                            break
+                        else:
+                            self.logger.warning(f"[PaperSearchAgent:235] arXiv查询策略{idx+1}失败 (HTTP {e.code})")
+                            break
+                    except Exception as e:
+                        self.logger.warning(f"[PaperSearchAgent:238] arXiv查询策略{idx+1}失败: {type(e).__name__}: {e}")
+                        break
+
+            self.logger.warning(f"[PaperSearchAgent:241] arXiv所有查询策略均未找到结果: {query}")
+            return []
 
         except Exception as e:
-            self.logger.error(f"arXiv搜索失败: {e}")
+            self.logger.error(f"[PaperSearchAgent:244] arXiv搜索失败: {e}")
             return []
 
     async def _search_pubmed(

@@ -18,6 +18,16 @@ from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 logger = logging.getLogger(__name__)
 
 
+def _clean_json_markdown(text: str) -> str:
+    """清理JSON markdown格式（去除```json...```包裹）"""
+    import re
+    text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 class TopicRefinerAgent(ProblemAgentBase):
     """
     TopicRefinerAgent - 选题精炼
@@ -191,7 +201,8 @@ class TopicRefinerAgent(ProblemAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"Topic refinement failed: {e}")
+            cls_name = self.__class__.__name__
+            self.logger.error(f"[{cls_name}:194] Topic refinement failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,
@@ -229,10 +240,21 @@ class TopicRefinerAgent(ProblemAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                logger.error(f"[{self.__class__.__name__}:232] LLM返回空响应")
+                return ["选题需要进一步明确"]
+            # 清理markdown代码块
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data.get("issues", [])
+        except json.JSONDecodeError as e:
+            logger.error(f"[{self.__class__.__name__}:235] Topic analysis failed (JSON解析错误): {e}, response前50字符: {response[:50] if response else 'None'}")
+            return ["选题需要进一步明确"]
+        except ValueError as e:
+            logger.error(f"[{self.__class__.__name__}:237] Topic analysis failed: {e}")
+            return ["选题需要进一步明确"]
         except Exception as e:
-            logger.error(f"Topic analysis failed: {e}")
+            logger.error(f"[{self.__class__.__name__}:239] Topic analysis failed: {e}")
             return ["选题需要进一步明确"]
 
     async def _evaluate_feasibility(
@@ -267,12 +289,23 @@ class TopicRefinerAgent(ProblemAgentBase):
     "concerns": ["担忧1", "担忧2"]
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                logger.error(f"[{cls_name}:292] LLM返回空响应")
+                return {"feasible": True, "overall_score": 5.0, "concerns": []}
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data
+        except json.JSONDecodeError as e:
+            logger.error(f"[{cls_name}:296] Feasibility evaluation failed (JSON解析错误): {e}")
+            return {"feasible": True, "overall_score": 5.0, "concerns": []}
+        except ValueError as e:
+            logger.error(f"[{cls_name}:298] Feasibility evaluation failed: {e}")
+            return {"feasible": True, "overall_score": 5.0, "concerns": []}
         except Exception as e:
-            logger.error(f"Feasibility evaluation failed: {e}")
+            logger.error(f"[{cls_name}:300] Feasibility evaluation failed: {e}")
             return {"feasible": True, "overall_score": 5.0, "concerns": []}
 
     async def _evaluate_novelty(self, topic: str) -> Dict[str, Any]:
@@ -296,12 +329,24 @@ class TopicRefinerAgent(ProblemAgentBase):
     "novelty_score": 6.5
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                logger.error(f"[{cls_name}:332] LLM返回空响应")
+                return {"novel": False, "novelty_score": 5.0}
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data
+        except json.JSONDecodeError as e:
+            logger.error(f"[{cls_name}:336] Novelty evaluation failed (JSON解析错误): {e}")
+            return {"novel": False, "novelty_score": 5.0}
+        except ValueError as e:
+            logger.error(f"[{cls_name}:338] Novelty evaluation failed: {e}")
+            return {"novel": False, "novelty_score": 5.0}
         except Exception as e:
-            logger.error(f"Novelty evaluation failed: {e}")
+            logger.error(f"[{cls_name}:340] Novelty evaluation failed: {e}")
+            return {"novel": False, "novelty_score": 5.0}
             return {"novel": False, "novelty_score": 5.0}
 
     async def _generate_recommendations(
@@ -355,12 +400,24 @@ class TopicRefinerAgent(ProblemAgentBase):
     "best_choice": "最佳选题标题"
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                logger.error(f"[{cls_name}:403] LLM返回空响应")
+                return original
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data.get("best_choice", original)
+        except json.JSONDecodeError as e:
+            logger.error(f"[{cls_name}:407] Topic refinement failed (original={original}) (JSON解析错误): {e}")
+            return original
+        except ValueError as e:
+            logger.error(f"[{cls_name}:409] Topic refinement failed (original={original}): {e}")
+            return original
         except Exception as e:
-            logger.error(f"Topic refinement failed: {e}")
+            logger.error(f"[{cls_name}:411] Topic refinement failed (original={original}): {e}")
+            return original
             return original
 
     def _calculate_quality_score(self, feasibility: Dict, novelty: Dict) -> float:

@@ -174,7 +174,7 @@ class LanguagePolisherAgent(ProblemAgentBase):
                 return await self._fallback_polish(text, language)
 
         except Exception as e:
-            self.logger.error(f"Language diagnosis failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:177] Language diagnosis failed: {e}")
             return await self._fallback_polish(text, language)
 
     def _parse_diagnosis_response(self, response: str) -> Optional[Dict[str, Any]]:
@@ -249,7 +249,7 @@ class LanguagePolisherAgent(ProblemAgentBase):
                 quality_score=0.7
             )
         except Exception as e:
-            self.logger.error(f"Fallback polish failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:252] Fallback polish failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,

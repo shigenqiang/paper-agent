@@ -19,6 +19,18 @@ from ..paper_search.paper_search import PaperSearchAgent
 logger = logging.getLogger(__name__)
 
 
+def _clean_json_markdown(text: str) -> str:
+    """清理JSON markdown格式（去除```json...```包裹）"""
+    import re
+    # 去除 ```json ... ``` 包裹
+    text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    # 去除 ``` ... ``` 包裹
+    text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 class LiteratureMapperAgent(ProblemAgentBase):
     """
     LiteratureMapperAgent - 文献映射
@@ -132,11 +144,11 @@ class LiteratureMapperAgent(ProblemAgentBase):
     async def _generate_search_queries(self, topic: str) -> List[str]:
         """生成多角度搜索查询"""
         prompt = f"""
-为以下研究主题生成多角度搜索查询：
+为以下研究主题生成多角度搜索查询（请使用英文关键词，因为arXiv和PubMed是英文数据库）：
 
 主题：{topic}
 
-请生成8-10个不同角度的搜索查询，覆盖：
+请生成8-10个不同角度的英文搜索查询，覆盖：
 1. 核心主题
 2. 相关方法
 3. 应用领域
@@ -145,15 +157,39 @@ class LiteratureMapperAgent(ProblemAgentBase):
 
 输出JSON格式：
 {{
-    "queries": ["查询1", "查询2", ...]
+    "queries": ["english query 1", "english query 2", ...]
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response:
+                logger.error(f"[{cls_name}:155] LLM返回空响应")
+                return [topic]
+            content = response.strip()
+            if not content:
+                logger.error(f"[{cls_name}:158] LLM响应为空格")
+                return [topic]
+
+            # 清理markdown代码块标记
+            content = _clean_json_markdown(content)
+
+            data = json.loads(content)
             return data.get("queries", [topic])
+        except json.JSONDecodeError as e:
+            logger.error(f"[{cls_name}:166] Query generation failed (JSON解析错误): {e}, response长度={len(response)}, 前100字符: {response[:100] if response else 'None'}")
+            # 尝试从响应中提取JSON
+            try:
+                import re
+                match = re.search(r'\{.*\}', response, re.DOTALL)
+                if match:
+                    data = json.loads(match.group())
+                    return data.get("queries", [topic])
+            except Exception:
+                pass
+            return [topic]
         except Exception as e:
-            logger.error(f"Query generation failed: {e}")
+            logger.error(f"[{cls_name}:178] Query generation failed: {e}")
             return [topic]
 
     async def _search_papers(
@@ -163,19 +199,24 @@ class LiteratureMapperAgent(ProblemAgentBase):
     ) -> List[Dict[str, Any]]:
         """搜索文献 - 使用真实API"""
         import asyncio
+        cls_name = self.__class__.__name__
 
         # 合并已有文献
         all_papers = list(existing_papers)
+        self.logger.info(f"[{cls_name}:189] 开始搜索文献，查询数量: {len(queries)}, 已有文献: {len(existing_papers)}")
 
         async def search_query(query: str) -> List[Dict[str, Any]]:
             try:
+                self.logger.info(f"[{cls_name}:193] 搜索查询: {query[:50]}...")
                 result = await self.search_agent.execute(
                     query,
                     {"source": "all", "time_range": 365, "max_results": 10}
                 )
-                return result.get("papers", [])
+                papers = result.get("papers", [])
+                self.logger.info(f"[{cls_name}:196] 查询 '{query[:30]}...' 返回 {len(papers)} 篇论文")
+                return papers
             except Exception as e:
-                logger.error(f"Search failed for query '{query}': {e}")
+                self.logger.error(f"[{cls_name}:198] Search failed for query '{query}': {e}")
                 return []
 
         # 并行搜索
@@ -191,6 +232,8 @@ class LiteratureMapperAgent(ProblemAgentBase):
             if isinstance(result, list):
                 all_papers.extend(result)
 
+        self.logger.info(f"[{cls_name}:220] 搜索完成，总论文数: {len(all_papers)}")
+
         # 去重
         seen = set()
         unique_papers = []
@@ -200,6 +243,7 @@ class LiteratureMapperAgent(ProblemAgentBase):
                 seen.add(title)
                 unique_papers.append(p)
 
+        self.logger.info(f"[{cls_name}:227] 去重后论文数: {len(unique_papers)}")
         return unique_papers
 
     async def _categorize_papers(self, papers: List[Dict[str, Any]]) -> Dict[str, List]:
@@ -234,12 +278,23 @@ class LiteratureMapperAgent(ProblemAgentBase):
     "related": [...]
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                logger.error(f"[{cls_name}:282] LLM返回空响应")
+                return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data
+        except json.JSONDecodeError as e:
+            logger.error(f"[{cls_name}:286] Categorization failed (JSON解析错误): {e}")
+            return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
+        except ValueError as e:
+            logger.error(f"[{cls_name}:288] Categorization failed: {e}")
+            return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
         except Exception as e:
-            logger.error(f"Categorization failed: {e}")
+            logger.error(f"[{cls_name}:290] Categorization failed: {e}")
             return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
 
     async def _identify_gaps(self, topic: str, categorized: Dict) -> List[Dict[str, str]]:
@@ -266,12 +321,23 @@ class LiteratureMapperAgent(ProblemAgentBase):
     ]
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                logger.error(f"[{cls_name}:325] LLM返回空响应")
+                return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data.get("gaps", [])
+        except json.JSONDecodeError as e:
+            logger.error(f"[{cls_name}:329] Gap identification failed (JSON解析错误): {e}")
+            return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
+        except ValueError as e:
+            logger.error(f"[{cls_name}:331] Gap identification failed: {e}")
+            return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
         except Exception as e:
-            logger.error(f"Gap identification failed: {e}")
+            logger.error(f"[{cls_name}:333] Gap identification failed: {e}")
             return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
 
     async def _generate_literature_map(

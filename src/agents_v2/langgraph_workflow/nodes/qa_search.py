@@ -22,8 +22,8 @@ class QASearchNode:
 
     def __init__(self):
         """初始化问答搜索节点"""
-        from ...qa.paper_search import PaperSearchAgent
-        from ...qa.query_router import QueryRouter
+        from ...paper_search.paper_search import PaperSearchAgent
+        from ...paper_search.query_router import QueryRouter
 
         self.search_agent = PaperSearchAgent()
         self.query_router = QueryRouter()

@@ -289,12 +289,12 @@ class LiteratureReviewAgent(WritingAgentBase):
         keyword_str = ", ".join(keywords) if keywords else ""
 
         prompt = f"""
-为以下研究主题生成多个搜索查询：
+为以下研究主题生成多个搜索查询（请使用英文关键词，因为arXiv和PubMed是英文数据库）：
 
 主题：{topic}
 已有关键词：{keyword_str}
 
-请生成8-12个不同角度的搜索查询，覆盖：
+请生成8-12个不同角度的英文搜索查询，覆盖：
 1. 核心概念和方法
 2. 不同应用场景
 3. 相关理论和基础
@@ -303,14 +303,28 @@ class LiteratureReviewAgent(WritingAgentBase):
 输出JSON格式：
 {{
     "queries": [
-        {{"query": "搜索查询", "angle": "角度描述", "priority": "high/medium/low"}}
+        {{"query": "english search query", "angle": "角度描述", "priority": "high/medium/low"}}
     ]
 }}
 """
         try:
             response = await self._llm_call(prompt)
+            if not response or not response.strip():
+                logger.warning("LLM返回空响应，使用默认查询")
+                return [{"query": topic, "angle": "general", "priority": "high"}]
             data = json.loads(response)
             return data.get("queries", [{"query": topic, "angle": "general", "priority": "high"}])
+        except json.JSONDecodeError as e:
+            logger.error(f"Query generation failed (JSON解析错误): {e}")
+            try:
+                import re
+                match = re.search(r'\{.*\}', response, re.DOTALL)
+                if match:
+                    data = json.loads(match.group())
+                    return data.get("queries", [{"query": topic, "angle": "general", "priority": "high"}])
+            except Exception:
+                pass
+            return [{"query": topic, "angle": "general", "priority": "high"}]
         except Exception as e:
             logger.error(f"Query generation failed: {e}")
             return [{"query": topic, "angle": "general", "priority": "high"}]

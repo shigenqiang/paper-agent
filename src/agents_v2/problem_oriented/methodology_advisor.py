@@ -18,6 +18,16 @@ from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 logger = logging.getLogger(__name__)
 
 
+def _clean_json_markdown(text: str) -> str:
+    """清理JSON markdown格式（去除```json...```包裹）"""
+    import re
+    text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 class MethodologyAdvisorAgent(ProblemAgentBase):
     """
     MethodologyAdvisorAgent - 方法指导
@@ -113,7 +123,7 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"Methodology advisory failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:116] Methodology advisory failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,
@@ -150,12 +160,23 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
     ]
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                self.logger.error(f"[{cls_name}:154] LLM返回空响应")
+                return []
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data.get("methods", [])
+        except json.JSONDecodeError as e:
+            self.logger.error(f"[{cls_name}:158] Method recommendation failed (JSON解析错误): {e}")
+            return []
+        except ValueError as e:
+            self.logger.error(f"[{cls_name}:160] Method recommendation failed: {e}")
+            return []
         except Exception as e:
-            logger.error(f"Method recommendation failed: {e}")
+            self.logger.error(f"[{cls_name}:162] Method recommendation failed: {e}")
             return []
 
     async def _evaluate_method(
@@ -190,12 +211,23 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
     "suitable": true/false
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                self.logger.error(f"[{cls_name}:215] LLM返回空响应")
+                return {"suitability": 5.0, "suitable": False}
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data
+        except json.JSONDecodeError as e:
+            self.logger.error(f"[{cls_name}:219] Method evaluation failed (JSON解析错误): {e}")
+            return {"suitability": 5.0, "suitable": False}
+        except ValueError as e:
+            self.logger.error(f"[{cls_name}:221] Method evaluation failed: {e}")
+            return {"suitability": 5.0, "suitable": False}
         except Exception as e:
-            logger.error(f"Method evaluation failed: {e}")
+            self.logger.error(f"[{cls_name}:223] Method evaluation failed: {e}")
             return {"suitability": 5.0, "suitable": False}
 
     async def _check_rigor(self, method_evaluation: Dict) -> List[str]:
@@ -252,7 +284,7 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
             problems = data.get("problems", [])
             return [p.get("description", "") for p in problems]
         except Exception as e:
-            logger.error(f"Problem identification failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:255] Problem identification failed: {e}")
             return []
 
     async def _generate_recommendations(

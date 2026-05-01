@@ -114,7 +114,7 @@ class DiscussionDeepenerAgent(ProblemAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"Discussion deepening failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:117] Discussion deepening failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,
@@ -156,7 +156,7 @@ class DiscussionDeepenerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Depth assessment failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:159] Depth assessment failed: {e}")
             return {"depth_score": 5.0, "issues": [], "missing_elements": []}
 
     async def _guide_comparisons(
@@ -198,7 +198,7 @@ class DiscussionDeepenerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Comparison guidance failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:201] Comparison guidance failed: {e}")
             return {"comparisons_to_make": [], "comparison_depth": 0.5}
 
     async def _identify_discussion_points(self, results: str) -> List[str]:
@@ -232,7 +232,7 @@ class DiscussionDeepenerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data.get("points", [])
         except Exception as e:
-            logger.error(f"Discussion points identification failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:235] Discussion points identification failed: {e}")
             return []
 
     async def _guide_limitation_analysis(self, results: str) -> Dict[str, Any]:
@@ -268,7 +268,7 @@ class DiscussionDeepenerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Limitation analysis guidance failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:271] Limitation analysis guidance failed: {e}")
             return {"limitations": []}
 
     async def _guide_future_directions(self, results: str, limitations: Dict) -> List[str]:
@@ -297,7 +297,7 @@ class DiscussionDeepenerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data.get("future_directions", [])
         except Exception as e:
-            logger.error(f"Future direction guidance failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:300] Future direction guidance failed: {e}")
             return []
 
     async def _generate_recommendations(

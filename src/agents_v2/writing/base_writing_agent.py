@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 import logging
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,18 @@ class WritingAgentBase(ABC):
     def _init_llm(self):
         """初始化LLM"""
         try:
+            # 尝试加载 .env 文件
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+            except ImportError:
+                pass
+
             provider = self.llm_config.provider.lower()
+
+            # 加载环境变量作为后备
+            api_key = self.llm_config.api_key or os.getenv("OPENAI_API_KEY")
+            base_url = self.llm_config.base_url or os.getenv("OPENAI_BASE_URL")
 
             if provider == "openai":
                 from langchain_openai import ChatOpenAI
@@ -95,8 +107,8 @@ class WritingAgentBase(ABC):
                     model=self.llm_config.model_name,
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
-                    api_key=self.llm_config.api_key,
-                    base_url=self.llm_config.base_url,
+                    api_key=api_key,
+                    base_url=base_url,
                     timeout=self.llm_config.timeout
                 )
             elif provider == "anthropic":
@@ -105,7 +117,7 @@ class WritingAgentBase(ABC):
                     model=self.llm_config.model_name,
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
-                    api_key=self.llm_config.api_key,
+                    api_key=api_key,
                     timeout=self.llm_config.timeout
                 )
             else:
@@ -119,7 +131,10 @@ class WritingAgentBase(ABC):
     async def _llm_call(self, prompt: str) -> str:
         """LLM调用封装"""
         if not self._llm:
-            raise RuntimeError("LLM未初始化")
+            logger.warning("LLM未初始化，尝试重新初始化...")
+            self._init_llm()
+            if not self._llm:
+                raise RuntimeError("LLM未初始化")
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
@@ -138,7 +153,7 @@ class WritingAgentBase(ABC):
             return content
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
-            raise
+            return ""  # 返回空字符串而不是抛出异常
 
     def _clean_thinking_blocks(self, text: str) -> str:
         """清理思考块 (MiniMax等模型会输出)"""

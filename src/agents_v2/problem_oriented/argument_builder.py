@@ -44,6 +44,7 @@ class ArgumentBuilderAgent(ProblemAgentBase):
             description="论证逻辑构建与检查",
             system_prompt=system_prompt
         )
+        self.cls_name = self.__class__.__name__
 
     async def diagnose(
         self,
@@ -110,7 +111,7 @@ class ArgumentBuilderAgent(ProblemAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"Argument building failed: {e}")
+            self.logger.error(f"[{self.cls_name}:113] Argument building failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,
@@ -158,7 +159,7 @@ class ArgumentBuilderAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Framework building failed: {e}")
+            self.logger.error(f"[{self.cls_name}:161] Framework building failed: {e}")
             return {"main_thesis": thesis, "sub_theses": [], "structure_type": "unknown"}
 
     async def _check_coherence(self, thesis: str, framework: Dict) -> Dict[str, Any]:
@@ -188,7 +189,7 @@ class ArgumentBuilderAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Coherence check failed: {e}")
+            self.logger.error(f"[{self.cls_name}:191] Coherence check failed: {e}")
             return {"score": 5.0, "issues": [], "coherent": True}
 
     async def _identify_logical_gaps(
@@ -227,7 +228,7 @@ class ArgumentBuilderAgent(ProblemAgentBase):
             data = json.loads(response)
             return data.get("gaps", [])
         except Exception as e:
-            logger.error(f"Gap identification failed: {e}")
+            self.logger.error(f"[{self.cls_name}:230] Gap identification failed: {e}")
             return []
 
     async def _evaluate_support(self, framework: Dict, evidence: List) -> Dict[str, Any]:
@@ -259,7 +260,7 @@ class ArgumentBuilderAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Support evaluation failed: {e}")
+            self.logger.error(f"[{self.cls_name}:262] Support evaluation failed: {e}")
             return {"overall": 5.0}
 
     async def _generate_recommendations(

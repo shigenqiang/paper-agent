@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 import logging
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,18 @@ class ProblemAgentBase(ABC):
     def _init_llm(self):
         """初始化LLM"""
         try:
+            # 尝试加载 .env 文件
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+            except ImportError:
+                pass
+
             provider = self.llm_config.provider.lower()
+
+            # 加载环境变量作为后备
+            api_key = self.llm_config.api_key or os.getenv("OPENAI_API_KEY")
+            base_url = self.llm_config.base_url or os.getenv("OPENAI_BASE_URL")
 
             if provider == "openai":
                 from langchain_openai import ChatOpenAI
@@ -99,8 +111,8 @@ class ProblemAgentBase(ABC):
                     model=self.llm_config.model_name,
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
-                    api_key=self.llm_config.api_key,
-                    base_url=self.llm_config.base_url
+                    api_key=api_key,
+                    base_url=base_url
                 )
             elif provider == "anthropic":
                 from langchain_anthropic import ChatAnthropic
@@ -108,7 +120,7 @@ class ProblemAgentBase(ABC):
                     model=self.llm_config.model_name,
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
-                    api_key=self.llm_config.api_key
+                    api_key=api_key
                 )
             else:
                 raise ValueError(f"不支持的LLM提供商: {provider}")
@@ -119,8 +131,14 @@ class ProblemAgentBase(ABC):
 
     async def _llm_call(self, prompt: str) -> str:
         """LLM调用封装"""
+        cls_name = self.__class__.__name__
+
         if not self._llm:
-            raise RuntimeError("LLM未初始化")
+            logger.warning(f"[{cls_name}:134] LLM未初始化，尝试重新初始化...")
+            self._init_llm()
+            if not self._llm:
+                logger.error(f"[{cls_name}:138] LLM重试初始化后仍失败")
+                raise RuntimeError("LLM未初始化")
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
@@ -130,16 +148,25 @@ class ProblemAgentBase(ABC):
                 HumanMessage(content=prompt)
             ]
 
+            logger.info(f"[{cls_name}:148] LLM调用开始，prompt长度={len(prompt)}")
             response = await self._llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
+
+            logger.info(f"[{cls_name}:153] LLM返回内容长度={len(content) if content else 0}")
 
             # 清理MiniMax模型的思考块
             content = self._clean_thinking_blocks(content)
 
+            if not content or not content.strip():
+                logger.error(f"[{cls_name}:160] LLM返回空内容，response类型={type(response)}")
+                raise ValueError(f"[{cls_name}:160] LLM返回空内容，无法解析JSON")
+
             return content
+        except ValueError:
+            raise  # 重新抛出ValueError，保留原始堆栈
         except Exception as e:
-            logger.error(f"LLM调用失败: {e}")
-            raise
+            logger.error(f"[{cls_name}:165] LLM调用失败: {type(e).__name__}: {e}")
+            raise ValueError(f"[{cls_name}:165] LLM调用失败: {type(e).__name__}: {e}") from e
 
     def _clean_thinking_blocks(self, text: str) -> str:
         """清理思考块 (MiniMax等模型会输出)"""

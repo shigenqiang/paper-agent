@@ -121,7 +121,7 @@ class PhaseSupervisor:
 
         agent_results = []
         for i, result in enumerate(results):
-            agent_name = getattr(agents[i], "__name__", f"agent_{i}")
+            agent_name = getattr(agents[i], "__name__", None) or getattr(agents[i], "__class__", type(agents[i])).__name__
             if isinstance(result, Exception):
                 agent_results.append(AgentResult(
                     agent_name=agent_name,
@@ -202,12 +202,19 @@ class PhaseSupervisor:
         context: Optional[Dict[str, Any]]
     ) -> AgentResult:
         """运行单个Agent"""
-        agent_name = getattr(agent, "__name__", "unknown")
+        # 获取agent名称 - 支持类实例和函数
+        agent_name = getattr(agent, "__name__", None) or getattr(agent, "__class__", type(agent)).__name__
         start_time = time.time()
 
         try:
-            # 使用熔断器
-            result = await self.circuit_breaker.call(agent, input_data, context)
+            # 通过熔断器执行，支持agent对象(有.execute方法)和普通函数
+            async def _invoke_agent(*args, **kwargs):
+                if hasattr(agent, 'execute'):
+                    return await agent.execute(input_data, context)
+                else:
+                    return await agent(input_data, context)
+
+            result = await self.circuit_breaker.call(_invoke_agent)
 
             if isinstance(result, AgentResult):
                 return result

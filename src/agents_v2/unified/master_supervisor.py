@@ -382,44 +382,50 @@ class MasterSupervisor:
                 await self._apply_single_fix(problem, self.state.context)
 
     def _get_phase_agents(self, phase: str) -> List[Callable]:
-        """获取指定阶段的Agent列表"""
+        """获取指定阶段的Agent列表，过滤掉未注册的None"""
         if phase == "diagnostic":
-            return [
+            agents = [
                 self.agents.get("topic_refiner"),
                 self.agents.get("literature_mapper"),
                 self.agents.get("methodology_advisor")
             ]
         elif phase == "topic":
-            return [self.agents.get("topic")]
+            agents = [self.agents.get("topic")]
         elif phase == "literature":
-            return [self.agents.get("literature")]
+            agents = [self.agents.get("literature")]
         elif phase == "methodology":
-            return [
+            agents = [
                 self.agents.get("methodology_advisor"),
                 self.agents.get("argument_builder")
             ]
         elif phase == "writing":
-            return [
+            agents = [
                 self.agents.get("thesis"),
                 self.agents.get("outline"),
                 self.agents.get("draft")
             ]
         elif phase == "polish":
-            return [
+            agents = [
                 self.agents.get("chart_formatter"),
                 self.agents.get("language_polisher"),
                 self.agents.get("plagiarism_checker")
             ]
         elif phase == "literature_review":
-            return [self.agents.get("literature_review")]
+            agents = [self.agents.get("literature_review")]
         elif phase == "outline_gen":
-            return [self.agents.get("outline_generator")]
+            agents = [self.agents.get("outline_generator")]
         elif phase == "draft_gen":
-            return [self.agents.get("draft_generator")]
+            agents = [self.agents.get("draft_generator")]
         elif phase == "refine":
-            return [self.agents.get("report_refiner")]
+            agents = [self.agents.get("report_refiner")]
+        else:
+            agents = []
 
-        return []
+        # 过滤掉未注册的Agent (None)
+        filtered = [a for a in agents if a is not None]
+        if len(filtered) < len(agents):
+            logger.warning(f"Phase '{phase}': {len(agents) - len(filtered)} agent(s) not registered, skipping")
+        return filtered
 
     def _prepare_phase_input(self, phase: str, original_input: Dict[str, Any]) -> Dict[str, Any]:
         """准备阶段的输入数据"""

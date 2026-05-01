@@ -114,7 +114,7 @@ class SectionDifferentiatorAgent(ProblemAgentBase):
             )
 
         except Exception as e:
-            self.logger.error(f"Section differentiation check failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:117] Section differentiation check failed: {e}")
             return AgentOutput(
                 success=False,
                 result=None,
@@ -161,7 +161,7 @@ class SectionDifferentiatorAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Abstract vs conclusion check failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:164] Abstract vs conclusion check failed: {e}")
             return {"duplication_rate": 50, "differentiation": 0.5, "is_acceptable": False}
 
     async def _check_section_differentiation(self, sections: Dict[str, str]) -> Dict[str, Any]:
@@ -197,7 +197,7 @@ class SectionDifferentiatorAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"Section differentiation check failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:200] Section differentiation check failed: {e}")
             return {"differentiation_score": 5.0, "overlaps": []}
 
     async def _identify_duplications(self, sections: Dict[str, str]) -> Dict[str, Any]:
@@ -260,7 +260,7 @@ class SectionDifferentiatorAgent(ProblemAgentBase):
             data = json.loads(response)
             return data.get("purposes", {})
         except Exception as e:
-            logger.error(f"Purpose definition failed: {e}")
+            self.logger.error(f"[{self.__class__.__name__}:263] Purpose definition failed: {e}")
             return {}
 
     async def _generate_recommendations(
