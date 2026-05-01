@@ -15,7 +15,7 @@ from src.agents_v2.routing import (
     FallbackResult,
     FallbackStrategy,
 )
-from src.agents_v2.intent import IntentType
+from src.agents_v2.routing import IntentType
 
 
 class TestRouteStrategy:

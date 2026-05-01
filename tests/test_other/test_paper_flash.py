@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime
 
-from src.agents_v2.qa import (
+from src.agents_v2.paper_search import (
     PaperFlash,
     FlashType,
     FlashReport,

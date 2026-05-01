@@ -5,7 +5,7 @@ Agent评估测试 v2.0
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.agents_v2.agent_evaluator import (
+from src.agents_v2.evaluation.agent_evaluator import (
     AgentEvaluator,
     AgentEvaluationReport,
     EvaluationResult,

@@ -4,6 +4,7 @@ Paper API - RESTful API for Paper Agent Frontend
 Provides CRUD operations for papers, literature, and writing sessions.
 """
 import time
+import asyncio
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -658,7 +659,7 @@ async def search_literature(request: web.Request) -> web.Response:
         query = data.get("query", "")
 
         # Use PaperSearchAgent to search
-        from src.agents_v2.qa import PaperSearchAgent
+        from src.agents_v2.paper_search import PaperSearchAgent
 
         agent = PaperSearchAgent()
         page = data.get("page", 1)
@@ -1381,6 +1382,436 @@ async def get_available_models(request: web.Request) -> web.Response:
         }, status=500)
 
 
+# ---- SSE Streaming Endpoints ----
+
+async def generate_outline_stream(request: web.Request) -> web.StreamResponse:
+    """POST /papers/{id}/outline/generate/stream - Generate outline with SSE streaming"""
+    from .sse_helper import SSEResponse
+
+    sse = SSEResponse(request)
+    await sse.start()
+
+    try:
+        paper_id = request.match_info["id"]
+        paper = get_paper_or_404(paper_id)
+
+        if not paper:
+            await sse.send_error("Paper not found")
+            return sse
+
+        body = await request.content.read()
+        body_text = body.decode('utf-8', errors='ignore')
+        try:
+            data = json.loads(body_text) if body_text else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        topic = data.get("topic", paper.get("topic", ""))
+        await sse.send_phase("outline", "start", f"正在生成大纲: {topic[:50]}")
+
+        from src.agents_v2.paper_agents import OutlineAgent
+        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+
+        llm_config = LLMConfig(
+            provider="openai",
+            model_name=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+            temperature=0.7,
+            api_key=DEFAULT_API_KEY,
+            base_url=DEFAULT_BASE_URL
+        )
+
+        agent = OutlineAgent(llm_config)
+        result = await agent.execute({"task_description": topic})
+
+        if result.success:
+            result_data = result.result if isinstance(result.result, dict) else {}
+            outline = result_data.get("outline", {})
+            paper["outline"] = outline
+            paper["updated_at"] = datetime.now().isoformat()
+            save_papers_storage(PAPERS_STORAGE)
+
+            await sse.send_phase("outline", "complete", "大纲生成完成")
+            await sse.send_complete({"success": True, "data": outline})
+        else:
+            await sse.send_error(result.error or "大纲生成失败")
+
+    except Exception as e:
+        logger.error(f"Generate outline stream error: {e}")
+        await sse.send_error(str(e))
+
+    return sse
+
+
+async def generate_content_stream(request: web.Request) -> web.StreamResponse:
+    """POST /papers/{id}/sections/{sectionId}/generate/stream - Generate content with SSE"""
+    from .sse_helper import SSEResponse
+
+    sse = SSEResponse(request)
+    await sse.start()
+
+    try:
+        paper_id = request.match_info["id"]
+        section_id = request.match_info["sectionId"]
+
+        paper = get_paper_or_404(paper_id)
+        if not paper:
+            await sse.send_error("Paper not found")
+            return sse
+
+        body = await request.content.read()
+        body_text = body.decode('utf-8', errors='ignore')
+        try:
+            data = json.loads(body_text) if body_text else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        prompt = data.get("prompt", "")
+        sections = paper.get("sections", []) or paper.get("outline", [])
+        section_title = section_id
+
+        for s in sections:
+            if s.get("id") == section_id:
+                section_title = s.get("title", section_id)
+                break
+
+        await sse.send_phase("content", "start", f"正在生成: {section_title}")
+
+        from src.agents_v2.paper_agents import DraftWriterAgent
+        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+
+        llm_config = LLMConfig(
+            provider="openai",
+            model_name=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+            temperature=0.7,
+            api_key=DEFAULT_API_KEY,
+            base_url=DEFAULT_BASE_URL
+        )
+
+        agent = DraftWriterAgent(llm_config)
+        chapters = [{"name": s.get("title", "未命名"), "main_points": [], "citations_needed": [], "depends_on": None} for s in sections]
+        outline = {"chapters": chapters}
+
+        result = await agent.execute(
+            input_data={"outline": outline, "section": section_title},
+            context={"outline": outline, "thesis_statement": paper.get("title", ""), "literature_result": {}}
+        )
+
+        if result.success:
+            content = ""
+            if isinstance(result.result, dict):
+                content = result.result.get("full_draft", "") or result.result.get("content", "") or str(result.result)
+            else:
+                content = str(result.result)
+
+            # 分块发送内容模拟流式
+            chunk_size = 50
+            for i in range(0, len(content), chunk_size):
+                await sse.send_token(content[i:i + chunk_size])
+                await asyncio.sleep(0.02)
+
+            await sse.send_phase("content", "complete", "内容生成完成")
+            await sse.send_complete({"success": True, "data": {"content": content, "section_id": section_id}})
+        else:
+            await sse.send_error(result.error or "内容生成失败")
+
+    except Exception as e:
+        logger.error(f"Generate content stream error: {e}")
+        await sse.send_error(str(e))
+
+    return sse
+
+
+async def chat_stream(request: web.Request) -> web.StreamResponse:
+    """POST /papers/{paperId}/chat/stream - Chat with SSE streaming"""
+    from .sse_helper import SSEResponse
+
+    sse = SSEResponse(request)
+    await sse.start()
+
+    data = None
+    try:
+        paper_id = request.match_info["paperId"]
+        body = await request.content.read()
+        body_text = body.decode('utf-8', errors='ignore')
+        data = json.loads(body_text) if body_text else {}
+        message = data.get("message", "")
+        user_id = data.get("user_id", "default_user")
+        session_id = data.get("session_id", "default_session")
+
+        if not message:
+            await sse.send_error("Message is required")
+            return sse
+
+        session_key = (user_id, session_id)
+        if session_key not in CHAT_SESSIONS:
+            CHAT_SESSIONS[session_key] = []
+
+        messages_context = CHAT_SESSIONS[session_key]
+        messages_context.append({"role": "user", "content": message})
+
+        await sse.send_phase("chat", "start", "正在思考...")
+
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(
+                api_key=DEFAULT_API_KEY,
+                base_url=DEFAULT_BASE_URL if DEFAULT_BASE_URL else "https://api.minimax.chat/v1"
+            )
+
+            system_prompt = "你是一个友好的AI写作助手。请用中文回答用户的问题。"
+            api_messages = [{"role": "system", "content": system_prompt}] + messages_context
+
+            # 尝试流式调用
+            try:
+                stream = client.chat.completions.create(
+                    model=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+                    messages=api_messages,
+                    stream=True,
+                    extra_body={"reasoning_split": False}
+                )
+
+                full_content = ""
+                for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        token = chunk.choices[0].delta.content
+                        full_content += token
+                        await sse.send_token(token)
+
+            except Exception:
+                # 流式失败，降级到非流式
+                response = client.chat.completions.create(
+                    model=os.getenv("LLM_MODEL", "MiniMax-M2.7"),
+                    messages=api_messages,
+                    extra_body={"reasoning_split": False}
+                )
+                full_content = response.choices[0].message.content or ""
+                # 分块发送
+                for i in range(0, len(full_content), 20):
+                    await sse.send_token(full_content[i:i + 20])
+                    await asyncio.sleep(0.02)
+
+            messages_context.append({"role": "assistant", "content": full_content})
+            if len(messages_context) > 20:
+                CHAT_SESSIONS[session_key] = messages_context[-20:]
+
+            await sse.send_phase("chat", "complete", "回复完成")
+            await sse.send_complete({
+                "success": True,
+                "data": {"message": message, "response": full_content}
+            })
+
+        except Exception as llm_error:
+            if messages_context and messages_context[-1].get("role") == "user":
+                messages_context.pop()
+            logger.warning(f"LLM call failed in stream chat: {llm_error}")
+            await sse.send_error(f"AI服务暂时不可用: {type(llm_error).__name__}")
+
+    except Exception as e:
+        logger.error(f"Chat stream error: {e}")
+        await sse.send_error(str(e))
+
+    return sse
+
+
+async def format_content_stream(request: web.Request) -> web.StreamResponse:
+    """POST /papers/{id}/sections/{sectionId}/format/stream - 修正格式（SSE 流式）"""
+    from .sse_helper import SSEResponse
+
+    sse = SSEResponse(request)
+    await sse.start()
+
+    try:
+        paper_id = request.match_info["id"]
+        section_id = request.match_info["sectionId"]
+
+        body = await request.content.read()
+        body_text = body.decode('utf-8', errors='ignore')
+        try:
+            data = json.loads(body_text) if body_text else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        provided_content = data.get("content", "")
+        if not provided_content:
+            await sse.send_error("content 不能为空")
+            return sse
+
+        await sse.send_phase("format", "start", "开始修正格式")
+
+        try:
+            from src.agents_v2.writing.smart_reviser import LanguagePolisherAgent
+
+            # 获取 LLM 配置
+            from src.agents_v2.core.config import LLMConfig
+            llm_config = LLMConfig()
+            agent = LanguagePolisherAgent(llm_config=llm_config)
+
+            await sse.send_phase("format", "processing", "AI 正在修正格式...")
+
+            result = await agent.execute(provided_content)
+
+            if result and result.success:
+                content = str(result.result)
+                # 分块发送
+                chunk_size = 50
+                for i in range(0, len(content), chunk_size):
+                    chunk = content[i:i + chunk_size]
+                    await sse.send_token(chunk)
+                    await asyncio.sleep(0.02)
+
+                await sse.send_phase("format", "complete", "格式修正完成")
+                await sse.send_complete({
+                    "success": True,
+                    "data": {"content": content, "section_id": section_id}
+                })
+            else:
+                await sse.send_error(result.error or "格式修正失败")
+
+        except Exception as e:
+            logger.error(f"Format stream error: {e}")
+            await sse.send_error(str(e))
+
+    except Exception as e:
+        logger.error(f"Format stream error: {e}")
+        await sse.send_error(str(e))
+
+    return sse
+
+
+async def verify_citations(request: web.Request) -> web.Response:
+    """POST /api/papers/{id}/citations/verify - 验证论文中的引用
+
+    Request body:
+        citations: [{"title": "...", "authors": [...], "year": "...", "doi": "..."}]
+
+    Returns:
+        验证结果报告
+    """
+    try:
+        paper_id = request.match_info["id"]
+        paper = get_paper_or_404(paper_id)
+
+        data = await request.json()
+        citations_data = data.get("citations", [])
+
+        if not citations_data:
+            # 从论文草稿中提取引用
+            if paper and paper.get("draft"):
+                import re
+                draft = paper["draft"]
+                citations_in_text = re.findall(r'\[(\d+(?:[,-]\d+)*)\]', draft)
+                return web.json_response({
+                    "success": True,
+                    "data": {
+                        "found_citations": len(citations_in_text),
+                        "message": "请提供 citations 列表进行验证",
+                    }
+                })
+            return web.json_response({
+                "success": False,
+                "error": "citations 列表为空"
+            }, status=400)
+
+        # 构建 Citation 对象
+        from src.agents_v2.writing.citation_generator import Citation, CitationVerifier
+
+        citations = []
+        for c in citations_data:
+            citations.append(Citation(
+                authors=c.get("authors", []),
+                year=str(c.get("year", "")),
+                title=c.get("title", ""),
+                journal=c.get("journal"),
+                doi=c.get("doi"),
+            ))
+
+        # 批量验证
+        verifier = CitationVerifier()
+        results = await verifier.verify_batch(citations)
+        report = verifier.generate_verification_report(results)
+
+        return web.json_response({
+            "success": True,
+            "data": report,
+        })
+
+    except Exception as e:
+        logger.error(f"Verify citations error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+async def reflect_paper(request: web.Request) -> web.Response:
+    """POST /api/papers/{id}/reflect - 对论文进行多层质量反思
+
+    Request body (all optional):
+        outline: 大纲数据
+        sections: [{"title": "...", "content": "..."}]
+        full_text: 完整文本
+
+    Returns:
+        多层反思结果
+    """
+    try:
+        paper_id = request.match_info["id"]
+        paper = get_paper_or_404(paper_id)
+
+        data = await request.json() if request.content_length else {}
+
+        outline = data.get("outline")
+        sections_data = data.get("sections")
+        full_text = data.get("full_text")
+
+        # 如果没有提供数据，使用论文数据
+        if not outline and paper:
+            outline = paper.get("outline")
+        if not full_text and paper:
+            full_text = paper.get("draft")
+        if not sections_data and paper:
+            # 从草稿中提取章节
+            if paper.get("draft"):
+                import re
+                parts = re.split(r'\n#{1,3}\s+', paper["draft"])
+                if len(parts) > 1:
+                    sections_data = []
+                    for i, part in enumerate(parts[1:], 1):
+                        title_end = part.find('\n')
+                        if title_end > 0:
+                            sections_data.append({
+                                "title": part[:title_end].strip(),
+                                "content": part[title_end:].strip(),
+                            })
+
+        from src.agents_v2.writing.reflection_engine import MultiLayerReflector
+
+        reflector = MultiLayerReflector()
+
+        sections = None
+        if sections_data:
+            sections = [(s["title"], s["content"]) for s in sections_data]
+
+        result = await reflector.reflect_all(
+            outline=outline,
+            sections=sections,
+            full_text=full_text,
+        )
+
+        return web.json_response({
+            "success": True,
+            "data": result.to_dict(),
+        })
+
+    except Exception as e:
+        logger.error(f"Reflect paper error: {e}")
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 def setup_paper_routes(app: web.Application):
     """Setup all paper-related routes"""
     # Paper CRUD
@@ -1415,6 +1846,16 @@ def setup_paper_routes(app: web.Application):
     # Chat
     app.router.add_post('/api/papers/{paperId}/chat', chat)
     app.router.add_get('/api/papers/{paperId}/chat/history', get_chat_history)
+
+    # SSE Streaming endpoints
+    app.router.add_post('/api/papers/{id}/outline/generate/stream', generate_outline_stream)
+    app.router.add_post('/api/papers/{id}/sections/{sectionId}/generate/stream', generate_content_stream)
+    app.router.add_post('/api/papers/{paperId}/chat/stream', chat_stream)
+    app.router.add_post('/api/papers/{id}/sections/{sectionId}/format/stream', format_content_stream)
+
+    # Citation verification & reflection
+    app.router.add_post('/api/papers/{id}/citations/verify', verify_citations)
+    app.router.add_post('/api/papers/{id}/reflect', reflect_paper)
 
     # Settings
     app.router.add_get('/api/settings', get_settings)

@@ -7,7 +7,7 @@ import pytest
 import time
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
-from src.agents_v2.evaluation_runner import (
+from src.agents_v2.evaluation.evaluation_runner import (
     EvaluationRunner,
     BenchmarkConfig,
     BenchmarkResult

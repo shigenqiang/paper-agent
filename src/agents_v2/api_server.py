@@ -149,7 +149,7 @@ async def handle_search(request: web.Request) -> web.Response:
                 "timestamp": datetime.now().isoformat()
             }, status=400)
 
-        from src.agents_v2.qa import PaperSearchAgent
+        from src.agents_v2.paper_search import PaperSearchAgent
 
         agent = PaperSearchAgent()
         result = await agent.execute(
@@ -595,7 +595,7 @@ async def handle_batch(request: web.Request) -> web.Response:
                     result = await agent.execute({"user_request": req_data.get("user_request", "")})
                     results.append({"success": result.success, "result": result.result})
                 elif req_type == "search":
-                    from src.agents_v2.qa import PaperSearchAgent
+                    from src.agents_v2.paper_search import PaperSearchAgent
                     agent = PaperSearchAgent()
                     result = await agent.execute(req_data.get("query", ""), {"max_results": req_data.get("max_results", 10)})
                     results.append({"success": True, "result": result.get("papers", [])})

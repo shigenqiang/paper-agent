@@ -23,8 +23,8 @@ from .unified import (
     QualityLevel
 )
 
-# 统计学问答系统
-from .qa import (
+# 论文搜索和报告系统
+from .paper_search import (
     QueryRouter,
     PaperSearchAgent,
     ReportGenerator,

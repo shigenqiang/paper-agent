@@ -4,7 +4,7 @@
 测试意图分类、多意图检测、置信度计算功能
 """
 import pytest
-from src.agents_v2.intent import (
+from src.agents_v2.routing import (
     IntentClassifier,
     IntentResult,
     IntentType,

@@ -22,7 +22,7 @@ async def search_papers_handler(query: str, source: str = "all", max_results: in
         source: 搜索来源 (arxiv/pubmed/all)
         max_results: 最大结果数
     """
-    from src.agents_v2.qa import PaperSearchAgent
+    from src.agents_v2.paper_search import PaperSearchAgent
 
     try:
         agent = PaperSearchAgent()

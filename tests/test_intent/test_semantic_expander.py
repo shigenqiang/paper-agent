@@ -2,7 +2,7 @@
 语义关键词扩展器单元测试
 """
 import pytest
-from src.agents_v2.intent import (
+from src.agents_v2.routing import (
     SemanticKeywordExpander,
     ExpansionResult,
     expand_keywords,
