@@ -759,5 +759,54 @@ class PDFParser:
 
 ---
 
-*报告完成时间: 2026/04/26 (补充于 2026-05-01: Marker/PDF-Extract-Kit/Zerox 最新版本)*
+## 2026年PDF解析技术最新补充 (2026-05)
+
+### PDFMathTranslate（学术论文翻译）
+
+**GitHub**: https://github.com/Byaidu/PDFMathTranslate
+**Stars**: 1,143+
+
+学术论文翻译专用工具，特点：
+- 完整保留公式、图表、目录、注释格式
+- 支持表格结构保持
+- 提供 Web UI 和 RESTful API
+- March 2026: v2.0 精确翻译内核发布
+
+### DocUTanslate（文档翻译）
+
+**GitHub**: https://github.com/xunbu/docutranslate
+**特点**：
+- 支持 PDF/Word/Excel/JSON/EPUB/SRT 等多格式
+- 自动术语表生成
+- PDF 表格、公式、代码识别（使用 MinerU）
+- Windows/Mac 便携包 < 40MB
+
+### 2026年 PDF 解析技术趋势
+
+| 趋势 | 说明 |
+|------|------|
+| **视觉LLM OCR** | Zerox 等基于 GPT-4V/Gemini 的视觉 OCR 对扫描 PDF 效果极好 |
+| **多模型集成** | LayoutLMv3 + YOLOv8 + UniMERNet + PaddleOCR 组合成为主流 |
+| **端到端优化** | PDF → Markdown → 翻译 → 格式保留一体化 |
+| **本地化部署** | 越来越多的工具支持本地部署保护隐私 |
+
+### Paper Agent PDF 解析升级路线图（2026更新）
+
+```
+Phase 1 (1-2周):
+  - 集成 Marker 作为主解析引擎
+  - 保留 pdfplumber 作为表格提取备选
+
+Phase 2 (2-3周):
+  - 集成 PDF-Extract-Kit 支持中文和公式
+  - 添加自动路由：中文/公式 → PDF-Extract-Kit，其他 → Marker
+
+Phase 3 (3-4周):
+  - 考虑 Zerox 处理扫描版 PDF
+  - 添加 PDFMathTranslate 支持论文翻译场景
+```
+
+---
+
+*报告完成时间: 2026/04/26 (补充于 2026-05-01: Marker/PDF-Extract-Kit/Zerox/PDFMathTranslate 最新版本)*
 *调研方法: 5轮迭代搜索 + 源码分析 + 社区反馈综合*

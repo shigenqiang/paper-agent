@@ -11,11 +11,12 @@ import json
 import logging
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
+from ..unified.translation import EnglishFirstMixin
 
 logger = logging.getLogger(__name__)
 
 
-class OutlineAgent(PaperAgentBase):
+class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
     """
     OutlineAgent - 大纲制定
 
@@ -41,6 +42,10 @@ class OutlineAgent(PaperAgentBase):
             description="论文大纲制定",
             system_prompt=system_prompt
         )
+
+    async def _process_text_english(self, text: str) -> str:
+        """EnglishFirstMixin实现：用LLM处理英文文本"""
+        return await self._llm_call(text)
 
     async def execute(
         self,
@@ -99,10 +104,18 @@ class OutlineAgent(PaperAgentBase):
             )
 
     async def _design_structure(self, thesis: str) -> Dict[str, Any]:
-        """设计章节结构"""
+        """设计章节结构（英文优先模式）"""
+        # 英文优先：翻译研究主题为英文，提升LLM理解质量
+        if self._english_mode:
+            translator = self._get_translator()
+            thesis_en = await translator.to_english(thesis)
+            logger.info(f"Translated thesis: {thesis[:50]}... → {thesis_en[:50]}...")
+        else:
+            thesis_en = thesis
+
         prompt = f"""请为以下研究主题设计最合适的论文结构。
 
-研究主题：{thesis}
+研究主题：{thesis_en}
 
 要求：
 1. 根据主题判断论文类型（实证研究/文献综述/理论分析/系统设计/对比实验等），选择最匹配的结构
@@ -190,9 +203,16 @@ class OutlineAgent(PaperAgentBase):
         lit_context = f"""
 相关文献分析：{json.dumps(paper_analyses[:10], ensure_ascii=False)}""" if paper_analyses else ""
 
+        # 英文优先：翻译研究主题
+        if self._english_mode:
+            translator = self._get_translator()
+            thesis_display = await translator.to_english(thesis)
+        else:
+            thesis_display = thesis
+
         prompt = f"""请基于以下研究主题，确定论文的关键学术论点。
 
-📝 研究主题：{thesis}
+📝 研究主题：{thesis_display}
 {lit_context}
 
 要求：

@@ -132,6 +132,51 @@ class PaperAgentState(dict):
     def timestamp(self, value: float):
         self["timestamp"] = value
 
+    # ===== HITL 人机协作 =====
+    @property
+    def hitl_enabled(self) -> bool:
+        return self.get("hitl_enabled", False)
+
+    @hitl_enabled.setter
+    def hitl_enabled(self, value: bool):
+        self["hitl_enabled"] = value
+
+    @property
+    def hitl_decision(self) -> str:
+        """HITL 决策：approve / revise / reject"""
+        return self.get("hitl_decision", "")
+
+    @hitl_decision.setter
+    def hitl_decision(self, value: str):
+        self["hitl_decision"] = value
+
+    @property
+    def hitl_feedback(self) -> str:
+        """HITL 人工反馈内容"""
+        return self.get("hitl_feedback", "")
+
+    @hitl_feedback.setter
+    def hitl_feedback(self, value: str):
+        self["hitl_feedback"] = value
+
+    @property
+    def hitl_stage(self) -> str:
+        """当前 HITL 中断阶段名"""
+        return self.get("hitl_stage", "")
+
+    @hitl_stage.setter
+    def hitl_stage(self, value: str):
+        self["hitl_stage"] = value
+
+    @property
+    def thread_id(self) -> str:
+        """LangGraph 线程 ID（用于 checkpoint 恢复）"""
+        return self.get("thread_id", "")
+
+    @thread_id.setter
+    def thread_id(self, value: str):
+        self["thread_id"] = value
+
     # ===== 错误与日志 =====
     @property
     def errors(self) -> List[str]:
@@ -150,6 +195,8 @@ def create_initial_state(
     user_id: str = "",
     session_id: str = "",
     max_iterations: int = 3,
+    hitl_enabled: bool = False,
+    thread_id: str = "",
 ) -> PaperAgentState:
     """创建初始状态"""
     import time
@@ -167,4 +214,6 @@ def create_initial_state(
     state.draft = ""
     state.feedback = []
     state.errors = []
+    state.hitl_enabled = hitl_enabled
+    state.thread_id = thread_id
     return state

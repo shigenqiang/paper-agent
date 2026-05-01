@@ -17,11 +17,13 @@
 - 保持状态一致性
 """
 import logging
+import uuid
 from typing import Optional
 
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 
-from .state import PaperAgentState
+from .state import PaperAgentState, create_initial_state
 from .edges import should_continue, route_by_intent
 from .nodes.router import RouteNode
 from .nodes.crawler import CrawlerAgent
@@ -43,8 +45,16 @@ from .nodes.revise import ReviseNode
 from .nodes.refine import RefineNode
 from .nodes.polish import PolishNode
 from .observability.tracer import create_tracer
+from ..writing.diff_manager import DiffManager
 
 logger = logging.getLogger(__name__)
+
+# HITL 中断点定义：在哪些节点前暂停等待人工审核
+HITL_INTERRUPT_POINTS = {
+    "after_outline": "outline",        # 大纲生成后、写作前
+    "after_review": "review",          # 审查后、评估前
+    "after_polish": "polish",          # 润色后（修改工作流终点前）
+}
 
 
 class UnifiedWorkflow:
@@ -57,6 +67,8 @@ class UnifiedWorkflow:
         enable_multimodal: bool = True,
         enable_kg: bool = True,
         enable_evaluation: bool = True,
+        enable_hitl: bool = False,
+        hitl_interrupt_after: Optional[list] = None,
     ):
         """初始化统一工作流
 
@@ -66,13 +78,21 @@ class UnifiedWorkflow:
             enable_multimodal: 是否启用多模态节点
             enable_kg: 是否启用知识图谱节点
             enable_evaluation: 是否启用评估节点
+            enable_hitl: 是否启用 HITL 人机协作
+            hitl_interrupt_after: HITL 中断点列表（节点名），
+                默认 ["outline", "review"]。在这些节点执行完毕后暂停等待人工审核。
         """
         self.llm = llm
         self.enable_memory = enable_memory
         self.enable_multimodal = enable_multimodal
         self.enable_kg = enable_kg
         self.enable_evaluation = enable_evaluation
+        self.enable_hitl = enable_hitl
+        self.hitl_interrupt_after = hitl_interrupt_after or ["outline", "review"]
         self.tracer = create_tracer()
+
+        # HITL checkpointer（内存级，进程重启后失效）
+        self._checkpointer = MemorySaver() if enable_hitl else None
 
         # 初始化所有节点
         self._init_nodes()
@@ -311,9 +331,21 @@ class UnifiedWorkflow:
         return await self.polish(state)
 
     def compile(self):
-        """编译工作流"""
+        """编译工作流
+
+        当 enable_hitl=True 时，会在指定节点后设置 interrupt_after，
+        工作流执行到这些节点后会暂停，等待人工审核后恢复。
+        需要配合 MemorySaver checkpointer 使用。
+        """
         graph = self._build_graph()
-        self.app = graph.compile()
+
+        compile_kwargs = {}
+        if self.enable_hitl and self._checkpointer:
+            compile_kwargs["checkpointer"] = self._checkpointer
+            compile_kwargs["interrupt_after"] = self.hitl_interrupt_after
+            logger.info(f"HITL 已启用，中断点: {self.hitl_interrupt_after}")
+
+        self.app = graph.compile(**compile_kwargs)
         logger.info("统一工作流编译完成")
         return self.app
 
@@ -324,6 +356,7 @@ class UnifiedWorkflow:
         session_id: str = "",
         report_type: str = "daily",
         keywords: list = None,
+        thread_id: str = "",
     ):
         """运行统一工作流
 
@@ -333,9 +366,15 @@ class UnifiedWorkflow:
             session_id: 会话 ID
             report_type: 报告类型（daily/weekly/monthly）
             keywords: 关键词列表（用于报告）
+            thread_id: LangGraph 线程 ID（用于 HITL checkpoint 恢复）
 
         Returns:
-            最终状态
+            dict: {
+                "state": 最终状态,
+                "thread_id": 线程ID（用于后续 resume）,
+                "interrupted": 是否被中断,
+                "interrupt_node": 中断节点名（如有）,
+            }
         """
         if self.app is None:
             self.compile()
@@ -346,6 +385,10 @@ class UnifiedWorkflow:
             user_id=user_id,
             session_id=session_id,
         )
+
+        # 生成或复用 thread_id
+        if not thread_id:
+            thread_id = str(uuid.uuid4())
 
         initial_state = {
             "user_query": query,
@@ -359,18 +402,142 @@ class UnifiedWorkflow:
             "draft": "",
             "feedback": [],
             "errors": [],
+            "hitl_enabled": self.enable_hitl,
+            "thread_id": thread_id,
         }
 
         # 如果明确指定了报告类型或关键词，跳过路由直接走报告路径
         if keywords or report_type != "daily":
             initial_state["route_path"] = "report"
 
-        result = await self.app.ainvoke(initial_state)
+        config = {"configurable": {"thread_id": thread_id}}
+
+        result = await self.app.ainvoke(initial_state, config=config)
+
+        # 检查是否被中断
+        interrupted = False
+        interrupt_node = ""
+        if self.enable_hitl:
+            snapshot = self.app.get_state(config)
+            if snapshot.next:
+                interrupted = True
+                interrupt_node = snapshot.next[0] if snapshot.next else ""
 
         # 结束追踪
         self.tracer.end_trace()
 
-        return result
+        return {
+            "state": result,
+            "thread_id": thread_id,
+            "interrupted": interrupted,
+            "interrupt_node": interrupt_node,
+        }
+
+    async def resume(
+        self,
+        thread_id: str,
+        decision: str = "approve",
+        feedback: str = "",
+    ):
+        """从 HITL 中断点恢复工作流
+
+        Args:
+            thread_id: 之前 run() 返回的线程 ID
+            decision: 人工决策 - "approve"（批准继续）/ "revise"（需要修改）/ "reject"（拒绝）
+            feedback: 人工反馈内容（decision=revise 时提供修改意见）
+
+        Returns:
+            dict: 同 run() 返回格式，额外包含 diff 信息
+        """
+        if self.app is None:
+            raise RuntimeError("工作流未编译，请先调用 compile()")
+        if not self.enable_hitl:
+            raise RuntimeError("HITL 未启用，无法使用 resume()")
+
+        config = {"configurable": {"thread_id": thread_id}}
+
+        # 获取当前状态快照
+        snapshot = self.app.get_state(config)
+        if not snapshot.next:
+            return {
+                "state": dict(snapshot.values),
+                "thread_id": thread_id,
+                "interrupted": False,
+                "interrupt_node": "",
+            }
+
+        # 保存恢复前的 draft/outline，用于后续 diff
+        pre_state = dict(snapshot.values)
+        pre_draft = pre_state.get("draft", "")
+        pre_outline = pre_state.get("outline", {})
+
+        # 将人工决策写入状态
+        current_state = dict(pre_state)
+        current_state["hitl_decision"] = decision
+        current_state["hitl_feedback"] = feedback
+
+        # 恢复执行
+        result = await self.app.ainvoke(current_state, config=config)
+
+        # 生成 diff 信息（draft 和 outline 的变更）
+        diff_info = {}
+        try:
+            dm = DiffManager()
+            post_draft = result.get("draft", "")
+            if pre_draft and post_draft and pre_draft != post_draft:
+                diff_info["draft_diff"] = dm.format_for_review(
+                    pre_draft, post_draft, stage="resume"
+                )
+            post_outline = result.get("outline", {})
+            if pre_outline and post_outline and pre_outline != post_outline:
+                import json
+                pre_outline_str = json.dumps(pre_outline, ensure_ascii=False, indent=2)
+                post_outline_str = json.dumps(post_outline, ensure_ascii=False, indent=2)
+                if pre_outline_str != post_outline_str:
+                    diff_info["outline_diff"] = dm.format_for_review(
+                        pre_outline_str, post_outline_str, stage="outline"
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to generate diff info: {e}")
+
+        # 检查是否再次中断
+        interrupted = False
+        interrupt_node = ""
+        snapshot_after = self.app.get_state(config)
+        if snapshot_after.next:
+            interrupted = True
+            interrupt_node = snapshot_after.next[0] if snapshot_after.next else ""
+
+        return {
+            "state": result,
+            "thread_id": thread_id,
+            "interrupted": interrupted,
+            "interrupt_node": interrupt_node,
+            "diff": diff_info,
+        }
+
+    def get_interrupt_info(self, thread_id: str) -> dict:
+        """获取指定线程的中断状态信息
+
+        Args:
+            thread_id: 线程 ID
+
+        Returns:
+            dict: {"interrupted": bool, "node": str, "state": dict}
+        """
+        if not self.enable_hitl or not self._checkpointer:
+            return {"interrupted": False, "node": "", "state": {}}
+
+        config = {"configurable": {"thread_id": thread_id}}
+        snapshot = self.app.get_state(config)
+
+        if snapshot.next:
+            return {
+                "interrupted": True,
+                "node": snapshot.next[0] if snapshot.next else "",
+                "state": dict(snapshot.values),
+            }
+        return {"interrupted": False, "node": "", "state": {}}
 
     def get_trace_summary(self) -> dict:
         """获取追踪摘要"""
@@ -383,6 +550,8 @@ def create_unified_workflow(
     enable_multimodal: bool = True,
     enable_kg: bool = True,
     enable_evaluation: bool = True,
+    enable_hitl: bool = False,
+    hitl_interrupt_after: Optional[list] = None,
 ) -> UnifiedWorkflow:
     """创建统一工作流
 
@@ -392,6 +561,8 @@ def create_unified_workflow(
         enable_multimodal: 是否启用多模态节点
         enable_kg: 是否启用知识图谱节点
         enable_evaluation: 是否启用评估节点
+        enable_hitl: 是否启用 HITL 人机协作
+        hitl_interrupt_after: HITL 中断点列表
 
     Returns:
         UnifiedWorkflow 实例
@@ -402,4 +573,6 @@ def create_unified_workflow(
         enable_multimodal=enable_multimodal,
         enable_kg=enable_kg,
         enable_evaluation=enable_evaluation,
+        enable_hitl=enable_hitl,
+        hitl_interrupt_after=hitl_interrupt_after,
     )

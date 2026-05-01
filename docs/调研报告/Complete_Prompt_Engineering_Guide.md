@@ -1423,3 +1423,98 @@ Anthropic 于 2025-2026 年持续更新提示词指南，关键变化：
 2. 对推理模型(DeepSeek-R1)使用简洁目标描述式提示词
 3. 对传统模型(Claude, GPT-4o)保持完整的 5 部分结构
 4. 引入 DSPy 自动优化搜索/写作 Agent 的提示词
+
+---
+
+## 2026年推理模型最新动态 (2026-05补充)
+
+### 主要推理模型对比 (截至2026年5月)
+
+| 模型 | 发布方 | 核心能力 | 性价比 |
+|------|--------|----------|--------|
+| **GPT-5 Ultra** | OpenAI | 10万亿参数，原生多模态 | $13.62/任务(o3对比) |
+| **Claude 4** | Anthropic | 神经符号架构，长上下文 | 高 |
+| **Gemini 3.1 Pro** | Google | 原生百万上下文，Deep Think模式 | 中 |
+| **DeepSeek-R1** | 深度求索 | 开源，推理能力逼近闭源 | 最高(开源免费) |
+| **Grok 3** | xAI | 实时知识，400B参数 | 高 |
+
+### 推理模型选择建议
+
+```python
+# Paper Agent 推理模型选择策略
+def select_reasoning_model(task_type: str) -> str:
+    """根据任务类型选择推理模型"""
+    if task_type == "factual_qa":
+        return "gemini-3.1-pro"  # 长上下文优先
+    elif task_type == "code_generation":
+        return "gpt-5-ultra"    # 代码能力最强
+    elif task_type == "reasoning_math":
+        return "deepseek-r1"     # 推理能力强，开源免费
+    elif task_type == "creative_writing":
+        return "claude-4"        # 创意写作优势
+    else:
+        return "gpt-4o"          # 通用平衡
+```
+
+### 2026年提示词工程六大趋势
+
+1. **Prompt Caching 成为标配**: Anthropic/OpenAI/Google 均支持，降低重复成本
+2. **推理模型提示词简化**: 从"详细引导"到"目标描述"
+3. **多模态提示词统一**: 图像+文本+表格统一提示范式
+4. **自适应提示词**: 基于任务难度动态调整提示词复杂度
+5. **提示词版本控制**: DSPy式编程化提示词管理
+6. **工具调用提示词标准化**: 工具描述包含使用时机和约束
+
+### 最新提示词优化论文/工具 (2026)
+
+| 工具/论文 | 机构 | 核心贡献 |
+|-----------|------|----------|
+| **MIPROv2** | Stanford | 多任务提示词优化 |
+| **Promptbreeder** | DeepMind | 进化式提示词优化 |
+| **APOT** | 学术 | 自适应提示词 token 分配 |
+| **Instinct** | 学术 | 推理模型提示词引导 |
+
+---
+
+## 附录：提示词工程速查卡
+
+### 推理模型提示词模板
+
+```python
+# DeepSeek-R1 / o3 等推理模型 - 简洁目标式
+REASONING_MODEL_PROMPT = """
+任务：{task_description}
+约束条件：
+{constraints}
+输出要求：
+{output_format}
+"""
+
+# 传统模型 - 完整结构式
+TRADITIONAL_MODEL_PROMPT = """
+【角色】{role}
+【背景】{context}
+【任务】{task}
+【示例】{few_shot_examples}
+【输出格式】{output_format}
+【质量检查】{quality_checklist}
+"""
+```
+
+### 工具描述模板 (2026版)
+
+```python
+TOOL_DESCRIPTION_TEMPLATE = """
+工具名称: {tool_name}
+功能: {capability_description}
+使用时机: {when_to_use}  # 新增：使用时机是关键！
+约束: {constraints}
+输入格式: {input_format}
+输出格式: {output_format}
+"""
+```
+
+---
+
+*本文档更新时间: 2026-05-01*
+*下次更新时间建议: 2026-08-01（GPT-6预期发布）*

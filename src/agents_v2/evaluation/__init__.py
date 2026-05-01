@@ -136,6 +136,15 @@ from .release_checker import (
     check_release,
     format_report
 )
+from .quality_evaluator import (
+    QualityEvaluator,
+    EvalDimension,
+    DimensionScore,
+    QualityReport,
+    RuleEngine,
+    LLMJudge,
+    create_evaluator,
+)
 
 # 导入benchmarks模块
 from . import benchmarks
@@ -225,5 +234,13 @@ __all__ = [
     "check_release",
     "format_report",
     # Benchmarks
-    "benchmarks"
+    "benchmarks",
+    # 质量评估
+    "QualityEvaluator",
+    "EvalDimension",
+    "DimensionScore",
+    "QualityReport",
+    "RuleEngine",
+    "LLMJudge",
+    "create_evaluator",
 ]

@@ -4,6 +4,7 @@ Outline Agent - LangGraph 工作流节点
 职责：
 - 基于选中论文生成论文大纲
 - 包含章节标题、摘要和关键要点
+- 对大纲进行质量反思（OutlineReflector）
 
 集成现有的 OutlineAgent (paper_agents/outline_agent.py)。
 """
@@ -182,6 +183,18 @@ Only return valid JSON, no additional text."""
             asyncio.set_event_loop(loop)
 
         outline = loop.run_until_complete(self._build_llm_outline(papers, query))
+
+        # 大纲质量反思
+        try:
+            from ...writing.reflection_engine import OutlineReflector
+            reflector = OutlineReflector(llm_provider=self.llm)
+            reflection = loop.run_until_complete(reflector.reflect(outline))
+            outline["quality_score"] = reflection.score
+            outline["quality_passed"] = reflection.passed
+            outline["quality_issues"] = reflection.issues
+            logger.info(f"[Outline] 大纲反思完成: score={reflection.score:.3f}, passed={reflection.passed}")
+        except Exception as e:
+            logger.debug(f"[Outline] 大纲反思跳过: {e}")
 
         elapsed = time.time() - start
         logger.info(f"[Outline] 大纲生成完成，共 {len(outline.get('sections', []))} 个章节，耗时 {elapsed:.2f}s")

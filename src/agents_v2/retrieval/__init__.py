@@ -10,6 +10,7 @@ Retrieval模块 - 智能检索相关组件
 - ResultFuser: 多源结果融合
 - Deduplicator: 检索结果去重
 - AdaptiveRetrieval: 自适应检索
+- TreeResearcher: GPT Researcher式树状深度研究
 """
 from .query_classifier import QueryType, QueryTypeClassifier, classify_query
 from .dynamic_planner import (
@@ -55,6 +56,14 @@ from .adaptive_retrieval import (
     AdaptiveRetrievalPlanner,
     RetrievalStrategy as AdaptiveRetrievalStrategy,
     adaptive_retrieve
+)
+from .tree_researcher import (
+    TreeResearcher,
+    ResearchReport,
+    ResearchNode,
+    SearchResult as TreeSearchResult,
+    ResearchNodeType,
+    tree_research,
 )
 
 __all__ = [
@@ -104,5 +113,13 @@ __all__ = [
 
     # 自适应检索
     "AdaptiveRetrievalPlanner",
-    "adaptive_retrieve"
+    "adaptive_retrieve",
+
+    # 树状深度研究
+    "TreeResearcher",
+    "ResearchReport",
+    "ResearchNode",
+    "TreeSearchResult",
+    "ResearchNodeType",
+    "tree_research",
 ]

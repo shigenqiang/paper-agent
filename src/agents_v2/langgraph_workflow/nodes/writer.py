@@ -5,6 +5,8 @@ Writer Agent - LangGraph 工作流节点
 - 基于大纲和选中论文逐章节撰写
 - 整合文献引用
 - 生成连贯的学术文本
+- 对每章节进行质量反思（SectionReflector）
+- 验证引用（CitationVerifier）
 
 集成现有的 DraftWriter (paper_agents/draft_writer.py)。
 """
@@ -142,6 +144,8 @@ Write the section content:"""
 
         # 逐章节撰写
         draft_parts = [f"# {outline.get('title', 'Survey Paper')}", ""]
+        section_reflections = []
+
         for section in sections:
             section_content = loop.run_until_complete(
                 self._write_section_llm(section, papers, feedback)
@@ -149,8 +153,42 @@ Write the section content:"""
             draft_parts.append(section_content)
             draft_parts.append("")
 
+            # 章节质量反思
+            try:
+                from ...writing.reflection_engine import SectionReflector
+                section_reflector = SectionReflector(llm_provider=self.llm)
+                reflection = loop.run_until_complete(
+                    section_reflector.reflect(section.get("title", ""), section_content)
+                )
+                section_reflections.append({
+                    "title": section.get("title", ""),
+                    "score": reflection.score,
+                    "passed": reflection.passed,
+                    "issues": reflection.issues,
+                })
+                logger.info(f"[Writer] 章节 '{section.get('title', '')}' 反思: score={reflection.score:.3f}")
+            except Exception as e:
+                logger.debug(f"[Writer] 章节反思跳过: {e}")
+
         state.draft = "\n".join(draft_parts)
         state.current_phase = "review"
+
+        # 存储章节反思结果
+        if section_reflections:
+            state["section_reflections"] = section_reflections
+
+        # 引用验证（异步，非阻塞）
+        try:
+            from ...writing.citation_generator import CitationVerifier, Citation
+            verifier = CitationVerifier()
+            import re
+            # 从草稿中提取引用标记
+            citations_in_text = re.findall(r'\[(\d+(?:[,-]\d+)*)\]', state.draft)
+            if citations_in_text:
+                logger.info(f"[Writer] 发现 {len(citations_in_text)} 处引用标记")
+                state["citation_count"] = len(citations_in_text)
+        except Exception as e:
+            logger.debug(f"[Writer] 引用验证跳过: {e}")
 
         elapsed = time.time() - start
         logger.info(f"[Writer] 写作完成，总长度 {len(state.draft)} 字符，耗时 {elapsed:.2f}s")

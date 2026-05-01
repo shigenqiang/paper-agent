@@ -11,6 +11,7 @@
 """
 import time
 import uuid
+import json
 import logging
 from typing import Any, Dict, List, Optional, Callable, TypeVar, Generic
 from dataclasses import dataclass, field
@@ -562,6 +563,57 @@ class MetricsChainListener(ChainListener):
             "avg_span_duration_ms": avg_duration,
             "phase_counts": self._phase_counts
         }
+
+
+class FileChainListener(ChainListener):
+    """
+    文件监听器
+
+    将链路事件持久化到JSONL文件，便于离线分析。
+    """
+
+    def __init__(self, file_path: str = "logs/chain_traces.jsonl"):
+        import os
+        self._file_path = file_path
+        os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
+
+    def _write(self, record: Dict[str, Any]):
+        try:
+            with open(self._file_path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False, default=str) + '\n')
+        except Exception:
+            pass
+
+    def on_span_start(self, span: ChainSpan):
+        self._write({
+            "event": "span_start",
+            "span_id": span.span_id,
+            "trace_id": span.trace_id,
+            "phase": span.phase.value if hasattr(span.phase, 'value') else str(span.phase),
+            "operation": span.operation,
+            "timestamp": span.start_time,
+        })
+
+    def on_span_end(self, span: ChainSpan):
+        self._write({
+            "event": "span_end",
+            "span_id": span.span_id,
+            "trace_id": span.trace_id,
+            "phase": span.phase.value if hasattr(span.phase, 'value') else str(span.phase),
+            "operation": span.operation,
+            "duration_ms": span.duration_ms,
+            "status": span.status.value if hasattr(span.status, 'value') else str(span.status),
+            "timestamp": span.end_time,
+        })
+
+    def on_error(self, span: ChainSpan, error: Exception):
+        self._write({
+            "event": "error",
+            "span_id": span.span_id,
+            "trace_id": span.trace_id,
+            "error": str(error),
+            "timestamp": time.time(),
+        })
 
 
 # 全局追踪器实例

@@ -13,10 +13,13 @@ Agent列表:
 
 写作工具:
 - ReflectionEngine: 反思引擎
+- MultiLayerReflector: SciSage式多层反思器
 - AnswerQualityChecker: 答案质量检查
 - StreamingGenerator: 流式生成
 - GenerationOptimizer: 生成优化
 - CitationGenerator: 引用生成
+- CitationVerifier: 引用验证
+- DiffManager: 文本对比与补丁
 """
 from .literature_review import LiteratureReviewAgent
 from .outline_generator import OutlineGeneratorAgent
@@ -30,7 +33,15 @@ from .reflection_engine import (
     ReflectionLevel,
     ReflectionResult,
     SelfCritique,
-    reflect
+    reflect,
+    # Multi-layer reflector
+    MultiLayerReflector,
+    OutlineReflector,
+    SectionReflector,
+    DocumentReflector,
+    ReflectionLayer,
+    LayerReflectionResult,
+    MultiLayerReflectionResult,
 )
 from .answer_quality_checker import (
     AnswerQualityChecker,
@@ -63,7 +74,21 @@ from .citation_generator import (
     CitationResult,
     CitationStyleAdapter,
     format_citation,
-    generate_references
+    generate_references,
+    # Citation verification
+    CitationVerifier,
+    VerificationResult,
+    verify_citation,
+    verify_references,
+)
+from .diff_manager import (
+    DiffManager,
+    DiffView,
+    DiffHunk,
+    DiffLine,
+    DiffLineType,
+    ChangeSummary,
+    get_diff_manager,
 )
 
 __all__ = [
@@ -83,6 +108,14 @@ __all__ = [
     "ReflectionResult",
     "SelfCritique",
     "reflect",
+    # Multi-layer reflector
+    "MultiLayerReflector",
+    "OutlineReflector",
+    "SectionReflector",
+    "DocumentReflector",
+    "ReflectionLayer",
+    "LayerReflectionResult",
+    "MultiLayerReflectionResult",
     "AnswerQualityChecker",
     "QualityDimension",
     "QualityIssue",
@@ -108,4 +141,17 @@ __all__ = [
     "CitationStyleAdapter",
     "format_citation",
     "generate_references",
+    # Citation verification
+    "CitationVerifier",
+    "VerificationResult",
+    "verify_citation",
+    "verify_references",
+    # Diff/Patch
+    "DiffManager",
+    "DiffView",
+    "DiffHunk",
+    "DiffLine",
+    "DiffLineType",
+    "ChangeSummary",
+    "get_diff_manager",
 ]

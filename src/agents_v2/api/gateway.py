@@ -6,6 +6,7 @@ API网关 - API Gateway
 - /v1/memories - 记忆管理
 - /v1/skills - 技能库
 - /v1/audit - 审计日志
+- /v1/hitl - 人机协作管理
 """
 import time
 import logging
@@ -152,6 +153,13 @@ class APIGateway:
         # 审计日志
         self.router.add_route("/v1/audit", "GET", self._get_audit_logs)
 
+        # HITL人机协作
+        self.router.add_route("/v1/hitl/pending", "GET", self._get_hitl_pending)
+        self.router.add_route("/v1/hitl/respond", "POST", self._respond_hitl)
+        self.router.add_route("/v1/hitl/history", "GET", self._get_hitl_history)
+        self.router.add_route("/v1/hitl/stats", "GET", self._get_hitl_stats)
+        self.router.add_route("/v1/hitl/cancel", "POST", self._cancel_hitl)
+
     async def _create_agent(self, request: APIRequest) -> Dict:
         """创建Agent"""
         body = request.body or {}
@@ -205,7 +213,128 @@ class APIGateway:
 
     async def _get_audit_logs(self, request: APIRequest) -> List[Dict]:
         """获取审计日志"""
-        return [{"timestamp": time.time(), "event": "test"}]
+        try:
+            from ..core.security import SecurityAudit
+            if not hasattr(self, '_audit'):
+                self._audit = SecurityAudit()
+            limit = int(request.params.get("limit", "50"))
+            events = self._audit.get_events(limit=limit)
+            return [
+                {
+                    "event_type": e.event_type.value if hasattr(e.event_type, 'value') else str(e.event_type),
+                    "user_id": e.user_id,
+                    "ip_address": e.ip_address,
+                    "severity": e.severity.value if hasattr(e.severity, 'value') else str(e.severity),
+                    "timestamp": e.timestamp,
+                }
+                for e in events
+            ]
+        except Exception as e:
+            logger.warning(f"Failed to get audit logs: {e}")
+            return [{"timestamp": time.time(), "event": "audit_unavailable"}]
+
+    # ---- HITL 人机协作 ----
+
+    async def _get_hitl_pending(self, request: APIRequest) -> Dict:
+        """获取待处理的HITL请求"""
+        try:
+            from ..unified.hitl_manager import get_hitl_manager
+            hitl = get_hitl_manager()
+            pending = hitl.get_pending_requests()
+            return {
+                "pending_count": len(pending),
+                "requests": [
+                    {
+                        "request_id": r.request_id,
+                        "type": r.intervention_type.value,
+                        "agent_id": r.agent_id,
+                        "description": r.description,
+                        "options": r.options,
+                        "priority": r.priority.value,
+                        "created_at": r.created_at,
+                        "timeout_seconds": r.timeout_seconds,
+                    }
+                    for r in pending
+                ]
+            }
+        except Exception as e:
+            logger.error(f"Failed to get HITL pending: {e}")
+            return {"pending_count": 0, "requests": [], "error": str(e)}
+
+    async def _respond_hitl(self, request: APIRequest) -> Dict:
+        """响应HITL请求"""
+        try:
+            from ..unified.hitl_manager import get_hitl_manager
+            hitl = get_hitl_manager()
+            body = request.body or {}
+            request_id = body.get("request_id", "")
+            approved = body.get("approved", False)
+            selected_option = body.get("selected_option")
+            feedback = body.get("feedback", "")
+            responder = body.get("responder", "human")
+
+            success = hitl.respond(
+                request_id=request_id,
+                approved=approved,
+                selected_option=selected_option,
+                feedback=feedback,
+                responder=responder,
+            )
+            return {"success": success, "request_id": request_id}
+        except Exception as e:
+            logger.error(f"Failed to respond HITL: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _get_hitl_history(self, request: APIRequest) -> Dict:
+        """获取HITL干预历史"""
+        try:
+            from ..unified.hitl_manager import get_hitl_manager
+            hitl = get_hitl_manager()
+            limit = int(request.params.get("limit", "50"))
+            history = hitl.get_intervention_history(limit=limit)
+            return {
+                "count": len(history),
+                "history": [
+                    {
+                        "request_id": r.request_id,
+                        "approved": r.approved,
+                        "feedback": r.feedback,
+                        "responder": r.responder,
+                        "timestamp": r.timestamp,
+                    }
+                    for r in history
+                ]
+            }
+        except Exception as e:
+            logger.error(f"Failed to get HITL history: {e}")
+            return {"count": 0, "history": [], "error": str(e)}
+
+    async def _get_hitl_stats(self, request: APIRequest) -> Dict:
+        """获取HITL统计信息"""
+        try:
+            from ..unified.hitl_manager import get_hitl_manager
+            hitl = get_hitl_manager()
+            return hitl.get_stats()
+        except Exception as e:
+            logger.error(f"Failed to get HITL stats: {e}")
+            return {"error": str(e)}
+
+    async def _cancel_hitl(self, request: APIRequest) -> Dict:
+        """取消HITL请求"""
+        try:
+            from ..unified.hitl_manager import get_hitl_manager
+            hitl = get_hitl_manager()
+            body = request.body or {}
+            request_id = body.get("request_id")
+            if request_id:
+                success = hitl.cancel_request(request_id)
+                return {"success": success, "request_id": request_id}
+            else:
+                count = hitl.cancel_all()
+                return {"success": True, "cancelled_count": count}
+        except Exception as e:
+            logger.error(f"Failed to cancel HITL: {e}")
+            return {"success": False, "error": str(e)}
 
     async def handle(self, request: APIRequest) -> APIResponse:
         """处理API请求"""

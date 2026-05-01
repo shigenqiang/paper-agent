@@ -3,7 +3,7 @@ Checkpoint Manager - 检查点管理器
 
 提供任务状态持久化和断点恢复功能。
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Coroutine, Dict, List, Optional
 from dataclasses import dataclass, field
 import time
 import json
@@ -47,6 +47,20 @@ class Checkpoint:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        # 序列化 memory_snapshot
+        mem = self.memory_snapshot
+        if isinstance(mem, MemorySnapshot):
+            mem_dict = {
+                "short_term": mem.short_term,
+                "session": mem.session,
+                "long_term": mem.long_term,
+                "episodic": mem.episodic,
+            }
+        elif isinstance(mem, dict):
+            mem_dict = mem
+        else:
+            mem_dict = {}
+
         return {
             "task_id": self.task_id,
             "phase": self.phase,
@@ -63,7 +77,7 @@ class Checkpoint:
                 }
                 for k, v in self.agent_states.items()
             },
-            "memory_snapshot": self.memory_snapshot,
+            "memory_snapshot": mem_dict,
             "timestamp": self.timestamp,
             "parent_checkpoint_id": self.parent_checkpoint_id,
             "metadata": self.metadata
@@ -108,8 +122,25 @@ class CheckpointManager:
         self._checkpoints: Dict[str, Checkpoint] = {}
         self._task_checkpoints: Dict[str, List[str]] = {}
 
+        # 恢复钩子：注册自定义的恢复逻辑
+        self._agent_state_restorer: Optional[Callable[[str, "AgentState"], Coroutine]] = None
+        self._memory_restorer: Optional[Callable[["MemorySnapshot"], Coroutine]] = None
+        self._state_applier: Optional[Callable[[Dict[str, Any]], Coroutine]] = None
+
         # 确保存储目录存在
         self.storage_path.mkdir(parents=True, exist_ok=True)
+
+    def register_agent_restorer(self, fn: Callable[[str, "AgentState"], Coroutine]) -> None:
+        """注册Agent状态恢复函数"""
+        self._agent_state_restorer = fn
+
+    def register_memory_restorer(self, fn: Callable[["MemorySnapshot"], Coroutine]) -> None:
+        """注册记忆恢复函数"""
+        self._memory_restorer = fn
+
+    def register_state_applier(self, fn: Callable[[Dict[str, Any]], Coroutine]) -> None:
+        """注册状态应用函数（用于恢复工作流状态等）"""
+        self._state_applier = fn
 
     async def save_checkpoint(
         self,
@@ -225,6 +256,14 @@ class CheckpointManager:
             if checkpoint.memory_snapshot:
                 await self._restore_memory_snapshot(checkpoint.memory_snapshot)
 
+            # 恢复工作流状态（通过注册的钩子）
+            if self._state_applier and checkpoint.state_snapshot:
+                try:
+                    await self._state_applier(checkpoint.state_snapshot)
+                    logger.info(f"Applied state snapshot from checkpoint {checkpoint_id}")
+                except Exception as e:
+                    logger.warning(f"State applier failed: {e}")
+
             logger.info(f"Recovered from checkpoint: {checkpoint_id}")
 
             return RecoveryResult(
@@ -330,14 +369,102 @@ class CheckpointManager:
         )
 
     async def _restore_agent_state(self, agent_id: str, agent_state: AgentState) -> None:
-        """恢复Agent状态"""
-        # 实际实现中，这里会调用Agent的恢复方法
-        logger.debug(f"Restored state for agent: {agent_id}, status: {agent_state.status}")
+        """
+        恢复Agent状态
+
+        优先使用注册的恢复钩子，否则执行默认恢复逻辑：
+        - 恢复 agent context 和 local_memory 到内存缓存
+        - 记录恢复日志
+        """
+        if self._agent_state_restorer:
+            try:
+                await self._agent_state_restorer(agent_id, agent_state)
+                logger.info(f"Restored agent {agent_id} via registered restorer")
+                return
+            except Exception as e:
+                logger.warning(f"Registered restorer failed for agent {agent_id}: {e}, falling back to default")
+
+        # 默认恢复：将状态存入内存缓存供后续查询
+        cache_key = f"_restored_agent_{agent_id}"
+        self._checkpoints[cache_key] = Checkpoint(
+            task_id=agent_id,
+            phase="restored",
+            checkpoint_id=cache_key,
+            state_snapshot={
+                "status": agent_state.status,
+                "current_action": agent_state.current_action,
+                "context": agent_state.context,
+                "local_memory": agent_state.local_memory,
+            },
+            metadata={"restored_from_checkpoint": True, "restored_at": time.time()},
+        )
+        logger.info(f"Restored agent {agent_id} state (status={agent_state.status}, action={agent_state.current_action})")
 
     async def _restore_memory_snapshot(self, memory_snapshot: MemorySnapshot) -> None:
-        """恢复记忆快照"""
-        # 实际实现中，这里会恢复各层记忆
-        logger.debug("Restored memory snapshot")
+        """
+        恢复记忆快照
+
+        优先使用注册的恢复钩子，否则尝试通过 UnifiedMemoryManager 恢复：
+        - 短期记忆：写入 short_term keys
+        - 会话记忆：写入 session entries
+        - 长期记忆：写入 long_term entries
+        - 情景记忆：写入 episodic entries
+        """
+        if self._memory_restorer:
+            try:
+                await self._memory_restorer(memory_snapshot)
+                logger.info("Restored memory via registered restorer")
+                return
+            except Exception as e:
+                logger.warning(f"Registered memory restorer failed: {e}, falling back to default")
+
+        # 默认恢复：尝试通过统一记忆管理器恢复
+        restored_counts = {"short_term": 0, "session": 0, "long_term": 0, "episodic": 0}
+
+        try:
+            from ..memory.unified import UnifiedMemoryManager
+
+            manager = UnifiedMemoryManager()
+
+            # 恢复短期记忆
+            for key, value in memory_snapshot.short_term.items():
+                try:
+                    await manager.short_term.add(key=key, value=value)
+                    restored_counts["short_term"] += 1
+                except Exception as e:
+                    logger.debug(f"Failed to restore short_term key '{key}': {e}")
+
+            # 恢复会话记忆
+            for key, value in memory_snapshot.session.items():
+                try:
+                    await manager.session.add(key=key, value=value)
+                    restored_counts["session"] += 1
+                except Exception as e:
+                    logger.debug(f"Failed to restore session key '{key}': {e}")
+
+            # 恢复长期记忆
+            for key, value in memory_snapshot.long_term.items():
+                try:
+                    await manager.long_term.add(key=key, value=value)
+                    restored_counts["long_term"] += 1
+                except Exception as e:
+                    logger.debug(f"Failed to restore long_term key '{key}': {e}")
+
+            # 恢复情景记忆
+            for entry in memory_snapshot.episodic:
+                try:
+                    await manager.episodic.add(**entry)
+                    restored_counts["episodic"] += 1
+                except Exception as e:
+                    logger.debug(f"Failed to restore episodic entry: {e}")
+
+        except ImportError:
+            logger.warning("UnifiedMemoryManager not available, memory snapshot stored but not applied")
+        except Exception as e:
+            logger.warning(f"Memory restoration partially failed: {e}")
+
+        total = sum(restored_counts.values())
+        logger.info(f"Memory snapshot restored: {restored_counts} (total={total})")
 
     async def _cleanup_old_checkpoints(self, task_id: str) -> None:
         """清理旧检查点"""

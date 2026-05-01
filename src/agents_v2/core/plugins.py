@@ -290,8 +290,12 @@ class PluginManager:
 
     async def _load_builtin_plugins(self) -> None:
         """加载内置插件"""
-        # 注册系统内置插件
-        pass
+        try:
+            from .builtin_plugins import WebSearchPlugin, PDFParserPlugin, CitationPlugin
+            for plugin_cls in [WebSearchPlugin, PDFParserPlugin, CitationPlugin]:
+                await self.register_plugin(plugin_cls())
+        except ImportError:
+            logger.debug("Built-in plugins not available")
 
     async def _scan_and_load_plugins(self) -> None:
         """扫描并加载插件目录中的插件"""

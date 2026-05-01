@@ -2,6 +2,7 @@
 Error Recovery System - 错误恢复系统
 
 提供细粒度的错误分类和智能恢复策略。
+底层使用 core/error_recovery.py 的共享原语。
 """
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -9,11 +10,20 @@ from enum import Enum
 import time
 import logging
 
+from ..core.error_recovery import (
+    ErrorCategory,
+    CircuitBreaker,
+    retry_with_backoff,
+    with_fallback,
+    classify_error as core_classify_error,
+)
+
 logger = logging.getLogger(__name__)
 
 
-class ErrorCategory(str, Enum):
-    """错误类别"""
+# 保留原有枚举用于向后兼容，映射到 core ErrorCategory
+class UnifiedErrorCategory(str, Enum):
+    """错误类别（unified子系统专用）"""
     INVALID_INPUT = "invalid_input"
     TIMEOUT = "timeout"
     LLM_RATE_LIMIT = "llm_rate_limit"
@@ -22,6 +32,10 @@ class ErrorCategory(str, Enum):
     VALIDATION_FAILURE = "validation_failure"
     SYSTEM_ERROR = "system_error"
     USER_ERROR = "user_error"
+
+
+# 向后兼容别名
+ErrorCategory = UnifiedErrorCategory
 
 
 class RetryAction(str, Enum):
@@ -138,21 +152,18 @@ class GranularErrorRecovery:
         return plan
 
     def _classify_error(self, error: Exception) -> ErrorCategory:
-        """分类错误"""
-        error_msg = str(error).lower()
-
-        if "rate limit" in error_msg or "429" in error_msg:
-            return ErrorCategory.LLM_RATE_LIMIT
-        if "context" in error_msg and ("overflow" in error_msg or "exceed" in error_msg):
-            return ErrorCategory.LLM_CONTEXT_OVERFLOW
-        if "timeout" in error_msg or "timed out" in error_msg:
-            return ErrorCategory.TIMEOUT
-        if "validation" in error_msg or "invalid" in error_msg:
-            return ErrorCategory.INVALID_INPUT
-        if "arxiv" in error_msg or "pubmed" in error_msg or "http" in error_msg:
-            return ErrorCategory.EXTERNAL_API_FAILURE
-
-        return ErrorCategory.SYSTEM_ERROR
+        """分类错误（优先使用 core 分类器）"""
+        core_cat = core_classify_error(error)
+        mapping = {
+            "rate_limit": ErrorCategory.LLM_RATE_LIMIT,
+            "quota": ErrorCategory.LLM_RATE_LIMIT,
+            "timeout": ErrorCategory.TIMEOUT,
+            "connection": ErrorCategory.EXTERNAL_API_FAILURE,
+            "context_overflow": ErrorCategory.LLM_CONTEXT_OVERFLOW,
+            "invalid_input": ErrorCategory.INVALID_INPUT,
+            "external_api": ErrorCategory.EXTERNAL_API_FAILURE,
+        }
+        return mapping.get(core_cat.value, ErrorCategory.SYSTEM_ERROR)
 
     def _select_best_strategy(self, strategies: List[Dict[str, Any]]) -> Dict[str, Any]:
         """选择最佳策略（基于历史成功率）"""

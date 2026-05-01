@@ -9,6 +9,7 @@
 5. AlertAggregator: 告警聚合器
 """
 import time
+import os
 import asyncio
 import json
 import hashlib
@@ -286,6 +287,38 @@ class SlackAlertChannel(AlertChannel):
             AlertSeverity.CRITICAL: "#8b0000"
         }
         return colors.get(severity, "#6c757d")
+
+
+class FileAlertChannel(AlertChannel):
+    """文件告警渠道"""
+
+    def __init__(
+        self,
+        file_path: str = "logs/alerts.jsonl",
+        min_severity: AlertSeverity = AlertSeverity.WARNING
+    ):
+        self.file_path = file_path
+        self.min_severity = min_severity
+        os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
+
+    def send(self, alert: Alert):
+        """写入告警到文件"""
+        if not self._should_send(alert):
+            return
+
+        try:
+            with open(self.file_path, 'a', encoding='utf-8') as f:
+                record = {
+                    **alert.to_dict(),
+                    "written_at": datetime.now().isoformat(),
+                }
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+        except Exception as e:
+            logger.error(f"Failed to write alert to file: {e}")
+
+    def _should_send(self, alert: Alert) -> bool:
+        severity_order = [AlertSeverity.INFO, AlertSeverity.WARNING, AlertSeverity.ERROR, AlertSeverity.CRITICAL]
+        return severity_order.index(alert.severity) >= severity_order.index(self.min_severity)
 
 
 class AlertAggregator:

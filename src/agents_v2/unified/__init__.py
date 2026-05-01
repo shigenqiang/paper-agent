@@ -55,6 +55,14 @@ from .execution_replay import (
     create_replay,
     create_replay_manager,
 )
+from .hitl_manager import (
+    HITLManager,
+    InterventionType,
+    InterventionPriority,
+    InterventionRequest,
+    InterventionResponse,
+    get_hitl_manager,
+)
 
 __all__ = [
     # State models
@@ -103,4 +111,11 @@ __all__ = [
     "EarlyResult",
     "create_replay",
     "create_replay_manager",
+    # HITL
+    "HITLManager",
+    "InterventionType",
+    "InterventionPriority",
+    "InterventionRequest",
+    "InterventionResponse",
+    "get_hitl_manager",
 ]

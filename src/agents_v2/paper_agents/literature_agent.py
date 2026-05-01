@@ -13,7 +13,7 @@ import logging
 import asyncio
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
-from ..qa.paper_search import PaperSearchAgent
+from ..paper_search.paper_search import PaperSearchAgent
 from ..unified.error_handler import log_error_with_context
 
 logger = logging.getLogger(__name__)

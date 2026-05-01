@@ -3,8 +3,10 @@
 
 提供:
 - MemoryErrorRecovery: 错误恢复机制
-- MemoryCircuitBreaker: 熔断器
+- MemoryCircuitBreaker: 熔断器（基于 core CircuitBreaker）
 - MemoryFallback: 降级策略
+
+底层使用 core/error_recovery.py 的共享原语。
 """
 import asyncio
 import time
@@ -12,6 +14,14 @@ from typing import Any, Callable, Optional, TypeVar, Generic
 from dataclasses import dataclass
 from enum import Enum
 import logging
+
+from ..core.error_recovery import (
+    CircuitBreaker,
+    ErrorCategory as CoreErrorCategory,
+    retry_with_backoff as core_retry_with_backoff,
+    with_fallback as core_with_fallback,
+    classify_error,
+)
 
 T = TypeVar('T')
 
@@ -24,6 +34,15 @@ class FailureType(Enum):
     CONNECTION = "connection"
     QUOTA = "quota"
     UNKNOWN = "unknown"
+
+
+# FailureType → core ErrorCategory 映射
+_FAILURE_TO_CATEGORY = {
+    FailureType.TIMEOUT: CoreErrorCategory.TIMEOUT,
+    FailureType.CONNECTION: CoreErrorCategory.CONNECTION,
+    FailureType.QUOTA: CoreErrorCategory.QUOTA,
+    FailureType.UNKNOWN: CoreErrorCategory.UNKNOWN,
+}
 
 
 @dataclass
@@ -40,7 +59,7 @@ class MemoryCircuitBreaker:
     """
     记忆系统熔断器
 
-    当失败率超过阈值时,熔断器打开,快速返回失败
+    基于 core.CircuitBreaker 的薄包装，保持原有接口不变。
     """
 
     def __init__(
@@ -49,56 +68,29 @@ class MemoryCircuitBreaker:
         recovery_timeout: float = 60.0,
         half_open_attempts: int = 3
     ):
-        self._failure_threshold = failure_threshold
-        self._recovery_timeout = recovery_timeout
-        self._half_open_attempts = half_open_attempts
-
-        self._failure_count = 0
-        self._last_failure_time: Optional[float] = None
-        self._state = "closed"  # closed, open, half_open
-        self._half_open_successes = 0
+        self._core = CircuitBreaker(
+            failure_threshold=failure_threshold,
+            recovery_timeout=recovery_timeout,
+            half_open_attempts=half_open_attempts,
+            name="memory",
+        )
 
     @property
     def state(self) -> str:
-        """获取当前状态"""
-        if self._state == "open":
-            # 检查是否应该转换到half_open
-            if self._last_failure_time and \
-               (time.time() - self._last_failure_time) > self._recovery_timeout:
-                self._state = "half_open"
-                self._half_open_successes = 0
-        return self._state
+        return self._core.state
 
     def record_success(self) -> None:
-        """记录成功"""
-        if self._state == "half_open":
-            self._half_open_successes += 1
-            if self._half_open_successes >= self._half_open_attempts:
-                self._state = "closed"
-                self._failure_count = 0
+        self._core.record_success()
 
     def record_failure(self, failure_type: FailureType = FailureType.UNKNOWN) -> None:
-        """记录失败"""
-        self._failure_count += 1
-        self._last_failure_time = time.time()
-
-        if failure_type == FailureType.QUOTA:
-            # 配额失败,立即熔断
-            self._state = "open"
-        elif self._failure_count >= self._failure_threshold:
-            self._state = "open"
+        category = _FAILURE_TO_CATEGORY.get(failure_type, CoreErrorCategory.UNKNOWN)
+        self._core.record_failure(category)
 
     def is_open(self) -> bool:
-        """是否打开"""
-        return self.state == "open"
+        return self._core.is_open()
 
     def get_stats(self) -> dict:
-        """获取统计"""
-        return {
-            "state": self.state,
-            "failure_count": self._failure_count,
-            "last_failure_time": self._last_failure_time
-        }
+        return self._core.get_stats()
 
 
 class MemoryFallback:
@@ -180,7 +172,7 @@ class MemoryErrorRecovery:
         operation_name: str = "operation"
     ) -> Any:
         """
-        带退避的重试
+        带退避的重试（委托给 core.retry_with_backoff）
 
         Args:
             operation: 操作函数
@@ -192,42 +184,23 @@ class MemoryErrorRecovery:
         Returns:
             操作结果
         """
-        circuit_breaker = self.get_circuit_breaker(operation_name)
+        cb = self.get_circuit_breaker(operation_name)
+        self._stats.total_attempts += 1
 
-        for attempt in range(max_retries + 1):
-            self._stats.total_attempts += 1
-
-            try:
-                # 检查熔断器
-                if circuit_breaker.is_open():
-                    raise Exception(f"Circuit breaker is open for {operation_name}")
-
-                result = await operation() if asyncio.iscoroutinefunction(operation) else operation()
-                circuit_breaker.record_success()
-                self._stats.successful_recoveries += 1
-                return result
-
-            except Exception as e:
-                logger.warning(f"Attempt {attempt + 1} failed: {e}")
-
-                if attempt < max_retries:
-                    # 计算延迟
-                    delay = min(base_delay * (2 ** attempt), max_delay)
-                    await asyncio.sleep(delay)
-
-                    # 判断失败类型
-                    if "quota" in str(e).lower() or "rate limit" in str(e).lower():
-                        circuit_breaker.record_failure(FailureType.QUOTA)
-                    elif "timeout" in str(e).lower():
-                        circuit_breaker.record_failure(FailureType.TIMEOUT)
-                    elif "connection" in str(e).lower():
-                        circuit_breaker.record_failure(FailureType.CONNECTION)
-                    else:
-                        circuit_breaker.record_failure(FailureType.UNKNOWN)
-
-        self._stats.failed_recoveries += 1
-        self._stats.last_failure_time = time.time()
-        raise Exception(f"All {max_retries + 1} attempts failed for {operation_name}")
+        try:
+            result = await core_retry_with_backoff(
+                operation=operation,
+                max_retries=max_retries,
+                base_delay=base_delay,
+                max_delay=max_delay,
+                circuit_breaker=cb._core,
+            )
+            self._stats.successful_recoveries += 1
+            return result
+        except Exception:
+            self._stats.failed_recoveries += 1
+            self._stats.last_failure_time = time.time()
+            raise
 
     async def execute_with_recovery(
         self,
@@ -236,7 +209,7 @@ class MemoryErrorRecovery:
         operation_name: str = "operation"
     ) -> Any:
         """
-        带恢复的操作执行
+        带恢复的操作执行（委托给 core.with_fallback）
 
         Args:
             operation: 操作函数
@@ -246,22 +219,25 @@ class MemoryErrorRecovery:
         Returns:
             操作结果
         """
-        circuit_breaker = self.get_circuit_breaker(operation_name)
+        cb = self.get_circuit_breaker(operation_name)
 
-        if circuit_breaker.is_open():
-            if fallback:
-                return await fallback() if asyncio.iscoroutinefunction(fallback) else fallback()
+        if fallback:
+            return await core_with_fallback(
+                primary=operation,
+                fallback=fallback,
+                circuit_breaker=cb._core,
+            )
+
+        # 无 fallback 时，熔断直接抛异常
+        if cb.is_open():
             raise Exception(f"Circuit breaker is open for {operation_name}")
 
         try:
             result = await operation() if asyncio.iscoroutinefunction(operation) else operation()
-            circuit_breaker.record_success()
+            cb.record_success()
             return result
         except Exception as e:
-            circuit_breaker.record_failure()
-
-            if fallback:
-                return await fallback() if asyncio.iscoroutinefunction(fallback) else fallback()
+            cb.record_failure()
             raise
 
     def get_stats(self) -> RecoveryStats:
