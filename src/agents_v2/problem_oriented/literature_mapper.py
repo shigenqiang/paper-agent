@@ -14,7 +14,7 @@ import json
 import logging
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
-from ..qa.paper_search import PaperSearchAgent
+from ..paper_search.paper_search import PaperSearchAgent
 
 logger = logging.getLogger(__name__)
 

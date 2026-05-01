@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 import json
 
-from ..qa.paper_flash import FlashType
+from ..paper_search.paper_flash import FlashType
 
 logger = logging.getLogger(__name__)
 

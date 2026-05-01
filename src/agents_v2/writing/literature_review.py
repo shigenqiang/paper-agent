@@ -16,7 +16,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
-from ..qa.paper_search import PaperSearchAgent
+from ..paper_search.paper_search import PaperSearchAgent
 
 logger = logging.getLogger(__name__)
 

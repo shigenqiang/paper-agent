@@ -118,6 +118,8 @@ data/*.parquet
 data/*.xlsx
 data/*.pdf
 *.pdf
+src/data/*.json
+src/data/*.csv
 
 # === Compressed Archives ===
 *.zip
