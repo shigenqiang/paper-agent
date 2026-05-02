@@ -59,6 +59,11 @@ class MemoryNode:
         触发条件：
         1. 用户问题涉及"之前"、"上次"等历史关键词
         2. 用户问题涉及具体实体或任务
+
+        v4.0改进：
+        - 使用 recall_with_decay() 带遗忘曲线的时间衰减召回
+        - 重要性阈值过滤
+        - 基于Ebbinghaus公式的保留分数排序
         """
         user_id = state.user_id or "anonymous"
         query = state.user_query
@@ -71,14 +76,14 @@ class MemoryNode:
             logger.debug(f"[Memory] 查询 '{query}' 不需要召回记忆，跳过")
             return state
 
-        # 召回相关记忆
+        # 召回相关记忆（带遗忘曲线衰减）
         loop = self._get_or_create_loop()
         try:
             recalled = loop.run_until_complete(
-                self.memory_manager.recall(
+                self.memory_manager.recall_with_decay(
                     query=query,
-                    memory_types=[MemoryType.LONG_TERM, MemoryType.SESSION],
-                    limit=3
+                    top_k=3,
+                    enable_decay=True
                 )
             )
         except Exception as e:
@@ -86,10 +91,11 @@ class MemoryNode:
             return state
 
         if recalled:
-            memory_context = "\n\nRelated previous knowledge:\n"
+            memory_context = "\n\nRelated previous knowledge (with forgetting decay):\n"
             for mem in recalled:
                 importance = getattr(mem, 'importance', 0.5)
-                memory_context += f"- {mem.content} (importance: {importance:.2f})\n"
+                retention = mem.retention_score() if hasattr(mem, 'retention_score') else 1.0
+                memory_context += f"- {mem.content} (importance: {importance:.2f}, retention: {retention:.2f})\n"
 
             # 增强查询
             enhanced_query = query + memory_context
@@ -98,9 +104,10 @@ class MemoryNode:
                 **state.get("metadata", {}),
                 "recalled_memories": len(recalled),
                 "original_query": query,
+                "recall_with_decay": True,
             }
 
-            logger.info(f"[Memory] 为 {user_id} 召回 {len(recalled)} 条历史记忆")
+            logger.info(f"[Memory] 为 {user_id} 召回 {len(recalled)} 条历史记忆 (with decay)")
 
         return state
 

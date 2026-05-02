@@ -12,6 +12,7 @@
 - 为问答生成提供相关论文
 """
 from typing import Dict, Any
+from src.agents_v2.logging_config import get_logging_logger
 
 logger = get_logging_logger(__name__)
 

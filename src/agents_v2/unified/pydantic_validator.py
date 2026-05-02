@@ -63,13 +63,14 @@ def parse_json(text: str) -> Optional[Dict[str, Any]]:
         cleaned = _clean_json_markdown(text)
         return json.loads(cleaned)
     except (json.JSONDecodeError, ValueError) as e:
-        logger.debug(f"JSON parse failed: {e}")
+        logger.warning(f"JSON parse failed in parse_json: {e}, raw_input={text[:500] if text else 'empty'}")
         # 尝试正则提取
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
             try:
                 return json.loads(match.group())
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e2:
+                logger.warning(f"Regex extraction also failed in parse_json: {e2}")
                 pass
         return None
 
@@ -96,7 +97,7 @@ def parse_with_pydantic(
         data = json.loads(cleaned)
         return model_class.model_validate(data)
     except (json.JSONDecodeError, ValidationError) as e:
-        logger.debug(f"Pydantic parse failed: {e}, trying regex extraction")
+        logger.warning(f"Pydantic parse failed: {e}, raw_input={text[:500] if text else 'empty'}, trying regex extraction")
 
         # 尝试正则提取
         match = re.search(r'\{.*\}', text, re.DOTALL)
@@ -105,7 +106,7 @@ def parse_with_pydantic(
                 data = json.loads(match.group())
                 return model_class.model_validate(data)
             except (json.JSONDecodeError, ValidationError) as e2:
-                logger.warning(f"Regex extraction also failed: {e2}")
+                logger.warning(f"Regex extraction also failed: {e2}, raw_input={text[:500] if text else 'empty'}")
 
         if strict:
             raise

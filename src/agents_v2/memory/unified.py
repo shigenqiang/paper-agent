@@ -1,179 +1,722 @@
 """
-统一记忆管理器 - Unified Memory Manager
+统一记忆管理器 - Unified Memory Manager v4
 
-整合所有记忆层，提供统一接口
+基于"记忆系统与数据存储融合方案 v3.0"重构
 
 架构:
-┌────────────────────────────────────────────────────────────────┐
-│                      UnifiedMemoryManager                       │
-├────────────────────────────────────────────────────────────────┤
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐  │
-│  │ShortTerm  │ │ Session    │ │ LongTerm   │ │ Episodic   │  │
-│  │Memory     │ │ Memory     │ │ Memory     │ │ Memory     │  │
-│  └────────────┘ └────────────┘ └────────────┘ └────────────┘  │
-│  ┌────────────┐ ┌────────────┐                                 │
-│  │UserProfile│ │ Procedural │                                 │
-│  │Memory     │ │ Memory     │                                 │
-│  └────────────┘ └────────────┘                                 │
-├────────────────────────────────────────────────────────────────┤
-│                        核心服务层                               │
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐  │
-│  │Extractor  │ │ Summarizer │ │ Retrieval  │ │ Forgetting │  │
-│  │           │ │            │ │ Engine     │ │ Controller │  │
-│  └────────────┘ └────────────┘ └────────────┘ └────────────┘  │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    UnifiedMemoryManager                       │
+├──────────────────────────────────────────────────────────────┤
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ │
+│  │ShortTerm│ │ Session │ │LongTerm │ │Episodic │ │UserProf│ │
+│  │(内存)  │ │(SQLite) │ │(SQLite) │ │(SQLite) │ │(SQLite)│ │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └────────┘ │
+├──────────────────────────────────────────────────────────────┤
+│  服务层: MemoryFlowController / RetrievalEngine             │
+├──────────────────────────────────────────────────────────────┤
+│  存储层: SQLite (主) + 内存 (缓存)                          │
+└──────────────────────────────────────────────────────────────┘
+
+流转规则:
+| 阶段 | 触发条件 | 操作 |
+|------|---------|------|
+| STG→SESSION | 消息数≥30 OR 任务结束 | 批量存储到SQLite |
+| STG→LONG_TERM | 重要性≥0.7 OR 用户标记 | 存入长期存储 |
+| LONG_TERM→FORGOTTEN | retention<0.1 | 删除 |
 """
+
 import asyncio
 import time
+import json
+import sqlite3
+import hashlib
+import uuid
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
+from collections import OrderedDict
+import logging
 
 from .types import MemoryType, MemoryEntry, ImportanceLevel
-from .short_term import ShortTermMemory, ShortTermMemoryConfig
-from .session import SessionMemory, SessionConfig
-from .long_term import LongTermMemory, VectorStore, GraphStore
-from .episodic import EpisodicMemory
-from .relational import RelationalStorage
-from .retrieval import (
-    EnhancedRetrievalEngine,
-    RetrievalQuery,
-    RetrievalResult,
-    QueryType
-)
-from .services import (
-    MemoryExtractor,
-    SummaryGenerator,
-    RetrievalEngine,
-    ForgettingController
-)
 
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# 配置
+# ============================================================================
 
 @dataclass
-class UnifiedMemoryConfig:
-    """统一记忆配置"""
-    # 存储路径
+class MemoryConfig:
+    """记忆系统配置"""
     storage_path: str = ".memory"
-
-    # 短期记忆配置
     short_term_max_items: int = 100
     short_term_ttl_seconds: float = 3600
-
-    # 会话配置
     session_max_entries: int = 500
     session_summary_trigger: int = 30
-
-    # 长期记忆配置
     long_term_persist_threshold: float = 0.7
-
-    # 遗忘配置
     forgetting_threshold: float = 0.1
-    forgetting_interval_seconds: float = 3600
+    importance_threshold: float = 0.3  # 召回时的最低重要性
 
-    # LLM客户端 (可选)
-    llm_client: Optional[Any] = None
 
-    # 检索配置
-    enable_enhanced_retrieval: bool = True
-    retrieval_interval_seconds: float = 60
-    min_messages_before_retrieval: int = 5
+# ============================================================================
+# 短期记忆 - 内存 LRU + TTL
+# ============================================================================
 
+class ShortTermMemory:
+    """
+    短期记忆 - 当前任务上下文
+
+    特点:
+    - 保存在内存中
+    - 基于LRU淘汰策略 + TTL过期
+    - 与AgentContext深度绑定
+    """
+
+    def __init__(self, config: MemoryConfig):
+        self.config = config
+        self._items: OrderedDict[str, MemoryEntry] = OrderedDict()
+        self._lock = asyncio.Lock()
+
+    async def add(
+        self,
+        key: str,
+        value: Any,
+        tags: Optional[List[str]] = None,
+        importance: float = 0.5,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        async with self._lock:
+            if key in self._items:
+                item = self._items[key]
+                item.content = value
+                item.created_at = time.time()
+                item.access_count = 0  # 重置访问
+                if tags:
+                    item.tags = tags
+                if metadata:
+                    item.metadata.update(metadata)
+                self._update_importance(item, importance)
+                self._items.move_to_end(key)
+                return
+
+            if len(self._items) >= self.config.short_term_max_items:
+                self._evict_lru()
+
+            entry = MemoryEntry(
+                id=key,
+                memory_type=MemoryType.SHORT_TERM,
+                content=value,
+                importance=importance,
+                importance_level=ImportanceLevel.from_score(importance),
+                tags=tags or [],
+                metadata=metadata or {}
+            )
+            self._items[key] = entry
+
+    def _update_importance(self, entry: MemoryEntry, importance: float) -> None:
+        """更新重要性并重新计算等级"""
+        entry.importance = importance
+        entry.importance_level = ImportanceLevel.from_score(importance)
+
+    async def get(
+        self,
+        key: str,
+        default: Any = None,
+        update_access: bool = True
+    ) -> Any:
+        async with self._lock:
+            item = self._items.get(key)
+            if item is None:
+                return default
+
+            if time.time() - item.created_at > self.config.short_term_ttl_seconds:
+                del self._items[key]
+                return default
+
+            if update_access:
+                item.access_count += 1
+                item.last_accessed = time.time()
+                # 频繁访问增加重要性
+                if item.access_count > 5:
+                    item.importance = min(1.0, item.importance + 0.01)
+                    item.importance_level = ImportanceLevel.from_score(item.importance)
+                self._items.move_to_end(key)
+
+            return item.content
+
+    async def remove(self, key: str) -> None:
+        async with self._lock:
+            self._items.pop(key, None)
+
+    async def keys(self) -> List[str]:
+        async with self._lock:
+            return list(self._items.keys())
+
+    async def get_recent(self, n: int = 10) -> List[MemoryEntry]:
+        async with self._lock:
+            items = list(self._items.values())
+            items.reverse()
+            return items[:n]
+
+    async def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+        async with self._lock:
+            results = []
+            for item in self._items.values():
+                if query in item.tags:
+                    results.append(item)
+                    continue
+                content_str = str(item.content).lower()
+                if query.lower() in content_str:
+                    results.append(item)
+                if len(results) >= limit:
+                    break
+            return results
+
+    def _evict_lru(self) -> None:
+        if self._items:
+            self._items.popitem(last=False)
+
+    def get_stats(self) -> Dict[str, Any]:
+        return {
+            "size": len(self._items),
+            "max_items": self.config.short_term_max_items,
+            "memory_type": MemoryType.SHORT_TERM.value
+        }
+
+
+# ============================================================================
+# 会话记忆 - SQLite 持久化
+# ============================================================================
+
+class SessionMemory:
+    """
+    会话记忆 - 任务内跨Agent共享
+
+    特点:
+    - SQLite 持久化
+    - 自动摘要生成
+    - 支持将重要信息同步到长期记忆
+    """
+
+    def __init__(self, config: MemoryConfig, session_id: str, task_id: str):
+        self.config = config
+        self.session_id = session_id
+        self.task_id = task_id
+        self._conn = self._init_db()
+        self._lock = asyncio.Lock()
+
+    def _init_db(self) -> sqlite3.Connection:
+        db_path = Path(self.config.storage_path) / "sessions.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                messages JSON DEFAULT '[]',
+                summary TEXT,
+                created_at REAL,
+                last_updated REAL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS session_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT,
+                agent_id TEXT,
+                role TEXT,
+                content TEXT,
+                metadata JSON,
+                timestamp REAL,
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+            )
+        """)
+        conn.commit()
+        return conn
+
+    async def store_message(
+        self,
+        agent_id: str,
+        role: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        async with self._lock:
+            msg_id = hashlib.md5(
+                f"{self.session_id}{agent_id}{content}{time.time()}".encode()
+            ).hexdigest()[:16]
+
+            timestamp = time.time()
+
+            # 插入消息
+            cursor = self._conn.cursor()
+            cursor.execute("""
+                INSERT INTO session_messages (session_id, agent_id, role, content, metadata, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (self.session_id, agent_id, role, content, json.dumps(metadata or {}), timestamp))
+
+            self._conn.commit()
+            return msg_id
+
+    async def get_messages(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        cursor = self._conn.cursor()
+        cursor.execute("""
+            SELECT * FROM session_messages
+            WHERE session_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+        """, (self.session_id, limit, offset))
+
+        messages = []
+        for row in cursor.fetchall():
+            messages.append({
+                "message_id": row["id"],
+                "agent_id": row["agent_id"],
+                "role": row["role"],
+                "content": row["content"],
+                "metadata": json.loads(row["metadata"] or "{}"),
+                "timestamp": row["timestamp"]
+            })
+
+        messages.reverse()
+        return messages
+
+    async def generate_summary(self) -> str:
+        """生成会话摘要"""
+        cursor = self._conn.cursor()
+        cursor.execute("""
+            SELECT content, agent_id FROM session_messages
+            WHERE session_id = ?
+            ORDER BY timestamp
+        """, (self.session_id,))
+
+        messages = []
+        for row in cursor.fetchall():
+            messages.append(f"[{row['agent_id']}]: {row['content'][:100]}")
+
+        if not messages:
+            return ""
+
+        summary = f"## Session Summary\n\nTotal messages: {len(messages)}\n\n"
+        summary += "\n".join(messages[-10:])
+
+        # 更新 sessions 表
+        cursor.execute("""
+            UPDATE sessions SET summary = ?, last_updated = ? WHERE session_id = ?
+        """, (summary, time.time(), self.session_id))
+        self._conn.commit()
+
+        return summary
+
+    def get_stats(self) -> Dict[str, Any]:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM session_messages WHERE session_id = ?", (self.session_id,))
+        count = cursor.fetchone()["cnt"]
+        return {
+            "session_id": self.session_id,
+            "task_id": self.task_id,
+            "message_count": count,
+            "memory_type": MemoryType.SESSION.value
+        }
+
+
+# ============================================================================
+# 长期记忆 - SQLite + 简化向量搜索
+# ============================================================================
+
+class LongTermMemory:
+    """
+    长期记忆 - 跨任务持久化
+
+    特点:
+    - SQLite 持久化
+    - 基于关键词的相似度搜索
+    - 重要性 + 时间衰减
+    """
+
+    def __init__(self, config: MemoryConfig):
+        self.config = config
+        self._conn = self._init_db()
+        self._lock = asyncio.Lock()
+
+    def _init_db(self) -> sqlite3.Connection:
+        db_path = Path(self.config.storage_path) / "long_term.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS memories (
+                memory_id TEXT PRIMARY KEY,
+                key TEXT NOT NULL,
+                content TEXT,
+                importance REAL DEFAULT 0.5,
+                importance_level TEXT DEFAULT 'MEDIUM',
+                tags JSON DEFAULT '[]',
+                metadata JSON DEFAULT '{}',
+                retention_score REAL DEFAULT 1.0,
+                access_count INTEGER DEFAULT 0,
+                created_at REAL,
+                last_accessed REAL,
+                sm2_interval_days REAL DEFAULT 1.0,
+                sm2_ease_factor REAL DEFAULT 2.5,
+                sm2_repetitions INTEGER DEFAULT 0
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC)")
+        conn.commit()
+        return conn
+
+    async def remember(
+        self,
+        key: str,
+        value: Any,
+        tags: Optional[List[str]] = None,
+        persist: bool = True,
+        importance: float = 0.5,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        if not persist:
+            return
+
+        async with self._lock:
+            memory_id = hashlib.md5(key.encode()).hexdigest()[:16]
+            now = time.time()
+            level = ImportanceLevel.from_score(importance)
+
+            cursor = self._conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO memories (
+                    memory_id, key, content, importance, importance_level,
+                    tags, metadata, retention_score, access_count,
+                    created_at, last_accessed, sm2_interval_days,
+                    sm2_ease_factor, sm2_repetitions
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                memory_id, key, str(value), importance, level.value,
+                json.dumps(tags or [], ensure_ascii=False),
+                json.dumps(metadata or {}, ensure_ascii=False),
+                1.0, 0, now, now, 1.0, 2.5, 0
+            ))
+            self._conn.commit()
+
+    async def recall(self, key: str) -> Optional[Any]:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT * FROM memories WHERE key = ? LIMIT 1", (key,))
+        row = cursor.fetchone()
+
+        if row:
+            # 更新访问
+            cursor.execute("""
+                UPDATE memories SET access_count = access_count + 1, last_accessed = ?
+                WHERE memory_id = ?
+            """, (time.time(), row["memory_id"]))
+            self._conn.commit()
+            return row["content"]
+
+        return None
+
+    async def search(
+        self,
+        query: str,
+        limit: int = 10,
+        tags: Optional[List[str]] = None,
+        min_importance: float = 0.0
+    ) -> List[MemoryEntry]:
+        cursor = self._conn.cursor()
+        sql = "SELECT * FROM memories WHERE (key LIKE ? OR content LIKE ?) AND importance >= ?"
+        params = [f"%{query}%", f"%{query}%", min_importance]
+
+        if tags:
+            for tag in tags:
+                sql += " AND tags LIKE ?"
+                params.append(f"%{tag}%")
+
+        sql += " ORDER BY importance DESC, last_accessed DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(sql, params)
+
+        entries = []
+        for row in cursor.fetchall():
+            # 安全转换 importance_level（可能是字符串或浮点数）
+            il_value = float(row["importance_level"])
+            entry = MemoryEntry(
+                id=row["memory_id"],
+                memory_type=MemoryType.LONG_TERM,
+                content=row["content"],
+                importance=float(row["importance"]),
+                importance_level=ImportanceLevel(il_value),
+                tags=json.loads(row["tags"] or "[]"),
+                metadata=json.loads(row["metadata"] or "{}"),
+                access_count=int(row["access_count"]),
+                created_at=float(row["created_at"]),
+                last_accessed=float(row["last_accessed"])
+            )
+            entry.sm2_interval_days = row["sm2_interval_days"]
+            entry.sm2_ease_factor = row["sm2_ease_factor"]
+            entry.sm2_repetitions = row["sm2_repetitions"]
+            entries.append(entry)
+
+        return entries
+
+    async def delete(self, key: str) -> bool:
+        async with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("DELETE FROM memories WHERE key = ?", (key,))
+            self._conn.commit()
+            return cursor.rowcount > 0
+
+    async def list_all(self) -> List[str]:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT key FROM memories")
+        return [row["key"] for row in cursor.fetchall()]
+
+    async def get_stats(self) -> Dict[str, Any]:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM memories")
+        count = cursor.fetchone()["cnt"]
+        return {
+            "total_memories": count,
+            "memory_type": MemoryType.LONG_TERM.value
+        }
+
+
+# ============================================================================
+# 情景记忆 - SQLite
+# ============================================================================
+
+class EpisodicMemory:
+    """情景记忆 - 记录Agent执行轨迹"""
+
+    def __init__(self, config: MemoryConfig):
+        self.config = config
+        self._conn = self._init_db()
+
+    def _init_db(self) -> sqlite3.Connection:
+        db_path = Path(self.config.storage_path) / "episodes.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS episodes (
+                episode_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                agent_id TEXT,
+                action TEXT,
+                result TEXT,
+                context_snapshot TEXT,
+                timestamp REAL,
+                duration_ms REAL,
+                success INTEGER
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_task ON episodes(task_id)")
+        conn.commit()
+        return conn
+
+    async def record_episode(
+        self,
+        task_id: str,
+        agent_id: str,
+        action: str,
+        result: Any,
+        context_snapshot: Optional[Dict[str, Any]] = None,
+        duration_ms: float = 0.0,
+        success: bool = True,
+        error: Optional[str] = None
+    ) -> str:
+        episode_id = hashlib.md5(f"{task_id}{action}{time.time()}".encode()).hexdigest()[:16]
+
+        cursor = self._conn.cursor()
+        cursor.execute("""
+            INSERT INTO episodes (
+                episode_id, task_id, agent_id, action, result,
+                context_snapshot, timestamp, duration_ms, success
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            episode_id, task_id, agent_id, action, str(result),
+            json.dumps(context_snapshot or {}, ensure_ascii=False),
+            time.time(), duration_ms, 1 if success else 0
+        ))
+        self._conn.commit()
+
+        return episode_id
+
+    def get_stats(self) -> Dict[str, Any]:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM episodes")
+        return {
+            "total_episodes": cursor.fetchone()["cnt"],
+            "memory_type": MemoryType.EPISODIC.value
+        }
+
+
+# ============================================================================
+# 用户画像 - SQLite
+# ============================================================================
+
+class UserProfileMemory:
+    """用户画像 - 存储用户偏好"""
+
+    def __init__(self, config: MemoryConfig):
+        self.config = config
+        self._conn = self._init_db()
+
+    def _init_db(self) -> sqlite3.Connection:
+        db_path = Path(self.config.storage_path) / "user_profiles.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                preference_key TEXT NOT NULL,
+                preference_value TEXT,
+                confidence REAL DEFAULT 0.5,
+                updated_at REAL,
+                UNIQUE(user_id, preference_key)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_prefs_user ON preferences(user_id)")
+        conn.commit()
+        return conn
+
+    def upsert_preference(self, user_id: str, key: str, value: Any, confidence: float = 0.5) -> None:
+        cursor = self._conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO preferences (user_id, preference_key, preference_value, confidence, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, key, json.dumps(value, ensure_ascii=False), confidence, time.time()))
+        self._conn.commit()
+
+    def get_preferences(self, user_id: str) -> Dict[str, Any]:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT preference_key, preference_value FROM preferences WHERE user_id = ?", (user_id,))
+        prefs = {}
+        for row in cursor.fetchall():
+            try:
+                prefs[row["preference_key"]] = json.loads(row["preference_value"])
+            except:
+                prefs[row["preference_key"]] = row["preference_value"]
+        return prefs
+
+
+# ============================================================================
+# 遗忘控制器
+# ============================================================================
+
+class ForgettingController:
+    """遗忘控制器 - 清理低重要性记忆"""
+
+    def __init__(self, long_term_memory: LongTermMemory, config: MemoryConfig):
+        self.long_term = long_term_memory
+        self.config = config
+
+    async def cleanup(self, threshold: float = None) -> Dict[str, Any]:
+        """
+        清理已遗忘的记忆
+
+        基于 Ebbinghaus 遗忘曲线: retention = importance * e^(-t/S)
+
+        其中 S 根据 importance_level 确定：
+        - CRITICAL: ∞ (永不遗忘)
+        - HIGH: 7天
+        - MEDIUM: 1天
+        - LOW: 1小时
+        """
+        import math
+
+        threshold = threshold or self.config.forgetting_threshold
+        cursor = self.long_term._conn.cursor()
+
+        # 获取所有记忆
+        cursor.execute("""
+            SELECT memory_id, importance, importance_level, last_accessed
+            FROM memories
+        """)
+
+        deleted = 0
+        current_time = time.time()
+
+        for row in cursor.fetchall():
+            importance = row["importance"]
+            last_accessed = row["last_accessed"]
+            t = current_time - last_accessed
+
+            # 获取 S 参数
+            try:
+                level = ImportanceLevel(float(row["importance_level"]))
+            except (ValueError, TypeError):
+                level = ImportanceLevel.MEDIUM
+
+            S = level.get_strength_seconds()
+
+            # CRITICAL 永不删除
+            if S == float('inf'):
+                continue
+
+            # 计算保留分数
+            retention = importance * math.exp(-t / S)
+
+            if retention < threshold:
+                cursor.execute("DELETE FROM memories WHERE memory_id = ?", (row["memory_id"],))
+                deleted += 1
+
+        self.long_term._conn.commit()
+        return {"deleted": deleted}
+
+
+# ============================================================================
+# 统一记忆管理器
+# ============================================================================
 
 class UnifiedMemoryManager:
     """
     统一记忆管理器
 
-    功能:
-    - 整合所有记忆层
-    - 提供统一接口
-    - 自动协调各层之间的数据流动
+    整合所有记忆层，提供统一接口
     """
 
-    def __init__(self, config: Optional[UnifiedMemoryConfig] = None):
-        self.config = config or UnifiedMemoryConfig()
+    def __init__(self, config: Optional[MemoryConfig] = None):
+        self.config = config or MemoryConfig()
+        self.config.storage_path = str(Path(self.config.storage_path).expanduser().absolute())
 
         # 初始化各层记忆
-        self.short_term = ShortTermMemory(
-            config=ShortTermMemoryConfig(
-                max_items=self.config.short_term_max_items,
-                ttl_seconds=self.config.short_term_ttl_seconds
-            )
-        )
+        self.short_term = ShortTermMemory(self.config)
+        self.long_term = LongTermMemory(self.config)
+        self.episodic = EpisodicMemory(self.config)
+        self.user_profile = UserProfileMemory(self.config)
 
-        # 会话记忆 (需要task_id初始化，这里延迟初始化)
+        # 会话记忆（需要 task_id 初始化）
         self._session_memory: Optional[SessionMemory] = None
+        self._current_task_id: Optional[str] = None
 
-        # 长期记忆
-        self.long_term = LongTermMemory(
-            vector_store=VectorStore(
-                storage_path=f"{self.config.storage_path}/vectors"
-            ),
-            graph_store=GraphStore(
-                storage_path=f"{self.config.storage_path}/graphs"
-            )
-        )
-
-        # 情景记忆
-        self.episodic = EpisodicMemory(
-            storage_path=f"{self.config.storage_path}/episodes"
-        )
-
-        # 关系数据库存储 (用户画像、程序记忆、实体关系)
-        self.relational = RelationalStorage(
-            storage_path=f"{self.config.storage_path}/memory.db"
-        )
-
-        # 增强检索引擎
-        if self.config.enable_enhanced_retrieval:
-            self.enhanced_retriever = EnhancedRetrievalEngine(
-                long_term_memory=self.long_term,
-                relational_store=self.relational
-            )
-        else:
-            self.enhanced_retriever = None
-
-        # 初始化核心服务
-        self.extractor = MemoryExtractor(llm_client=self.config.llm_client)
-        self.summarizer = SummaryGenerator(llm_client=self.config.llm_client)
-        self.retriever = RetrievalEngine(
-            long_term_memory=self.long_term,
-            graph_store=self.long_term.graph_store
-        )
-        self.forgetting = ForgettingController(
-            long_term_memory=self.long_term,
-            base_retention_time=86400
-        )
+        # 遗忘控制器
+        self.forgetting = ForgettingController(self.long_term, self.config)
 
         # 状态
-        self._initialized = False
-        self._current_task_id: Optional[str] = None
         self._lock = asyncio.Lock()
         self._last_retrieval_time: float = 0
         self._messages_since_retrieval: int = 0
 
     def init_session(self, task_id: str, session_id: Optional[str] = None) -> SessionMemory:
-        """
-        初始化会话记忆
-
-        Args:
-            task_id: 任务ID
-            session_id: 会话ID (默认自动生成)
-
-        Returns:
-            SessionMemory实例
-        """
+        """初始化会话记忆"""
         if session_id is None:
             session_id = f"session_{task_id}_{int(time.time())}"
 
-        self._session_memory = SessionMemory(
-            config=SessionConfig(
-                session_id=session_id,
-                task_id=task_id
-            ),
-            long_term_memory=self.long_term
-        )
+        self._session_memory = SessionMemory(self.config, session_id, task_id)
         self._current_task_id = task_id
-        self._initialized = True
-
         return self._session_memory
 
     async def remember(
@@ -186,28 +729,12 @@ class UnifiedMemoryManager:
         tags: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
-        """
-        存储记忆
-
-        Args:
-            key: 记忆键
-            value: 记忆值
-            memory_type: 记忆类型
-            persist: 是否持久化到长期记忆
-            importance: 重要性 (0.0-1.0)
-            tags: 标签列表
-            metadata: 额外元数据
-        """
+        """存储记忆"""
         async with self._lock:
             if memory_type == MemoryType.SHORT_TERM:
                 await self.short_term.add(key, value, tags, importance, metadata)
-
-                # 如果标记为持久化，同时存入长期记忆
                 if persist:
-                    await self.long_term.remember(
-                        key=key, value=value, tags=tags,
-                        persist=True, importance=importance, metadata=metadata
-                    )
+                    await self.long_term.remember(key, value, tags, persist=True, importance=importance, metadata=metadata)
 
             elif memory_type == MemoryType.SESSION:
                 if self._session_memory:
@@ -219,79 +746,14 @@ class UnifiedMemoryManager:
                     )
 
             elif memory_type == MemoryType.LONG_TERM:
-                await self.long_term.remember(
-                    key=key, value=value, tags=tags,
-                    persist=True, importance=importance, metadata=metadata
-                )
+                await self.long_term.remember(key, value, tags, persist=True, importance=importance, metadata=metadata)
 
             elif memory_type == MemoryType.USER_PROFILE:
                 user_id = metadata.get("user_id", "default") if metadata else "default"
-                self.relational.upsert_user_preference(
-                    user_id=user_id,
-                    preference_key=key,
-                    preference_value=value
-                )
-
-            elif memory_type == MemoryType.PROCEDURAL:
-                steps = value if isinstance(value, list) else [value]
-                self.relational.upsert_procedure(
-                    procedure_id=key,
-                    name=metadata.get("name", key) if metadata else key,
-                    steps=steps,
-                    description=metadata.get("description", "") if metadata else ""
-                )
-
-    async def recall(
-        self,
-        query: str,
-        memory_types: Optional[List[MemoryType]] = None,
-        limit: int = 10
-    ) -> List[MemoryEntry]:
-        """
-        检索记忆
-
-        Args:
-            query: 查询字符串
-            memory_types: 记忆类型过滤
-            limit: 返回数量限制
-
-        Returns:
-            匹配的MemoryEntry列表
-        """
-        memory_types = memory_types or [MemoryType.LONG_TERM]
-
-        results = []
-        for mem_type in memory_types:
-            if mem_type == MemoryType.SHORT_TERM:
-                short_results = await self.short_term.search(query, limit)
-                results.extend(short_results)
-
-            elif mem_type == MemoryType.LONG_TERM:
-                long_results = await self.long_term.search(query, limit)
-                results.extend(long_results)
-
-            elif mem_type == MemoryType.SESSION and self._session_memory:
-                messages = await self._session_memory.get_messages(limit=limit)
-                for msg in messages:
-                    results.append(MemoryEntry(
-                        id=msg.get("message_id", ""),
-                        memory_type=MemoryType.SESSION,
-                        content=msg.get("content", ""),
-                        metadata=msg
-                    ))
-
-        return results[:limit]
+                self.user_profile.upsert_preference(user_id, key, value, importance)
 
     async def recall_direct(self, key: str) -> Optional[Any]:
-        """
-        直接通过键检索
-
-        Args:
-            key: 记忆键
-
-        Returns:
-            记忆值或None
-        """
+        """直接通过键检索"""
         # 先查短期记忆
         value = await self.short_term.get(key, update_access=False)
         if value is not None:
@@ -306,31 +768,97 @@ class UnifiedMemoryManager:
 
         return None
 
-    async def search(
+    async def recall(
         self,
         query: str,
         memory_types: Optional[List[MemoryType]] = None,
-        filters: Optional[Dict[str, Any]] = None,
         limit: int = 10
     ) -> List[MemoryEntry]:
+        """检索记忆"""
+        memory_types = memory_types or [MemoryType.LONG_TERM]
+        results = []
+
+        for mem_type in memory_types:
+            if mem_type == MemoryType.SHORT_TERM:
+                short_results = await self.short_term.search(query, limit)
+                results.extend(short_results)
+            elif mem_type == MemoryType.LONG_TERM:
+                long_results = await self.long_term.search(
+                    query, limit, min_importance=self.config.importance_threshold
+                )
+                results.extend(long_results)
+
+        return results[:limit]
+
+    async def recall_with_decay(
+        self,
+        query: str,
+        top_k: int = 3,
+        enable_decay: bool = True
+    ) -> List[MemoryEntry]:
         """
-        高级搜索
+        带遗忘曲线的时间衰减召回
+
+        基于 Ebbinghaus 公式: retention = importance * e^(-t/S)
+
+        改进(v4.0):
+        1. 从长期记忆检索双倍数量
+        2. 计算每个记忆的保留分数
+        3. 低于阈值(0.1)过滤
+        4. 按 final_score = importance * retention 排序
+        5. 返回 top_k
 
         Args:
-            query: 搜索查询
-            memory_types: 记忆类型过滤
-            filters: 过滤条件
-            limit: 返回数量限制
+            query: 查询字符串
+            top_k: 返回数量
+            enable_decay: 是否启用时间衰减
 
         Returns:
-            搜索结果列表
+            排序后的记忆列表
         """
-        return await self.retriever.retrieve(
-            query=query,
-            memory_types=memory_types,
-            limit=limit,
-            filters=filters
-        )
+        import math
+
+        # 1. 从长期记忆检索双倍数量（给筛选留余地）
+        memories = await self.long_term.search(query, limit=top_k * 2)
+
+        if not memories:
+            return []
+
+        current_time = time.time()
+        scored = []
+
+        for mem in memories:
+            importance = mem.importance
+
+            # 重要性阈值过滤
+            if importance < self.config.importance_threshold:
+                continue
+
+            if not enable_decay:
+                scored.append((importance, mem))
+                continue
+
+            # 计算时间衰减保留分数
+            t = current_time - mem.last_accessed
+            S = mem.importance_level.get_strength_seconds()
+
+            if S == float('inf'):
+                retention = importance
+            else:
+                retention = importance * math.exp(-t / S)
+
+            # 阈值过滤
+            if retention < self.config.forgetting_threshold:
+                continue
+
+            # 最终分数 = 基础分数 * 保留分数
+            final_score = importance * retention
+            scored.append((final_score, mem))
+
+        # 按分数排序
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        return [mem for _, mem in scored[:top_k]]
 
     async def record_episode(
         self,
@@ -342,23 +870,8 @@ class UnifiedMemoryManager:
         success: bool = True,
         error: Optional[str] = None
     ) -> str:
-        """
-        记录执行情节
-
-        Args:
-            agent_id: Agent ID
-            action: 执行的动作
-            result: 执行结果
-            context_snapshot: 上下文快照
-            duration_ms: 执行时长
-            success: 是否成功
-            error: 错误信息
-
-        Returns:
-            episode_id
-        """
+        """记录执行情节"""
         task_id = self._current_task_id or "unknown"
-
         return await self.episodic.record_episode(
             task_id=task_id,
             agent_id=agent_id,
@@ -376,133 +889,53 @@ class UnifiedMemoryManager:
         max_tokens: int = 4096,
         force_retrieve: bool = False
     ) -> str:
-        """
-        为Agent生成上下文字符串
-
-        Args:
-            agent_id: Agent ID
-            max_tokens: 最大token数
-            force_retrieve: 强制检索
-
-        Returns:
-            格式化的上下文字符串
-        """
+        """为Agent生成上下文字符串"""
         parts = []
-        context = {
-            "short_term": self.short_term,
-            "session": self._session_memory,
-            "episodic": self.episodic,
-            "messages": await self.short_term.keys(),
-            "last_retrieval_time": self._last_retrieval_time,
-            "messages_since_retrieval": self._messages_since_retrieval,
-            "force_retrieve": force_retrieve
-        }
-
-        # 检查是否应该触发增强检索
-        should_retrieve = False
-        if self.enhanced_retriever:
-            should_retrieve, reason = self.enhanced_retriever.should_retrieve(context)
-            if should_retrieve or force_retrieve:
-                # 执行增强检索
-                retrieval_query = RetrievalQuery(
-                    text=f"task {self._current_task_id}" if self._current_task_id else agent_id,
-                    limit=10
-                )
-
-                results = await self.enhanced_retriever.retrieve(
-                    query=retrieval_query,
-                    context=context
-                )
-
-                if results:
-                    parts.append("## 相关记忆\n")
-                    for result in results[:5]:
-                        parts.append(f"- [{result.entry.memory_type.value}] {str(result.entry.content)[:100]}")
-
-                self._last_retrieval_time = time.time()
-                self._messages_since_retrieval = 0
-
-        # 添加短期记忆上下文
-        context_summary = await self.short_term.get_context_summary()
-        if context_summary:
-            parts.append(context_summary)
 
         # 添加会话上下文
         if self._session_memory:
-            session_context = await self._session_memory.get_context_for_agent(
-                agent_id, max_messages=20
-            )
-            if session_context:
-                parts.append(session_context)
+            messages = await self._session_memory.get_messages(limit=20)
+            if messages:
+                parts.append(f"## Session: {self._session_memory.session_id}\n")
+                for msg in messages[-10:]:
+                    parts.append(f"[{msg['agent_id']}] {msg['content'][:100]}")
 
-        # 添加相关记忆
-        if self._current_task_id:
-            task_context = await self.retriever.get_context_for_agent(
-                agent_id=agent_id,
-                task_id=self._current_task_id,
-                max_tokens=max_tokens
-            )
-            if task_context:
-                parts.append(task_context)
-
-        self._messages_since_retrieval += 1
+        # 添加短期记忆
+        recent = await self.short_term.get_recent(n=5)
+        if recent:
+            parts.append("\n## Recent Memories")
+            for entry in recent:
+                parts.append(f"- {entry.content[:80]}")
 
         return "\n\n".join(parts)
 
-    async def get_user_profile(self, user_id: str) -> Dict[str, Any]:
-        """获取用户画像"""
-        prefs = self.relational.get_user_preferences(user_id)
-        return {p["preference_key"]: p["preference_value"] for p in prefs}
-
-    def get_procedure(self, procedure_id: str) -> Optional[Dict[str, Any]]:
-        """获取程序记忆"""
-        return self.relational.get_procedure(procedure_id)
-
-    def record_procedure_execution(self, procedure_id: str, success: bool) -> None:
-        """记录程序执行结果"""
-        self.relational.record_procedure_execution(procedure_id, success)
-
     async def run_maintenance(self) -> Dict[str, Any]:
-        """
-        运行维护任务
-
-        - 清理低重要性记忆
-        - 生成必要摘要
-
-        Returns:
-            维护统计
-        """
-        stats = {
-            "forgetting_cleaned": 0,
-            "summary_generated": False,
+        """运行维护任务"""
+        cleanup_result = await self.forgetting.cleanup()
+        return {
+            "forgetting_cleaned": cleanup_result.get("deleted", 0),
             "timestamp": time.time()
         }
 
-        # 遗忘清理
-        cleanup_result = await self.forgetting.cleanup(
-            threshold=self.config.forgetting_threshold
-        )
-        stats["forgetting_cleaned"] = cleanup_result.get("deleted", 0)
-
-        return stats
+    async def get_user_profile(self, user_id: str) -> Dict[str, Any]:
+        """获取用户画像"""
+        return self.user_profile.get_preferences(user_id)
 
     def get_stats(self) -> Dict[str, Any]:
         """获取记忆系统统计"""
         return {
             "short_term": self.short_term.get_stats(),
-            "long_term": self.long_term.get_stats() if hasattr(self.long_term, 'get_stats') else {},
-            "episodic": self.episodic.get_stats(),
+            "long_term": {},  # long_term.get_stats 是协程，如需调用应使用 await
+            "episodic": self.episodic.get_stats() if hasattr(self.episodic, 'get_stats') else {},
             "session": self._session_memory.get_stats() if self._session_memory else {},
-            "relational": self.relational.get_memory_stats(),
-            "current_task": self._current_task_id,
-            "retrieval_stats": {
-                "last_retrieval_time": self._last_retrieval_time,
-                "messages_since_retrieval": self._messages_since_retrieval
-            }
+            "current_task": self._current_task_id
         }
 
 
+# ============================================================================
 # 全局单例
+# ============================================================================
+
 _memory_manager: Optional[UnifiedMemoryManager] = None
 
 

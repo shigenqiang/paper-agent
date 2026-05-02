@@ -8,7 +8,7 @@ Crawler Agent - LangGraph 工作流节点
 
 核心优化：使用 SearchOrchestrator 实现多源并行搜索。
 """
-from ..logging_config import get_logging_logger
+from src.agents_v2.logging_config import get_logging_logger
 import time
 import asyncio
 import os

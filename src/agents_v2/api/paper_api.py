@@ -155,7 +155,8 @@ async def create_paper(request: web.Request) -> web.Response:
         import json
         try:
             data = json.loads(body_text) if body_text else {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in create_paper: {e}, raw_input={body_text[:500] if body_text else 'empty'}")
             data = {}
         paper_id = str(uuid.uuid4())
 
@@ -497,7 +498,8 @@ async def format_content(request: web.Request) -> web.Response:
         body_text = body.decode('utf-8', errors='ignore')
         try:
             data = json.loads(body_text) if body_text else {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in format_content: {e}, raw_input={body_text[:500] if body_text else 'empty'}")
             data = {}
 
         # 记录原始数据长度
@@ -871,7 +873,8 @@ async def generate_literature_graph(request: web.Request) -> web.Response:
         body_text = body.decode('utf-8', errors='ignore')
         try:
             data = json.loads(body_text) if body_text else {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in generate_literature_graph: {e}, raw_input={body_text[:500] if body_text else 'empty'}")
             data = {}
 
         literature_ids = data.get("literatureIds", [])
@@ -1405,7 +1408,8 @@ async def generate_outline_stream(request: web.Request) -> web.StreamResponse:
         body_text = body.decode('utf-8', errors='ignore')
         try:
             data = json.loads(body_text) if body_text else {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in generate_outline_stream: {e}, raw_input={body_text[:500] if body_text else 'empty'}")
             data = {}
 
         topic = data.get("topic", paper.get("topic", ""))
@@ -1464,7 +1468,8 @@ async def generate_content_stream(request: web.Request) -> web.StreamResponse:
         body_text = body.decode('utf-8', errors='ignore')
         try:
             data = json.loads(body_text) if body_text else {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in generate_content_stream: {e}, raw_input={body_text[:500] if body_text else 'empty'}")
             data = {}
 
         prompt = data.get("prompt", "")
@@ -1631,7 +1636,8 @@ async def format_content_stream(request: web.Request) -> web.StreamResponse:
         body_text = body.decode('utf-8', errors='ignore')
         try:
             data = json.loads(body_text) if body_text else {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in format_content_stream: {e}, raw_input={body_text[:500] if body_text else 'empty'}")
             data = {}
 
         provided_content = data.get("content", "")

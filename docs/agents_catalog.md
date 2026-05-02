@@ -2,6 +2,9 @@
 
 本文档列出 `src/agents_v2` 目录下所有 Agent 的职责和能力。
 
+> 更新时间：2026-05-02 | Agent 总数：40+
+> 状态：✅ 与代码库一致
+
 ---
 
 ## Agent 架构体系
@@ -9,17 +12,19 @@
 ### 基类层级
 
 ```
-BaseAgent (base_agent.py)
+BaseAgent (core/base_agent.py)
 ├── PaperAgentBase (paper_agents/base_paper_agent.py)
-│   ├── OutlineAgent
-│   ├── ThesisAgent
-│   ├── DraftWriterAgent
-│   ├── ReviewerAgent
-│   ├── EditorAgent
 │   ├── TopicAgent
 │   ├── LiteratureAgent
-│   └── DigestReportAgent
+│   ├── ThesisAgent
+│   ├── OutlineAgent
+│   ├── DraftWriterAgent
+│   ├── EditorAgent
+│   ├── ReviewerAgent
+│   └── DigestAgent
 ├── ProblemAgentBase (problem_oriented/base_problem_agent.py)
+│   ├── TopicRefinerAgent
+│   ├── LiteratureMapperAgent
 │   ├── MethodologyAdvisorAgent
 │   ├── ArgumentBuilderAgent
 │   ├── SectionDifferentiatorAgent
@@ -27,16 +32,18 @@ BaseAgent (base_agent.py)
 │   ├── ChartFormatterAgent
 │   ├── PlagiarismCheckerAgent
 │   ├── LanguagePolisherAgent
-│   └── LiteratureMapperAgent
-└── WritingAgentBase (writing/base_writing_agent.py)
-    ├── OutlineGeneratorAgent
-    ├── ProposalGeneratorAgent
-    ├── ReferenceProcessorAgent
-    ├── LiteratureReviewAgent
-    ├── DraftGeneratorAgent
-    ├── ReportRefinerAgent
-    ├── SmartReviserAgent
-    └── LanguagePolisherAgent
+│   └── ResearchGapAgent (新增)
+├── WritingAgentBase (writing/base_writing_agent.py)
+│   ├── OutlineGeneratorAgent
+│   ├── ProposalGeneratorAgent
+│   ├── ReferenceProcessorAgent
+│   ├── LiteratureReviewAgent
+│   ├── DraftGeneratorAgent
+│   ├── ReportRefinerAgent
+│   ├── SmartReviserAgent
+│   └── GenerationOptimizerAgent (新增)
+└── BaseQAAgent (paper_search/base_qa_agent.py)
+    └── PaperSearchAgent
 ```
 
 ---
@@ -197,7 +204,41 @@ BaseAgent (base_agent.py)
 
 继承自 `problem_oriented/base_problem_agent.py`。每个 Agent 针对论文写作中的一个具体困难：诊断问题、分析原因、提供改进建议。
 
-### 2.1 MethodologyAdvisorAgent
+### 2.1 TopicRefinerAgent
+
+**文件**: `problem_oriented/topic_refiner.py`
+
+**针对问题**: 选题太宽泛/缺乏创新/可行性低
+
+**职责**: 分析初步想法、评估可行性、帮助优化选题、检查创新性
+
+**主要方法**:
+- `_analyze_initial_topic()` - 分析初步选题
+- `_evaluate_feasibility()` - 评估可行性
+- `_narrow_topic()` - 缩小选题范围
+- `_check_originality()` - 检查创新性
+- `_generate_refined_topic()` - 生成优化后的选题
+
+---
+
+### 2.2 ResearchGapAgent
+
+**文件**: `problem_oriented/research_gap.py`
+
+**针对问题**: 无法识别研究空白、文献综述不充分
+
+**职责**: 全面搜索相关文献、分类整理现有研究、识别研究空白、生成文献地图
+
+**主要方法**:
+- `_search_literature()` - 搜索文献
+- `_categorize_papers()` - 分类整理论文
+- `_identify_gaps()` - 识别研究空白
+- `_analyze_trends()` - 分析研究趋势
+- `_generate_gap_report()` - 生成空白报告
+
+---
+
+### 2.3 MethodologyAdvisorAgent
 
 **文件**: `problem_oriented/methodology_advisor.py`
 
@@ -213,7 +254,7 @@ BaseAgent (base_agent.py)
 
 ---
 
-### 2.2 ArgumentBuilderAgent
+### 2.4 ArgumentBuilderAgent
 
 **文件**: `problem_oriented/argument_builder.py`
 
@@ -229,7 +270,7 @@ BaseAgent (base_agent.py)
 
 ---
 
-### 2.3 SectionDifferentiatorAgent
+### 2.5 SectionDifferentiatorAgent
 
 **文件**: `problem_oriented/section_differentiator.py`
 
@@ -262,7 +303,7 @@ BaseAgent (base_agent.py)
 
 ---
 
-### 2.5 ChartFormatterAgent
+### 2.6 ChartFormatterAgent
 
 **文件**: `problem_oriented/chart_formatter.py`
 
@@ -276,7 +317,7 @@ BaseAgent (base_agent.py)
 
 ---
 
-### 2.6 PlagiarismCheckerAgent
+### 2.7 PlagiarismCheckerAgent
 
 **文件**: `problem_oriented/plagiarism_checker.py`
 
@@ -292,7 +333,7 @@ BaseAgent (base_agent.py)
 
 ---
 
-### 2.7 LanguagePolisherAgent
+### 2.8 LanguagePolisherAgent
 
 **文件**: `problem_oriented/language_polisher.py`
 
@@ -314,7 +355,7 @@ BaseAgent (base_agent.py)
 
 ---
 
-### 2.8 LiteratureMapperAgent
+### 2.9 LiteratureMapperAgent
 
 **文件**: `problem_oriented/literature_mapper.py`
 
@@ -471,13 +512,16 @@ BaseAgent (base_agent.py)
 
 ### 4.1 PaperSearchAgent
 
-**文件**: `qa/paper_search.py`
+**文件**: `paper_search/paper_search.py`
 
-**职责**: 从 arXiv 和 PubMed 搜索统计学论文
+**职责**: 从多个学术数据源搜索论文（arXiv / PubMed / Semantic Scholar / OpenAlex / CrossRef）
 
 **支持的数据源**:
 - arXiv - 机器学习、统计理论
 - PubMed - 生物统计、医学应用
+- Semantic Scholar - 学术引用网络
+- OpenAlex - 开放学术图谱
+- CrossRef - 参考文献元数据
 
 **搜索策略**:
 1. 多关键词组合
@@ -488,12 +532,47 @@ BaseAgent (base_agent.py)
 **主要方法**:
 - `_search_arxiv()` - 搜索 arXiv
 - `_search_pubmed()` - 搜索 PubMed
-- `_parse_arxiv_xml()` - 解析 arXiv XML
-- `_parse_pubmed_summary()` - 解析 PubMed 摘要
+- `_search_semantic_scholar()` - 搜索 Semantic Scholar
 - `_deduplicate_papers()` - 去除重复论文
 - `_rank_papers()` - 根据相关性排序
-- `_extract_methodology()` - 提取方法关键词
-- `_extract_contributions()` - 提取主要贡献
+
+---
+
+### 4.2 QueryRouterAgent
+
+**文件**: `paper_search/query_router.py`
+
+**职责**: 分析用户查询类型，路由到合适的搜索策略
+
+**支持的问题类型**:
+- BASIC_QUERY - 基础问题
+- PROFESSIONAL - 专业问题
+- FRONTIER - 前沿问题
+- APPLICATION - 应用问题
+
+---
+
+### 4.3 DailyWatcherAgent
+
+**文件**: `paper_search/daily_watcher.py`
+
+**职责**: 每日论文监控、关键词跟踪、趋势识别
+
+---
+
+### 4.4 WeeklyReportAgent
+
+**文件**: `paper_search/weekly_report.py`
+
+**职责**: 周报生成、多关键词聚合、方法分类
+
+---
+
+### 4.5 MonthlyReportAgent
+
+**文件**: `paper_search/monthly_report.py`
+
+**职责**: 月报生成、周度分解、作者统计、研究gap分析
 
 ---
 
@@ -501,11 +580,25 @@ BaseAgent (base_agent.py)
 
 ### 5.1 SupervisorAgent
 
-**文件**: `base/enhanced_base.py`
+**文件**: `unified/supervisor.py`
 
 **职责**: 协调多个子 Agent 的工作，作为主控 Agent
 
 ---
+
+### 5.2 IntentRouterAgent
+
+**文件**: `unified/intent_router.py`
+
+**职责**: 用户意图检测，多意图支持，路由到合适 Agent
+
+---
+
+### 5.3 MasterSupervisorAgent
+
+**文件**: `unified/master_supervisor.py`
+
+**职责**: 全文流水线全局编排，阶段协调，质量阈值管理
 
 ### 5.2 ResearchPlannerAgent
 

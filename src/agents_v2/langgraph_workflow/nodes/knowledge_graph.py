@@ -6,6 +6,7 @@ Knowledge Graph Node - LangGraph 工作流知识图谱节点
 
 from typing import Any, Dict, List, Optional
 
+from src.agents_v2.logging_config import get_logging_logger
 from ..state import PaperAgentState, Paper
 
 logger = get_logging_logger(__name__)

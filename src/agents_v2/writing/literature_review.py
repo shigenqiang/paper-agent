@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
 from ..paper_search.paper_search import PaperSearchAgent
+from ..storage.paper_db import get_paper_db as get_db
 
 logger = get_logging_logger(__name__)
 
@@ -317,7 +318,7 @@ class LiteratureReviewAgent(WritingAgentBase):
             data = json.loads(response)
             return data.get("queries", [{"query": topic, "angle": "general", "priority": "high"}])
         except json.JSONDecodeError as e:
-            logger.error(f"Query generation failed (JSON解析错误): {e}")
+            logger.warning(f"Query generation failed (JSON解析错误): {e}, raw_input={response[:500] if response else 'empty'}")
             try:
                 import re
                 match = re.search(r'\{.*\}', response, re.DOTALL)
@@ -336,7 +337,11 @@ class LiteratureReviewAgent(WritingAgentBase):
         queries: List[Dict[str, str]],
         max_papers: int
     ) -> List[Dict[str, Any]]:
-        """多源并行搜索 - 使用真实API"""
+        """多源并行搜索 - 使用真实API + 本地缓存"""
+        # 优先从本地数据库查找已存在的论文
+        db = get_db()
+        local_papers_map = {}  # title -> paper 用于快速去重
+
         async def search_with_api(query: str, source: str = "all") -> List[Dict[str, Any]]:
             """使用真实API搜索"""
             try:
@@ -344,7 +349,15 @@ class LiteratureReviewAgent(WritingAgentBase):
                     query,
                     {"source": source, "time_range": 365, "max_results": max_papers // 3}
                 )
-                return result.get("papers", [])
+                papers = result.get("papers", [])
+                # 过滤掉本地已存在的论文
+                new_papers = []
+                for p in papers:
+                    title_lower = p.get("title", "").lower().strip()
+                    if title_lower and title_lower not in local_papers_map:
+                        local_papers_map[title_lower] = p
+                        new_papers.append(p)
+                return new_papers
             except Exception as e:
                 logger.error(f"Search failed for query '{query}': {e}")
                 return []
@@ -369,14 +382,8 @@ class LiteratureReviewAgent(WritingAgentBase):
         tasks = [bounded_search(q) for q in queries[:8]]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 去重
-        seen = set()
-        unique_papers = []
-        for p in all_results:
-            title = p.get("title", "")
-            if title and title not in seen:
-                seen.add(title)
-                unique_papers.append(p)
+        # 去重（使用local_papers_map已去重）
+        unique_papers = list(local_papers_map.values())
 
         return unique_papers[:max_papers]
 

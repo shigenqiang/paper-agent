@@ -97,7 +97,10 @@ English:"""
             ]
             response = await self._translator_llm.ainvoke(messages)
             result = response.content if hasattr(response, 'content') else str(response)
-            return result.strip()
+            # 清理thinking标签和其他非翻译内容
+            result = result.strip()
+            result = result.replace("<think>", "").replace("</think>", "").strip()
+            return result
         except Exception as e:
             logger.error(f"Translation to English failed: {e}")
             return text

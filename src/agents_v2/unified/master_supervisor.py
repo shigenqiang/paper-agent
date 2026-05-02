@@ -11,6 +11,14 @@ MasterSupervisor - 全局协调器
 1. 问题导向：先诊断，后治疗
 2. 质量驱动：不达标则迭代
 3. 错误隔离：单阶段失败不影响全局
+
+阶段流程定义:
+- diagnostic: 问题诊断 (问题导向Agent并行)
+- topic: 选题阶段 (Pipeline Agent)
+- literature: 文献阶段 (Pipeline Agent)
+- methodology: 方法阶段 (问题导向Agent指导)
+- writing: 写作阶段 (Pipeline Agent)
+- polish: 润色阶段 (问题导向Agent)
 """
 from typing import Any, Dict, List, Optional, Callable, Type
 
@@ -21,11 +29,21 @@ import asyncio
 
 from .state_model import (
     PaperState, PhaseStatus, QualityLevel, ProblemType,
-    PhaseResult, DiagnosticResult, QualityScore, AgentResult
+    PhaseResult as StatePhaseResult, DiagnosticResult, QualityScore, AgentResult
 )
 from .phase_supervisor import PhaseSupervisor
 from .circuit_breaker import MultiCircuitBreaker, CircuitBreakerOpen
 from .error_handler import FallbackHandler, ErrorAccumulator, ErrorContext, ErrorSeverity
+
+# 导入预定义的阶段模型
+from .phase_models import (
+    DiagnosticInput,
+    TopicInput,
+    LiteratureInput,
+    MethodologyInput,
+    WritingInput,
+    PolishInput,
+)
 
 logger = get_logging_logger(__name__)
 
@@ -74,6 +92,11 @@ class MasterSupervisor:
 
         # Agent注册表
         self.agents: Dict[str, Callable] = {}
+
+        # 注册所有Agent
+        self.register_problem_agents()
+        self.register_pipeline_agents()
+        self.register_writing_agents()
 
         # 配置
         self.max_iterations = 3
@@ -146,20 +169,14 @@ class MasterSupervisor:
             from ..paper_agents import (
                 TopicAgent,
                 LiteratureAgent,
-                ThesisAgent,
                 OutlineAgent,
                 DraftWriterAgent,
-                EditorAgent,
-                ReviewerAgent
             )
 
             self.agents["topic"] = TopicAgent(self.llm_config)
             self.agents["literature"] = LiteratureAgent(self.llm_config)
-            self.agents["thesis"] = ThesisAgent(self.llm_config)
             self.agents["outline"] = OutlineAgent(self.llm_config)
             self.agents["draft"] = DraftWriterAgent(self.llm_config)
-            self.agents["editor"] = EditorAgent(self.llm_config)
-            self.agents["reviewer"] = ReviewerAgent(self.llm_config)
 
             logger.debug("Pipeline agents registered")
         except ImportError as e:
@@ -446,11 +463,22 @@ class MasterSupervisor:
     def _prepare_phase_input(self, phase: str, original_input: Dict[str, Any]) -> Dict[str, Any]:
         """准备阶段的输入数据"""
         if phase == "diagnostic":
-            return original_input
+            # 诊断阶段：直接传递 user_request，让各 Agent 自己提取需要的字段
+            return {"user_request": original_input.get("user_request", original_input.get("topic", ""))}
         elif phase == "topic":
             return {"user_request": original_input.get("user_request", original_input.get("topic", ""))}
         elif phase == "literature":
-            return {"topic": self.state.context.get("topic", {})}
+            # 文献阶段需要 topic 信息
+            topic_info = self.state.context.get("topic", {})
+            if not topic_info:
+                # 尝试从 original_input 获取
+                topic_info = original_input.get("user_request", original_input.get("topic", ""))
+            return {"topic": topic_info}
+        elif phase == "methodology":
+            return {
+                "topic": self.state.context.get("topic", {}),
+                "literature_result": self.state.context.get("literature_result", {})
+            }
         elif phase == "writing":
             return {
                 "topic": self.state.context.get("topic", {}),

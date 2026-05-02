@@ -237,7 +237,7 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
                 return []
             try:
                 data = json.loads(content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 # Try regex extraction on original response
                 import re
                 match = re.search(r'\{.*\}', response, re.DOTALL)
@@ -245,10 +245,10 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
                     try:
                         data = json.loads(match.group())
                     except Exception as e2:
-                        self.logger.warning(f"[{cls_name}:244] Regex extraction failed: {e2}")
+                        self.logger.warning(f"[{cls_name}:244] Regex extraction failed: {e2}, raw_input={response[:500] if response else 'empty'}")
                         return []
                 else:
-                    self.logger.warning(f"[{cls_name}:247] No JSON found in response")
+                    self.logger.warning(f"[{cls_name}:247] No JSON found in response, raw_input={response[:500] if response else 'empty'}")
                     return []
             return data.get("methods", [])
         except ValueError as e:
@@ -299,7 +299,8 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
             content = _clean_json_markdown(response)
             try:
                 data = json.loads(content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                self.logger.warning(f"[{cls_name}:302] JSON parse failed in _evaluate_method: {e}, raw_input={response[:500] if response else 'empty'}")
                 import re
                 match = re.search(r'\{.*\}', response, re.DOTALL)
                 if match:
@@ -392,7 +393,8 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
             content = _clean_json_markdown(response)
             try:
                 data = json.loads(content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                self.logger.warning(f"[{cls_name}:396] JSON parse failed in _identify_problems: {e}, raw_input={response[:500] if response else 'empty'}")
                 import re
                 match = re.search(r'\{.*\}', response, re.DOTALL)
                 if match:

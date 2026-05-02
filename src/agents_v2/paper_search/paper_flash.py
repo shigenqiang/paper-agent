@@ -335,9 +335,9 @@ class PaperFlash(BaseQAAgent):
             report_data.setdefault("source", source)
             report_data.setdefault("published_date", str(year))
             return report_data
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             # 降级处理
-            self.logger.warning(f"JSON解析失败，使用降级处理")
+            self.logger.warning(f"JSON parse failed in _generate_single_report: {e}, raw_input={response[:500] if response else 'empty'}")
             return {
                 "title": title,
                 "authors": authors,

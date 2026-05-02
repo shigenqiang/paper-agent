@@ -8,6 +8,7 @@ Multimodal Node - LangGraph 工作流多模态节点
 from typing import Any, Dict, List, Optional
 
 from ..state import PaperAgentState, Paper
+from src.agents_v2.logging_config import get_logging_logger
 
 logger = get_logging_logger(__name__)
 

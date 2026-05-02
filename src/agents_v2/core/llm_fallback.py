@@ -134,7 +134,7 @@ class LLMCallWithFallback:
 
         # 模型配置
         self._model_configs = {
-            "primary": primary_config or ModelConfig(model="gpt-4", temperature=0.7, max_tokens=2048, timeout=30),
+            "primary": primary_config or ModelConfig(model="minimax-m2.7", temperature=0.7, max_tokens=2048, timeout=30),
             "secondary": secondary_config or ModelConfig(model="gpt-3.5-turbo", temperature=0.5, max_tokens=1024, timeout=15),
             "local": local_config or ModelConfig(model="llama3:70b", temperature=0.6, max_tokens=1024, timeout=60)
         }
@@ -393,7 +393,7 @@ class LLMCallError(Exception):
 
 def create_llm_caller(
     agent: Any,
-    primary_model: str = "gpt-4",
+    primary_model: str = "minimax-m2.7",
     secondary_model: str = "gpt-3.5-turbo"
 ) -> LLMCallWithFallback:
     """创建LLM调用器"""

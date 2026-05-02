@@ -143,12 +143,14 @@ JSON格式：
         try:
             response = await self._llm_caller(prompt)
             return json.loads(response)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in _llm_synthesize: {e}, raw_input={response[:500] if isinstance(response, str) else str(response)[:500]}")
             match = re.search(r'\{[\s\S]*\}', response if isinstance(response, str) else "")
             if match:
                 try:
                     return json.loads(match.group())
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e2:
+                    logger.warning(f"Regex extraction also failed in _llm_synthesize: {e2}, raw_input={match.group()[:500]}")
                     pass
             return {"answer": str(response)[:500], "parse_error": True}
         except Exception as e:

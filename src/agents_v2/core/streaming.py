@@ -221,7 +221,7 @@ class StreamingHandler:
         prompt: str,
         task_id: str,
         llm: Any = None,
-        model: str = "gpt-4",
+        model: str = "minimax-m2.7",
         stream_handler: Optional[Callable] = None
     ) -> StreamResponse:
         """

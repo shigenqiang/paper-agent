@@ -32,8 +32,8 @@
                     ┌───────────────────┼───────────────────┐
                     ▼                   ▼                   ▼
         ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
-        │   API Routes      │  │  Built-in Routes  │  │   LangGraph       │
-        │   (api/ 模块)      │  │  (api_server.py)  │  │  (workflow_api)   │
+        │   API Routes      │  │  Server Routes    │  │   LangGraph       │
+        │   (api/ 模块)      │  │  (server/)        │  │  (langgraph_workflow/) │
         └───────────────────┘  └───────────────────┘  └───────────────────┘
                                         │
                                         ▼
@@ -46,7 +46,7 @@
 │  │  - 错误处理: CircuitBreaker + FallbackHandler                              │  │
 │  └─────────────────────────────────────────────────────────────────────────────┘  │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐  │
-│  │  IntentRouter (unified/intent_router.py)                                  │  │
+│  │  IntentRouter (unified/intent_router.py)                                    │  │
 │  │  - 11种意图类型识别                                                         │  │
 │  │  - 关键词匹配 + LLM辅助 + 置信度校准                                        │  │
 │  └─────────────────────────────────────────────────────────────────────────────┘  │
@@ -59,8 +59,8 @@
 └─────────────────────────────────────────────────────────────────────────────────────┘
                     │                    │                    │
           ┌─────────▼──────┐  ┌────────▼───────┐  ┌────────▼───────┐
-          │   Agent Core   │  │   Memory       │  │   Observability│
-          │   (core/)      │  │   (memory/)    │  │  (monitoring/) │
+          │   Agents       │  │   Memory       │  │   Observability│
+          │   (agents/)    │  │   (memory/)   │  │  (monitoring/) │
           └────────────────┘  └────────────────┘  └────────────────┘
 ```
 
@@ -68,55 +68,56 @@
 
 ## 二、代码结构详解 (src/agents_v2/)
 
-### 2.1 核心入口
+### 2.1 server/ — HTTP服务器
 
-| 文件 | 说明 |
-|------|------|
-| `api_server.py` | aiohttp HTTP服务入口，72KB，中间件链，路由注册 |
-| `logging_config.py` | Loguru日志配置 |
-| `main.py` | `python -m src.main` 入口点 |
+```
+server/
+├── __init__.py
+├── api_server.py         # aiohttp HTTP服务入口
+├── logging_config.py    # Loguru日志配置
+└── migrate_logging.py   # 日志迁移工具
+```
 
-### 2.2 core/ — Agent基础层 (19个文件)
+### 2.2 agents/ — 新版Agent框架
 
-| 文件 | 大小 | 说明 |
-|------|------|------|
-| `base_agent.py` | 12KB | Agent基类，execute/plan/reflect |
-| `enhanced_base.py` | 18KB | 增强版Agent |
-| `react_executor.py` | 16KB | ReAct执行器 |
-| `config.py` | 17KB | YAML配置 + 16模型注册表 |
-| `config_manager.py` | 7KB | 配置管理器 |
-| `context_injector.py` | 16KB | 上下文注入器 |
-| `llm_fallback.py` | 12KB | LLM降级策略 |
-| `streaming.py` | 11KB | SSE流式输出 |
-| `agent_roles.py` | 9KB | Agent角色定义 |
-| `builtin_plugins.py` | 9KB | 内置插件 |
-| `plugins.py` | 21KB | 插件系统 |
-| `security.py` | 17KB | 安全加固 |
-| `error_recovery.py` | 12KB | 错误恢复 |
-| `validators.py` | 10KB | 输入验证 |
-| `exceptions.py` | 809B | 异常层次结构 |
-| `rbac.py` | - | 基于角色的访问控制 |
-| `user_manager.py` | - | 用户管理 |
+```
+agents/
+├── __init__.py
+├── base/                 # Agent基类
+│   ├── __init__.py
+│   └── base_agent.py    # BaseAgent (361行)
+├── loops/               # 执行循环
+│   ├── __init__.py
+│   └── react_loop.py    # ReAct执行器 (546行)
+└── roles/              # Agent角色
+    ├── __init__.py
+    ├── planner/         # 规划Agent
+    ├── polisher/       # 润色Agent
+    ├── reviewer/       # 评审Agent
+    ├── searcher/       # 搜索Agent
+    ├── specialist/     # 专家Agent
+    └── writer/         # 写作Agent
+```
 
 ### 2.3 api/ — RESTful API路由
 
 ```
 api/
 ├── __init__.py
-├── gateway.py          # API网关抽象 (APIRouter, APIEndpoint, APIRequest/Response)
-├── paper_api.py        # 论文CRUD + 聊天
-├── reports_api.py      # 报告/资讯生成
+├── gateway.py              # API网关抽象
+├── paper_api.py           # 论文CRUD + 聊天
+├── reports_api.py         # 报告/资讯生成
 ├── knowledge_graph_api.py # 知识图谱API
-├── workflow_api.py     # 工作流API
-└── sse_helper.py       # SSE流式辅助
+├── workflow_api.py        # 工作流API
+└── sse_helper.py           # SSE流式辅助
 ```
 
-### 2.4 unified/ — 编排层 (14+个文件)
+### 2.4 unified/ — 编排层 (向后兼容)
 
 ```
 unified/
 ├── __init__.py
-├── master_supervisor.py    # MasterSupervisor (6阶段流水线编排)
+├── master_supervisor.py     # MasterSupervisor (6阶段流水线编排)
 ├── phase_supervisor.py      # 阶段监督器
 ├── intent_router.py         # 意图路由 (11种意图类型)
 ├── circuit_breaker.py      # 熔断保护
@@ -124,11 +125,11 @@ unified/
 ├── error_handler.py         # 错误处理与回退
 ├── error_recovery.py        # 错误恢复
 ├── translation.py           # 翻译包装器
-├── cache.py                 # 结果缓存
+├── cache.py                # 结果缓存
 ├── monitoring.py           # 指标收集
 ├── execution_replay.py     # 执行回放
 ├── hitl_manager.py         # Human-in-the-Loop管理器
-├── agent_loop.py           # Agent循环抽象
+├── agent_loop.py          # Agent循环抽象
 ├── flow_monitoring.py      # 流程监控
 ├── input_security.py       # 输入安全
 ├── output_manager.py       # 输出管理
@@ -136,69 +137,23 @@ unified/
 └── phase_supervisor.py     # 阶段监督
 ```
 
-### 2.5 paper_agents/ — 论文流水线Agent (9个文件)
+### 2.5 orchestration/ — 编排层 (新版兼容)
 
 ```
-paper_agents/
-├── __init__.py            # 导出5个Agent
-├── base_paper_agent.py    # PaperAgent基类 (11KB)
-├── topic_agent.py         # 选题Agent (19KB)
-├── literature_agent.py   # 文献调研Agent (12KB)
-├── outline_agent.py      # 大纲制定Agent (11KB)
-├── draft_writer.py       # 初稿撰写Agent (12KB)
-├── digest_agent.py       # 论文摘要Agent (20KB)
-├── deprecated/
-│   ├── annotations.py
-│   ├── editor_agent.py
-│   ├── reviewer_agent.py
-│   ├── thesis_agent.py
-│   ├── versioning.py
-│   └── writing_pipeline.py
-└── deprecated/
-    └── ...
+orchestration/
+├── __init__.py             # 导出 unified/ 组件 (兼容层)
+└── router/                 # 路由子模块
+    └── __init__.py
 ```
 
-### 2.6 writing/ — 写作支持 (17+个文件)
+### 2.6 harness/ — 质量保障 (新版兼容)
 
 ```
-writing/
-├── __init__.py
-├── outline_generator.py     # 大纲生成
-├── draft_generator.py      # 初稿生成
-├── smart_reviser.py        # 智能修订 + 语言润色
-├── report_refiner.py       # 多轮精炼
-├── literature_review.py    # 文献综述
-├── generation_optimizer.py  # 生成优化
-├── streaming_generator.py  # 流式生成
-├── answer_quality_checker.py # 答案质量检查
-├── base_writing_agent.py   # 写作Agent基类
-├── citation_generator.py   # 引用生成
-├── logic_coherence.py      # 逻辑一致性
-├── proposal_generator.py   # 提案生成
-├── reference_processor.py   # 参考文献处理
-├── reflection_engine.py    # 反思引擎
-├── diff_manager.py         # Diff管理
-├── deprecated/
-│   ├── chapter_strategies.py
-│   └── self_rag_writer.py
-└── deprecated/
+harness/
+└── __init__.py             # 导出 unified/ 组件 (兼容层)
 ```
 
-### 2.7 problem_oriented/ — 问题诊断与质量检查
-
-```
-problem_oriented/
-├── __init__.py
-├── topic_refiner.py        # 选题精炼
-├── literature_mapper.py    # 文献映射
-├── methodology_advisor.py  # 方法论指导
-├── argument_builder.py     # 论点构建
-├── research_gap.py         # 研究空白识别
-├── language_polisher.py    # 语言润色
-└── plagiarism_checker.py   # 查重检测
-```
-
-### 2.8 langgraph_workflow/ — LangGraph工作流
+### 2.7 langgraph_workflow/ — LangGraph工作流
 
 ```
 langgraph_workflow/
@@ -233,7 +188,98 @@ langgraph_workflow/
     └── tracer.py          # 链路追踪器
 ```
 
-### 2.9 search/ — 学术搜索引擎 (15+个文件)
+### 2.8 workflow/ — 预留工作流 (空目录)
+
+```
+workflow/
+├── __init__.py            # 空
+├── graph/                 # 图结构 (空)
+│   ├── __init__.py
+│   └── nodes/
+│       └── __init__.py
+└── runners/               # 运行器 (空)
+    └── __init__.py
+```
+
+### 2.9 core/ — Agent基础层
+
+| 文件 | 说明 |
+|------|------|
+| `base_agent.py` | Agent基类，execute/plan/reflect |
+| `enhanced_base.py` | 增强版Agent |
+| `react_executor.py` | ReAct执行器 |
+| `config.py` | YAML配置 + 16模型注册表 |
+| `config_manager.py` | 配置管理器 |
+| `context_injector.py` | 上下文注入器 |
+| `llm_fallback.py` | LLM降级策略 |
+| `streaming.py` | SSE流式输出 |
+| `agent_roles.py` | Agent角色定义 |
+| `builtin_plugins.py` | 内置插件 |
+| `plugins.py` | 插件系统 |
+| `security.py` | 安全加固 |
+| `error_recovery.py` | 错误恢复 |
+| `validators.py` | 输入验证 |
+| `exceptions.py` | 异常层次结构 |
+| `rbac.py` | 基于角色的访问控制 |
+| `user_manager.py` | 用户管理 |
+
+### 2.10 paper_agents/ — 论文流水线Agent
+
+```
+paper_agents/
+├── __init__.py            # 导出5个Agent
+├── base_paper_agent.py    # PaperAgent基类 (11KB)
+├── topic_agent.py         # 选题Agent (19KB)
+├── literature_agent.py    # 文献调研Agent (12KB)
+├── outline_agent.py       # 大纲制定Agent (11KB)
+├── draft_writer.py        # 初稿撰写Agent (12KB)
+├── digest_agent.py        # 论文摘要Agent (20KB)
+└── deprecated/
+    ├── annotations.py
+    ├── editor_agent.py
+    ├── reviewer_agent.py
+    ├── thesis_agent.py
+    ├── versioning.py
+    └── writing_pipeline.py
+```
+
+### 2.11 writing/ — 写作支持
+
+```
+writing/
+├── __init__.py
+├── outline_generator.py     # 大纲生成
+├── draft_generator.py      # 初稿生成
+├── smart_reviser.py        # 智能修订 + 语言润色
+├── report_refiner.py       # 多轮精炼
+├── literature_review.py    # 文献综述
+├── generation_optimizer.py  # 生成优化
+├── streaming_generator.py  # 流式生成
+├── answer_quality_checker.py # 答案质量检查
+├── base_writing_agent.py   # 写作Agent基类
+├── citation_generator.py   # 引用生成
+├── logic_coherence.py      # 逻辑一致性
+├── proposal_generator.py   # 提案生成
+├── reference_processor.py   # 参考文献处理
+├── reflection_engine.py    # 反思引擎
+└── diff_manager.py         # Diff管理
+```
+
+### 2.12 problem_oriented/ — 问题诊断与质量检查
+
+```
+problem_oriented/
+├── __init__.py
+├── topic_refiner.py        # 选题精炼
+├── literature_mapper.py    # 文献映射
+├── methodology_advisor.py # 方法论指导
+├── argument_builder.py     # 论点构建
+├── research_gap.py        # 研究空白识别
+├── language_polisher.py   # 语言润色
+└── plagiarism_checker.py   # 查重检测
+```
+
+### 2.13 search/ — 学术搜索引擎
 
 ```
 search/
@@ -256,7 +302,7 @@ search/
 └── strategies.py          # 搜索策略
 ```
 
-### 2.10 retrieval/ — RAG检索增强 (14+个文件)
+### 2.14 retrieval/ — RAG检索增强
 
 ```
 retrieval/
@@ -277,73 +323,52 @@ retrieval/
 └── keyword_sets.py         # 关键词集合
 ```
 
-### 2.11 knowledge_graph/ — 知识图谱 (12+个文件)
+### 2.15 knowledge_graph/ — 知识图谱
 
 ```
 knowledge_graph/
 ├── __init__.py
-├── kg_service.py          # KG服务
-├── kg_graphrag.py         # GraphRAG问答
-├── kg_embeddings.py       # 向量嵌入
-├── kg_community.py        # 社区检测
+├── kg_service.py           # KG服务
+├── kg_graphrag.py          # GraphRAG问答
+├── kg_embeddings.py        # 向量嵌入
+├── kg_community.py         # 社区检测
 ├── kg_batch_operations.py # 批量操作
 ├── kg_extractors.py       # 实体提取
 ├── kg_hybrid_retriever.py # 混合检索
-├── kg_schema.py           # 图谱Schema
-├── kg_summarizer.py       # 摘要生成
+├── kg_schema.py            # 图谱Schema
+├── kg_summarizer.py        # 摘要生成
 ├── kg_vector_store.py     # 向量存储
 └── deprecated/
     └── legacy_generator.py
 ```
 
-### 2.12 memory/ — 记忆系统v4
+### 2.16 memory/ — 记忆系统v4
 
 ```
 memory/
 ├── __init__.py
-├── unified.py             # 统一记忆管理器
+├── unified.py              # 统一记忆管理器
 ├── short_term.py          # 短期记忆 (内存LRU)
-├── long_term.py           # 长期记忆
-├── episodic.py            # 情景记忆
-├── session.py             # 会话记忆
+├── long_term.py            # 长期记忆
+├── episodic.py             # 情景记忆
+├── session.py              # 会话记忆
 ├── flow_controller.py      # 流转控制器
-├── embeddings.py          # 向量嵌入
-├── compression.py         # 记忆压缩
-├── retrieval.py           # 检索引擎
+├── embeddings.py           # 向量嵌入
+├── compression.py          # 记忆压缩
+├── retrieval.py            # 检索引擎
 ├── config.py              # 内存配置
-├── deprecated/            # 已废弃模块 (18个)
-│   ├── agent_bridge.py
-│   ├── compression.py
-│   ├── context_persistence.py
-│   ├── distributed.py
-│   ├── embeddings.py
-│   ├── episodic.py
-│   ├── hierarchical_memory.py
-│   ├── long_term.py
-│   ├── mcp_protocol.py
-│   ├── monitoring.py
-│   ├── neo4j_store.py
-│   ├── postgres_storage.py
-│   ├── redis_cache.py
-│   ├── relational.py
-│   ├── retrieval.py
-│   ├── security.py
-│   ├── services.py
-│   └── session.py
+└── deprecated/            # 已废弃模块 (18个)
 ```
 
-### 2.13 storage/ — 存储层
+### 2.17 storage/ — 存储层
 
 ```
 storage/
 ├── __init__.py
 └── paper_db.py            # SQLite + ChromaDB双存储
-    - Paper表: 论文元数据
-    - ChromaDB: 向量语义搜索
-    - 查重机制: 标题/DOI/作者+年份
 ```
 
-### 2.14 evaluation/ — 评估体系 (14+个文件)
+### 2.18 evaluation/ — 评估体系
 
 ```
 evaluation/
@@ -356,7 +381,7 @@ evaluation/
 ├── benchmark.py           # 基准测试
 ├── feedback_collector.py  # 反馈收集
 ├── output_formatter.py   # 输出格式化
-├── output_validator.py   # 输出验证
+├── output_validator.py    # 输出验证
 ├── report_generator.py   # 报告生成
 ├── chain_integrator.py   # 链式集成
 ├── chaos_tester.py       # 混沌测试
@@ -371,20 +396,55 @@ evaluation/
     └── paper_writing.py
 ```
 
-### 2.15 其他重要模块
+### 2.19 monitoring/ — 可观测性
 
-| 模块 | 文件数 | 说明 |
-|------|--------|------|
-| `routing/` | 8+ | 意图分类、置信度计算、多意图处理、语义扩展 |
-| `tools/` | 20+ | 文本分块、引用提取、图表分类、PDF解析、元数据解析等 |
-| `monitoring/` | 3+ | 链路调试、延迟追踪 |
-| `scheduler/` | 2+ | 定时调度、订阅管理 |
-| `state/` | 4+ | 状态模型、检查点管理、持久化、验证 |
-| `sdk/` | 3+ | Claude Agent SDK |
+```
+monitoring/
+├── __init__.py
+├── alerts.py              # 告警系统 (24KB)
+├── chain_debugger.py      # 链路调试 (9KB)
+├── chain_monitor.py       # 链路监控 (7KB)
+├── chain_tracer.py       # 链路追踪 (21KB)
+├── chain_tracer_mixin.py # 追踪混入 (8KB)
+├── dashboard.py          # 监控仪表盘 (45KB)
+├── docs_monitor.py       # 文档监控 (10KB)
+├── latency_tracker.py    # 延迟追踪 (6KB)
+├── optimizer.py          # 性能优化 (10KB)
+├── quality_tracker.py    # 质量追踪 (14KB)
+└── structured_logging.py # 结构化日志 (16KB)
+```
+
+### 2.20 routing/ — 意图路由
+
+```
+routing/
+├── __init__.py
+├── intent_classifier.py     # 意图分类器
+├── intent_confidence.py    # 置信度计算
+├── llm_intent_classifier.py # LLM意图分类
+├── multi_intent.py         # 多意图处理
+├── semantic_expander.py    # 语义扩展
+├── agent_selector.py        # Agent选择器
+├── fallback_router.py      # 降级路由
+└── routing_optimizer.py    # 路由优化
+```
+
+### 2.21 其他模块
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| `tools/` | 30+ | 文本分块、引用提取、图表分类、PDF解析等 |
+| `state/` | 4 | 状态模型、检查点管理、持久化、验证 |
 | `skills/` | 3+ | Skill加载器、语义匹配器 |
-| `multimodal/` | 1+ | 多模态处理 |
-| `personalization/` | 1+ | 个性化 |
+| `multimodal/` | 6 | 图表分析、公式识别、视觉编码 |
+| `scheduler/` | 3 | 报告调度、订阅管理、依赖调度 |
+| `personalization/` | 2 | 偏好学习、用户画像 |
+| `sdk/` | 3 | Claude Agent SDK |
 | `paper_search/` | 5+ | 论文搜索独立模块 |
+| `security/` | 2 | 安全 (RBAC) |
+| `validation/` | 1 | 验证 |
+| `plugins/` | 1 | 插件系统 |
+| `config/` | 1 | 配置 |
 | `demos/` | 1+ | 性能测试demo |
 
 ---
@@ -396,11 +456,10 @@ evaluation/
 ```
 python -m src.main
   → src/main.py: main()
-    → src.agents_v2.api_server: main()
+    → src.agents_v2.server.api_server: main()
       → create_app()
         → 注册中间件 (request_logging, api_key_auth)
-        → 注册内置路由 (api_server.py 内置)
-        → 注册前端路由 (api/ 模块)
+        → 注册路由
         → web.run_app(app, port=8000)
 ```
 
@@ -452,24 +511,11 @@ python -m src.main
 
 ### 5.2 核心节点
 
-```
-writer.py:
-  - 节点名: "writer"
-  - 功能: 逐节生成内容，带引用标注
-  - 输入: selected_papers, outline
-  - 输出: draft
-
-reviewer.py:
-  - 节点名: "reviewer"
-  - 功能: 质量评审，反馈改进建议
-  - 输入: draft
-  - 输出: feedback, quality_score
-
-evaluator.py:
-  - 节点名: "evaluator"
-  - 功能: 多维度评分 (逻辑性/完整性/创新性/格式)
-  - 决策: 通过 → END，不通过 → 返回writer重写
-```
+| 节点 | 功能 | 输入 | 输出 |
+|------|------|------|------|
+| `writer` | 逐节生成内容，带引用标注 | selected_papers, outline | draft |
+| `reviewer` | 质量评审，反馈改进建议 | draft | feedback, quality_score |
+| `evaluator` | 多维度评分，决策通过/返修 | draft | evaluation_passed |
 
 ---
 
@@ -488,14 +534,10 @@ evaluator.py:
 │           │                    │                           │
 │           ▼                    ▼                           │
 │  ┌─────────────────────────────────────────────┐          │
-│  │  Paper DB (papers.db)                        │          │
-│  │  - Paper表: id/title/authors/year/abstract   │          │
-│  │  - Citations表: 引用关系                      │          │
+│  │  Paper DB (data/papers.db)                   │          │
 │  └─────────────────────────────────────────────┘          │
-│                                                        │
 │  ┌─────────────────────────────────────────────┐          │
-│  │  ChromaDB (chroma_db/)                       │          │
-│  │  - paper_embeddings: 语义相似度搜索          │          │
+│  │  ChromaDB (data/chroma_db/)                   │          │
 │  └─────────────────────────────────────────────┘          │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -505,7 +547,7 @@ evaluator.py:
 ```
 data/
 ├── papers.db         # SQLite数据库
-└── chroma_db/        # ChromaDB向量存储
+└── chroma_db/       # ChromaDB向量存储
 ```
 
 ---
@@ -516,37 +558,30 @@ data/
 |------|------|------|
 | **前端** | React 18 + Vite 5 + Ant Design 5 + Zustand 4 | SPA写作工作台 |
 | **后端** | Python 3.11 + aiohttp | 异步HTTP服务 |
+| **Agent框架** | 新版 agents/ + 兼容 unified/ | 双轨并行 |
 | **Agent编排** | LangGraph (StateGraph) | 有向图状态机 |
-| **LLM支持** | OpenAI / Anthropic / MiniMax / DeepSeek / Qwen / GLM | 16个注册模型 |
+| **LLM支持** | OpenAI / Anthropic / MiniMax / DeepSeek / Qwen / GLM | 多模型 |
 | **存储** | SQLite + ChromaDB | 元数据+向量双存储 |
 | **日志** | Loguru | 结构化日志 |
 | **可选** | PostgreSQL + Redis + Neo4j | 分布式部署 |
 
 ---
 
-## 八、质量保障体系
+## 八、模块演进说明
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Pipeline:                                                                   │
-│  TopicAgent → LiteratureAgent → OutlineAgent → DraftWriterAgent             │
-│                            → EditorAgent → ReviewerAgent                     │
-│                            → PolisherAgent → ChartFormatter                  │
-│                                                                              │
-│  Quality Assurance:                                                         │
-│  ┌─────────────────────────────────────────────────────────────────────┐     │
-│  │ CheckpointManager — 检查点保存/恢复/回退                              │     │
-│  │ CircuitBreaker     — 熔断保护 (错误率>30%, 连续失败5次, 超时5min)     │     │
-│  │ HITLManager       — 5个中断点 + Diff审批视图                          │     │
-│  │ Evaluator         — 7维度质量评分                                     │     │
-│  │ AuditTrail        — 完整操作溯源 + 状态转换日志                        │     │
-│  └─────────────────────────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| `server/` | **新增** | 从 api_server.py 迁移 |
+| `agents/` | **新增** | 新版Agent框架，ReAct Loop |
+| `orchestration/` | **新增** | 编排兼容层 |
+| `harness/` | **新增** | 质量保障兼容层 |
+| `workflow/` | 预留 | 预留工作流目录（空） |
+| `unified/` | 保留 | 向后兼容，继续使用 |
+| `langgraph_workflow/` | 保留 | LangGraph工作流 |
 
 ---
 
-**文档版本**: v3.0
-**更新日期**: 2026-05-02
+**文档版本**: v4.0
+**更新日期**: 2026-05-03
 **基于代码版本**: fresh-start branch
 **代码结构**: `src/agents_v2/` 目录下实际存在的文件结构

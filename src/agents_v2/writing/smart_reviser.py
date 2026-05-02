@@ -511,7 +511,7 @@ class LanguagePolisherAgent(WritingAgentBase):
         self._trinka = TrinkaGrammarChecker() if use_trinka else None
 
     def _clean_text_output(self, text: str) -> str:
-        """清理文本输出，移除思考块、代码块标记等"""
+        """清理文本输出，移除思考块、代码块标记、诊断信息等无用部分"""
         if not text:
             return text
         import re
@@ -521,7 +521,16 @@ class LanguagePolisherAgent(WritingAgentBase):
         text = re.sub(r'```json\s*', '', text)
         text = re.sub(r'```\s*', '', text)
         text = re.sub(r'```$', '', text)
-        # 3. 清理多余的空行
+        # 3. 移除诊断相关字段（当它们被错误地混入 polished_text 时）
+        text = re.sub(r'"diagnosis"\s*:.*?(?="[a-z_]+"\s*:|\}\s*$)', '', text, flags=re.DOTALL)
+        text = re.sub(r'"grammar_issues"\s*:.*?(?="[a-z_]+"\s*:|\}\s*$|\])', '', text, flags=re.DOTALL)
+        text = re.sub(r'"style_issues"\s*:.*?(?="[a-z_]+"\s*:|\}\s*$|\])', '', text, flags=re.DOTALL)
+        text = re.sub(r'"terminology_issues"\s*:.*?(?="[a-z_]+"\s*:|\}\s*$|\])', '', text, flags=re.DOTALL)
+        text = re.sub(r'"overall_quality"\s*:.*?(?="[a-z_]+"\s*:|\}\s*$)', '', text, flags=re.DOTALL)
+        text = re.sub(r'"summary"\s*:[^}]*(?=\}\s*$)', '', text, flags=re.DOTALL)
+        # 4. 移除类似 "最后输出的论文是..." 这样的描述性前缀
+        text = re.sub(r'^[^。，\n]*?(?:最后输出|输出|润色后|修改后)[^:]*:', '', text, flags=re.IGNORECASE)
+        # 5. 清理多余的空行
         text = re.sub(r'\n{3,}', '\n\n', text)
         return text.strip()
 
@@ -534,11 +543,13 @@ class LanguagePolisherAgent(WritingAgentBase):
         if json_match:
             try:
                 return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON parse failed in _parse_diagnosis_response (json_match): {e}, raw_input={json_match.group(1)[:500] if json_match.group(1) else 'empty'}")
                 pass
         try:
             return json.loads(cleaned_response.strip())
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in _parse_diagnosis_response: {e}, raw_input={cleaned_response.strip()[:500] if cleaned_response.strip() else 'empty'}")
             return None
 
     def _extract_issues(self, diagnosis_data: Dict[str, Any]) -> List[str]:

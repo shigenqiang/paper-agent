@@ -186,12 +186,14 @@ class LanguagePolisherAgent(ProblemAgentBase):
         if json_match:
             try:
                 return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON parse failed in _parse_diagnosis_response (json_match): {e}, raw_input={json_match.group(1)[:500] if json_match.group(1) else 'empty'}")
                 pass
         # 尝试直接解析
         try:
             return json.loads(response.strip())
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in _parse_diagnosis_response: {e}, raw_input={response.strip()[:500] if response.strip() else 'empty'}")
             return None
 
     def _extract_issues(self, diagnosis_data: Dict[str, Any]) -> List[str]:

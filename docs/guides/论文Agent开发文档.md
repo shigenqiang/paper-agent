@@ -3,9 +3,9 @@
 > 智能论文调研与写作系统 — Harness驱动的多Agent编排系统
 > 融合：实际代码库状态 + 前沿技术调研 + Agent Harness设计范式
 
-版本: 8.0
-更新日期: 2026-05-01
-状态: ✅ 与代码库一致 + 前沿技术融合
+版本: 8.2
+更新日期: 2026-05-03
+状态: ✅ 与代码库一致
 
 ---
 
@@ -954,15 +954,16 @@ src/agents_v2/knowledge_graph/
 
 ```
 src/agents_v2/memory/
+├── unified.py           # 统一记忆管理器
 ├── short_term.py          # 短期记忆
 ├── long_term.py           # 长期记忆
 ├── episodic.py            # 情景记忆
-├── hierarchical.py        # 层次记忆
-├── relational.py          # 关系记忆
-├── distributed.py         # 分布式记忆
 ├── session.py             # 会话管理
 ├── compression.py         # 记忆压缩
 ├── embeddings.py          # 记忆嵌入
+├── relational.py          # 关系记忆
+├── distributed.py         # 分布式记忆
+├── hierarchical.py        # 层次记忆
 ├── mcp_protocol.py        # MCP 协议支持
 ├── store_postgres.py      # PostgreSQL 存储
 ├── store_redis.py         # Redis 存储
@@ -975,12 +976,33 @@ src/agents_v2/memory/
 | 类型 | 说明 | 存储 |
 |------|------|------|
 | 短期记忆 | 当前会话上下文 | 内存 |
-| 长期记忆 | 跨会话知识持久化 | PostgreSQL/Redis |
+| 会话记忆 | 任务内跨Agent交互 | PostgreSQL JSONB分区 |
+| 长期记忆 | 跨任务知识持久化 | Qdrant (向量) + Neo4j (图) |
 | 情景记忆 | 具体交互事件 | PostgreSQL |
 | 层次记忆 | 按抽象层次组织 | Neo4j |
 | 关系记忆 | 实体间关系 | Neo4j |
+| 用户画像 | 用户偏好与习惯 | PostgreSQL |
 
-### 13.3 工作流集成
+### 13.3 重要性等级
+
+| 等级 | 分数 | S参数(秒) | 保留时间 |
+|------|------|-----------|---------|
+| **CRITICAL** | 1.0 | ∞ | 永不 |
+| **HIGH** | 0.8 | 604,800 (7天) | 7天 |
+| **MEDIUM** | 0.5 | 86,400 (1天) | 1天 |
+| **LOW** | 0.3 | 3,600 (1小时) | 1小时 |
+
+**保留公式**: `retention = importance × e^(-t/S)`
+
+### 13.4 记忆流转机制
+
+| 阶段 | 触发条件 | 操作 |
+|------|---------|------|
+| STG→SESSION | 消息数≥30 OR 任务结束 | 批量存储到PG |
+| STG→LONG_TERM | 重要性≥0.7 OR 用户标记 | 存入Qdrant+Neo4j |
+| LONG_TERM→FORGOTTEN | retention<0.1 | 删除 |
+
+### 13.5 工作流集成
 
 在 Writing 工作流中：
 - **memory_recall**: 检索前从历史记忆召回相关知识

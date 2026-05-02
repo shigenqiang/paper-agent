@@ -33,7 +33,7 @@ if project_root not in sys.path:
 async def run_full_paper(topic: str):
     """运行全链路论文生成"""
     from src.agents_v2.unified import MasterSupervisor
-    from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+    from src.agents_v2.config import LLMConfig
 
     # LLM 配置 - 从环境变量读取
     api_key = os.getenv("OPENAI_API_KEY")
@@ -49,7 +49,9 @@ async def run_full_paper(topic: str):
         provider="openai",
         model_name=model_name,
         api_key=api_key,
-        base_url=base_url
+        base_url=base_url,
+        temperature=0.7,
+        max_tokens=4096
     )
 
     print("=" * 60)
@@ -62,16 +64,13 @@ async def run_full_paper(topic: str):
 
     # 创建 Supervisor
     supervisor = MasterSupervisor(llm_config)
-    supervisor.register_pipeline_agents()
-    supervisor.register_writing_agents()
-    supervisor.register_problem_agents()
 
-    # 运行全链路
+    # 运行全链路 - 使用 user_request 格式
     print("开始执行全链路流程...")
     print("阶段: 诊断 -> 选题 -> 文献 -> 方法 -> 写作 -> 润色")
     print()
 
-    result = await supervisor.run("full_paper", {"topic": topic})
+    result = await supervisor.run("full_paper", {"user_request": topic})
 
     print("=" * 60)
     print("执行结果")

@@ -7,6 +7,7 @@ Citation Graph - 引用图谱
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 from collections import defaultdict
+from src.agents_v2.logging_config import get_logging_logger
 
 logger = get_logging_logger(__name__)
 

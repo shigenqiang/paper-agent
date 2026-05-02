@@ -10,6 +10,7 @@ import json
 import xml.etree.ElementTree as ET
 
 from .base_qa_agent import BaseQAAgent
+from ..storage.paper_db import PaperDatabase, get_paper_db as get_db
 
 logger = get_logging_logger(__name__)
 
@@ -112,6 +113,20 @@ class PaperSearchAgent(BaseQAAgent):
 
         start_time = asyncio.get_event_loop().time()
 
+        # ===== 优化：先查本地数据库，避免重复搜索 =====
+        db = get_db()
+        cached_papers = []
+        search_queries_to_run = []
+
+        # 使用标题模糊匹配查找本地已有论文
+        try:
+            existing = db.find_by_title(query)
+            if existing:
+                self.logger.info(f"本地数据库找到相关论文: {existing.title[:50]}...")
+        except Exception as e:
+            self.logger.debug(f"本地查询跳过: {e}")
+
+        # ===== 原有搜索逻辑 =====
         try:
             # 根据source决定搜索哪些数据源
             tasks = []
@@ -139,12 +154,94 @@ class PaperSearchAgent(BaseQAAgent):
             # 排序
             results.papers = self._rank_papers(results.papers, query)
 
+            # 保存到数据库
+            db_save_result = None
+            try:
+                paper_db = get_db()
+                # 直接使用 SQLite 插入，绕过 Paper 类的字段限制
+                import hashlib
+                import uuid as uuid_module
+
+                saved_count = 0
+                skipped_count = 0
+                failed_count = 0
+
+                for p in results.papers:
+                    try:
+                        # 计算指纹用于去重
+                        authors_json = json.dumps(p.authors, ensure_ascii=False)
+                        fingerprint_content = f"{p.title.lower().strip()}|{p.year}|{authors_json.lower()}"
+                        fingerprint = hashlib.md5(fingerprint_content.encode()).hexdigest()
+
+                        # 检查是否已存在
+                        cursor = paper_db._conn.cursor()
+                        cursor.execute("SELECT paper_id FROM papers WHERE fingerprint = ?", (fingerprint,))
+                        existing = cursor.fetchone()
+                        if existing:
+                            skipped_count += 1
+                            continue
+
+                        # 生成 paper_id
+                        paper_id = str(uuid_module.uuid4())
+                        now = datetime.now().isoformat()
+
+                        # 插入 SQLite
+                        cursor.execute("""
+                            INSERT INTO papers (
+                                paper_id, title, authors, year, abstract, url, source,
+                                paper_external_id, doi, venue, citations, keywords,
+                                methodology, key_contributions, results, raw_data,
+                                fingerprint, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            paper_id,
+                            p.title,
+                            json.dumps(p.authors, ensure_ascii=False),
+                            p.year,
+                            p.abstract,
+                            p.url,
+                            p.source,
+                            p.paper_id,  # paper_external_id
+                            "",  # doi
+                            "",  # venue
+                            p.citations,
+                            json.dumps(p.keywords, ensure_ascii=False),
+                            p.methodology,
+                            json.dumps(p.key_contributions, ensure_ascii=False),
+                            p.results,
+                            json.dumps(p.to_dict(), ensure_ascii=False),  # raw_data
+                            fingerprint,
+                            now,
+                            now,
+                        ))
+                        paper_db._conn.commit()
+                        saved_count += 1
+                    except Exception as e:
+                        if "UNIQUE constraint" in str(e):
+                            skipped_count += 1
+                        else:
+                            failed_count += 1
+                            self.logger.warning(f"保存论文失败: {p.title[:30]} - {e}")
+
+                db_save_result = {
+                    "saved": saved_count,
+                    "skipped": skipped_count,
+                    "failed": failed_count
+                }
+                self.logger.info(
+                    f"数据库保存: 新增{saved_count}篇, "
+                    f"跳过{skipped_count}篇(已存在), "
+                    f"失败{failed_count}篇"
+                )
+            except Exception as db_err:
+                self.logger.warning(f"数据库保存失败: {db_err}")
+
             results.total_count = len(results.papers)
             results.search_time = asyncio.get_event_loop().time() - start_time
 
             self.logger.debug(f"找到 {results.total_count} 篇论文")
 
-            return {
+            response = {
                 "success": True,
                 "papers": [p.to_dict() for p in results.papers],
                 "total_count": results.total_count,
@@ -152,6 +249,12 @@ class PaperSearchAgent(BaseQAAgent):
                 "query": query,
                 "errors": results.errors
             }
+
+            # 添加数据库保存结果
+            if db_save_result:
+                response["db_save"] = db_save_result
+
+            return response
 
         except Exception as e:
             self.logger.error(f"搜索失败: {e}")

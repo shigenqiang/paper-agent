@@ -49,7 +49,7 @@ class LLMIntentClassifier:
     def __init__(
         self,
         llm_provider: Optional[Callable] = None,
-        model_name: str = "gpt-4",
+        model_name: str = "minimax-m2.7",
         fallback_keyword_matching: bool = True
     ):
         self.llm_provider = llm_provider

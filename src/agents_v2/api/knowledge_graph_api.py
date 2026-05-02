@@ -264,7 +264,8 @@ async def handle_get_literature_graph(request: web.Request) -> web.Response:
 
         try:
             papers = json.loads(papers_param)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"JSON parse failed in handle_get_literature_graph: {e}, raw_input={papers_param[:500] if papers_param else 'empty'}")
             papers = []
 
         if papers:

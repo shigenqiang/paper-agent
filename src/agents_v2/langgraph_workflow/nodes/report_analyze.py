@@ -138,14 +138,16 @@ JSON格式：
         try:
             response = await self._llm_caller(prompt)
             return json.loads(response)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse failed in _llm_deep_analysis: {e}, raw_input={response[:500] if isinstance(response, str) else str(response)[:500]}")
             # 尝试提取JSON
             import re
             match = re.search(r'\{[\s\S]*\}', response if isinstance(response, str) else "")
             if match:
                 try:
                     return json.loads(match.group())
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e2:
+                    logger.warning(f"Regex extraction also failed in _llm_deep_analysis: {e2}")
                     pass
             return {"narrative": str(response)[:500], "parse_error": True}
         except Exception as e:

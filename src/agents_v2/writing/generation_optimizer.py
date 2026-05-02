@@ -30,7 +30,7 @@ class OptimizationStrategy(str, Enum):
 @dataclass
 class GenerationConfig:
     """生成配置"""
-    model: str = "gpt-4"
+    model: str = "minimax-m2.7"
     temperature: float = 0.7
     max_tokens: int = 2000
     top_p: float = 1.0

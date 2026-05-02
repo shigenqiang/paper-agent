@@ -10,11 +10,12 @@ from typing import Any, Dict, List, Optional
 from src.agents_v2.logging_config import get_logging_logger
 
 import json
+import re
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..unified.translation import EnglishFirstMixin
 from ..unified.pydantic_validator import (
-    parse_with_pydantic, PaperStructure, ChapterOutline
+    parse_with_pydantic, PaperStructure, ChapterOutline, _clean_json_markdown
 )
 
 logger = get_logging_logger(__name__)
@@ -232,7 +233,7 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
             data = json.loads(content)
             return data.get("chapter_plans", chapters)
         except json.JSONDecodeError as e:
-            self.logger.error(f"[{cls_name}:213] Chapter planning failed (JSON解析错误): {e}")
+            self.logger.warning(f"[{cls_name}:213] Chapter planning failed (JSON解析错误): {e}, raw_input={content[:500] if content else 'empty'}")
             return chapters
         except ValueError as e:
             self.logger.error(f"[{cls_name}:215] Chapter planning failed: {e}")
@@ -290,7 +291,7 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
             data = json.loads(content)
             return data.get("key_arguments", [])
         except json.JSONDecodeError as e:
-            self.logger.error(f"[{cls_name}:274] Key arguments identification failed (JSON解析错误): {e}, response前100字符: {response[:100] if response else 'None'}")
+            self.logger.warning(f"[{cls_name}:274] Key arguments identification failed (JSON解析错误): {e}, raw_input={response[:500] if response else 'empty'}")
             try:
                 match = re.search(r'\{.*\}', response, re.DOTALL)
                 if match:

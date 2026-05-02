@@ -12,6 +12,7 @@
 - 保持状态一致性
 """
 from typing import Dict, Any, List
+from src.agents_v2.logging_config import get_logging_logger
 
 from datetime import datetime, timedelta
 

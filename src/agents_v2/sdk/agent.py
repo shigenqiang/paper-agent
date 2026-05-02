@@ -440,7 +440,8 @@ class Agent:
             args_str = match.group(2).strip()
             try:
                 args = json.loads(args_str) if args_str else {}
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                self.logger.warning(f"JSON parse failed in tool call extraction: {e}, raw_input={args_str[:500] if args_str else 'empty'}")
                 args = {"raw_input": args_str}
             calls.append(ToolCallRequest(tool_name=tool_name, tool_args=args))
             self.logger.debug(f"Parsed tool call: {tool_name}")

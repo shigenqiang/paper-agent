@@ -53,7 +53,7 @@ def main():
     logger.info("=" * 60)
 
     # 导入并启动 api_server
-    from src.agents_v2.api_server import main as api_main
+    from src.agents_v2.server.api_server import main as api_main
     api_main()
 
 

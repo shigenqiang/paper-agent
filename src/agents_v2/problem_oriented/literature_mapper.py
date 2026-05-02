@@ -222,7 +222,7 @@ class LiteratureMapperAgent(ProblemAgentBase):
             try:
                 data = json.loads(content)
             except json.JSONDecodeError as e:
-                logger.warning(f"[{cls_name}:221] JSON parse failed: {e}, using fallback")
+                logger.warning(f"[{cls_name}:221] JSON parse failed: {e}, raw_response={content[:500] if content else 'empty'}, using fallback")
                 return [topic]
             return data.get("queries", [topic])
         except ValueError as e:
@@ -328,14 +328,14 @@ class LiteratureMapperAgent(ProblemAgentBase):
             try:
                 data = json.loads(content)
             except json.JSONDecodeError as e:
-                logger.warning(f"[{cls_name}:327] Categorization JSON parse failed: {e}")
+                logger.warning(f"[{cls_name}:327] Categorization JSON parse failed: {e}, raw_response={response[:500] if response else 'empty'}")
                 return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
             return data
         except ValueError as e:
             logger.error(f"[{cls_name}:288] Categorization failed: {e}")
             return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
         except Exception as e:
-            logger.error(f"[{cls_name}:290] Categorization failed: {e}")
+            logger.error(f"[{cls_name}:290] Categorization failed: {e}", exc_info=True)
             return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
 
     async def _identify_gaps(self, topic: str, categorized: Dict) -> List[Dict[str, str]]:
@@ -372,14 +372,14 @@ class LiteratureMapperAgent(ProblemAgentBase):
             try:
                 data = json.loads(content)
             except json.JSONDecodeError as e:
-                logger.warning(f"[{cls_name}:371] Gap identification JSON parse failed: {e}")
+                logger.warning(f"[{cls_name}:371] Gap identification JSON parse failed: {e}, raw_response={response[:500] if response else 'empty'}")
                 return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
             return data.get("gaps", [])
         except ValueError as e:
-            logger.error(f"[{cls_name}:331] Gap identification failed: {e}")
+            logger.error(f"[{cls_name}:331] Gap identification failed: {e}", exc_info=True)
             return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
         except Exception as e:
-            logger.error(f"[{cls_name}:333] Gap identification failed: {e}")
+            logger.error(f"[{cls_name}:333] Gap identification failed: {e}", exc_info=True)
             return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
 
     async def _generate_literature_map(

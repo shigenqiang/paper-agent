@@ -2,78 +2,53 @@
 
 ## 📊 项目概览
 
-**项目名称**: Paper Agent - 智能论文调研与写作系统  
-**开发周期**: 完成 Phase 1-6 全部开发  
-**代码统计**: 6 次提交，25 个文件，+2,981 行代码  
-**测试覆盖**: 20 个单元测试用例  
+**项目名称**: Paper Agent - 智能论文调研与写作系统
+**开发周期**: 完成 Phase 1-6 全部开发
+**代码规模**: 311 个 Python 文件，40+ 个 Agent
+**测试覆盖**: 20+ 个单元测试用例
+**文档数量**: 30+ 份文档
 
-## ✅ 完成的功能模块
+---
 
-### 1. 统一路由系统
-- **RouteNode**: 智能意图分类（11 种意图类型）
-- **route_by_intent**: 条件边函数，自动分发到 5 条工作流路径
-- 支持关键词匹配 + LLM 智能分类
+## ✅ 核心系统完成状态
 
-### 2. 报告工作流（3 个节点）
-- **ReportCrawlNode**: 论文搜索（复用 PaperSearchAgent）
-  - 支持日报/周报/月报
-  - 根据时间范围自动调整搜索参数
-- **ReportAnalyzeNode**: 数据分析
-  - 统计分析：场所、作者、年份、引用
-  - 关键词提取和 Top 论文排序
-- **ReportGenNode**: 报告生成
-  - 结构化报告文档
-  - 包含概览、高引用论文、热门场所、研究热点
+### 1. Agent 系统 (40+ Agent)
 
-### 3. 问答工作流（3 个节点）
-- **QASearchNode**: 问答搜索（复用 PaperSearchAgent + QueryRouter）
-  - 识别问题类型
-  - 智能选择搜索源
-- **QASynthesizeNode**: 数据综合
-  - 基础综合分析
-  - 比较分析（对比多个概念）
-  - 趋势分析（年份分布）
-- **QAAnswerNode**: 回答生成
-  - 结构化回答
-  - 包含论文引用和参考文献
+| Agent 类别 | 数量 | 说明 |
+|-----------|------|------|
+| Pipeline Agent | 9 | 选题→文献→Thesis→大纲→初稿→修订→评审 |
+| Problem-Oriented Agent | 10 | 选题精炼、研究空白、方法论、论点构建等 |
+| Writing Agent | 17 | 大纲生成、初稿撰写、智能修订、文献综述等 |
+| QA/Paper Search Agent | 7 | 多源搜索、日报/周报/月报生成 |
+| Supervisor/Orchestrator | 3 | 意图路由、全局编排、阶段监督 |
 
-### 4. 修改工作流（3 个节点）
-- **ReviseNode**: 智能改稿
-  - 格式化和基本修正
-  - 生成修改报告
-- **RefineNode**: 多轮精炼
-  - 优化段落结构
-  - 提升内容质量
-- **PolishNode**: 语言润色
-  - 标点符号优化
-  - 提升表达质量
+### 2. 统一记忆系统 v4
 
-### 5. 统一工作流（UnifiedWorkflow）
-- 整合所有工作流路径的统一入口
-- 5 条独立工作流路径：
-  1. **search**: crawler → selector
-  2. **writing**: memory → crawler → selector → multimodal → kg → outline → write → review → evaluator
-  3. **report**: report_crawl → report_analyze → report_gen
-  4. **qa**: qa_search → qa_synthesize → qa_answer
-  5. **revision**: revise → refine → polish
-- 集成 3 个扩展节点：memory, multimodal, knowledge_graph
-- 支持异步执行和追踪
+- **短期记忆**: 内存 LRU + TTL
+- **长期记忆**: SQLite 持久化
+- **情景记忆**: EpisodicMemory
+- **会话记忆**: SessionMemory
+- **流转控制器**: MemoryFlowController
 
-### 6. 前后端系统
-- **后端 API**: 完整实现（运行中）
-  - 论文管理 API
-  - 文献搜索 API
-  - AI 对话 API
-  - 学术资讯 API
-  - 设置管理 API
-- **前端界面**: 完整实现（7 个页面）
-  - 工作台（HomePage）
-  - 论文写作（WritingPage）
-  - 文献管理（LiteraturePage）
-  - AI 助手（AIAssistantPage）
-  - 学术资讯（ReportsPage）
-  - 功能导航（FeaturesPage）
-  - 设置中心（SettingsPage）
+### 3. LangGraph 工作流
+
+- **5 条工作流路径**: search / writing / report / qa / revision
+- **17 个节点**: router, crawler, selector, outline, writer, reviewer 等
+- **状态管理**: PaperAgentState
+- **可观测性**: ChainTracer, LatencyTracker
+
+### 4. 知识图谱系统
+
+- **实体提取**: EntityExtractor
+- **GraphRAG 问答**: kg_graphrag.py
+- **社区检测**: kg_community.py
+- **向量存储**: kg_vector_store.py + ChromaDB
+
+### 5. 论文存储系统
+
+- **SQLite**: 论文元数据、引用关系
+- **ChromaDB**: 向量语义搜索
+- **存储路径**: `data/papers.db`, `data/chroma_db`
 
 ## 📈 开发进度
 
@@ -239,7 +214,8 @@
 - **工作流**: LangGraph (状态图编排)
 - **LLM**: LangChain (多 LLM 支持)
 - **搜索**: arXiv, PubMed, Semantic Scholar, OpenAlex
-- **数据库**: PostgreSQL, Redis, Neo4j (可选)
+- **存储**: JSON 文件持久化（当前）
+- **计划升级**: PostgreSQL + Qdrant + Neo4j (按记忆系统 v3.0 方案)
 
 ### 前端
 - **框架**: React 18

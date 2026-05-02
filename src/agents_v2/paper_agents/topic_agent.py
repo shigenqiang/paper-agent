@@ -124,7 +124,7 @@ def parse_with_pydantic(text: str, model_class: type[BaseModel], default_value: 
         data = json.loads(cleaned)
         return model_class.model_validate(data)
     except (json.JSONDecodeError, ValidationError) as e:
-        logger.debug(f"Pydantic parse failed: {e}, trying regex extraction")
+        logger.warning(f"Pydantic parse failed: {e}, raw_input={text[:500] if text else 'empty'}, trying regex extraction")
         # 尝试正则提取
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
@@ -132,7 +132,7 @@ def parse_with_pydantic(text: str, model_class: type[BaseModel], default_value: 
                 data = json.loads(match.group())
                 return model_class.model_validate(data)
             except (json.JSONDecodeError, ValidationError) as e2:
-                logger.warning(f"Regex extraction also failed: {e2}")
+                logger.warning(f"Regex extraction also failed: {e2}, raw_input={text[:500] if text else 'empty'}")
                 return default_value
         return default_value
 
@@ -464,11 +464,6 @@ class TopicAgent(PaperAgentBase):
 
             # 按overall_score排序
             evaluated = sorted(evaluated, key=lambda x: x.get("overall_score", 0), reverse=True)
-            return evaluated
-
-        except Exception as e:
-            log_error_with_context(self.logger, e, "Feasibility evaluation", recovered=True)
-            return [{"original": c, "scores": {}, "overall_score": 0.5} for c in candidates]
             return evaluated
 
         except Exception as e:

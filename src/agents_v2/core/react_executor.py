@@ -379,7 +379,7 @@ class ReActExecutor:
             )
 
         except (json.JSONDecodeError, ValueError) as e:
-            logger.warning(f"Failed to parse thought response: {e}")
+            logger.warning(f"Failed to parse thought response: {e}, raw_input={response[:500] if response else 'empty'}")
 
             # 返回默认思考
             return Thought(

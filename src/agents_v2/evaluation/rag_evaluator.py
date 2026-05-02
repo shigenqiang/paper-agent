@@ -16,6 +16,7 @@ RAG评估器 - RAG Evaluator
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from src.agents_v2.logging_config import get_logging_logger
 
 logger = get_logging_logger(__name__)
 

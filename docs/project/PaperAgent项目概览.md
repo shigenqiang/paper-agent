@@ -15,21 +15,23 @@ PaperAgent 是一个基于多 Agent 协作架构的智能学术论文研究助�
 ### 后端 (Python aiohttp)
 - **位置**: `src/agents_v2/`
 - **核心框架**: asyncio + aiohttp
-- **Agent 数量**: 37 个专业 Agent
-- **图谱存储**: Neo4j
+- **Agent 数量**: 40+ 个专业 Agent
+- **Python 文件**: 311 个
+- **存储**: SQLite + ChromaDB (论文), SQLite (记忆系统)
 - **认证方式**: API Key
 
 ### 前端 (React + Vite + Ant Design)
 - **位置**: `frontend/src/`
-- **状态管理**: Zustand (paperStore)
+- **页面数量**: 9 个
+- **状态管理**: Zustand (9 个 Store)
 - **路由**: React Router
-- **UI 组件**: Ant Design
+- **UI 组件**: Ant Design + G6 图可视化
 
 ---
 
 ## Agent 系统详解
 
-### Agent 总数: 37 个
+### Agent 总数: 40+ 个
 
 ### 1. 基础基类 (5个)
 
@@ -39,11 +41,11 @@ PaperAgent 是一个基于多 Agent 协作架构的智能学术论文研究助�
 | `PaperAgentBase` | `src/agents_v2/paper_agents/base_paper_agent.py` | 论文写作流程 Agent 基类 |
 | `WritingAgentBase` | `src/agents_v2/writing/base_writing_agent.py` | 完整论文写作 Agent 基类 |
 | `ProblemAgentBase` | `src/agents_v2/problem_oriented/base_problem_agent.py` | 问题诊断 Agent 基类 |
-| `BaseQAAgent` | `src/agents_v2/qa/base_qa_agent.py` | 统计问答 Agent 基类 |
+| `BaseQAAgent` | `src/agents_v2/paper_search/base_qa_agent.py` | 问答 Agent 基类 |
 
 ---
 
-### 2. Pipeline Agent (流水线 Agent - 8个)
+### 2. Pipeline Agent (流水线 Agent - 9个)
 
 按顺序执行论文写作全流程：
 
@@ -60,13 +62,14 @@ PaperAgent 是一个基于多 Agent 协作架构的智能学术论文研究助�
 
 ---
 
-### 3. Problem-Oriented Agent (问题导向 Agent - 9个)
+### 3. Problem-Oriented Agent (问题导向 Agent - 10个)
 
 针对特定论文问题进行诊断与修复：
 
 | Agent | 文件 | 目标问题 | 工作流程 |
 |-------|------|---------|---------|
 | `TopicRefinerAgent` | `topic_refiner.py` | 选题太宽泛/缺乏创新 | 分析范围，评估可行性/新颖性，生成细化选题 |
+| `ResearchGapAgent` | `research_gap.py` | 无法识别研究空白 | 全面搜索，分类整理，gap分析 |
 | `LiteratureMapperAgent` | `literature_mapper.py` | 文献不足 | 多角度搜索，论文分类，gap识别 |
 | `MethodologyAdvisorAgent` | `methodology_advisor.py` | 研究方法问题 | 方法推荐，检查严谨性，识别问题 |
 | `ArgumentBuilderAgent` | `argument_builder.py` | 论点薄弱 | 构建论点框架，检查连贯性，识别gap |
@@ -102,13 +105,13 @@ PaperAgent 是一个基于多 Agent 协作架构的智能学术论文研究助�
 
 | Agent | 文件 | 功能 | 关键特性 |
 |-------|------|-----|---------|
-| `PaperSearchAgent` | `qa/paper_search.py` | 学术论文搜索 | arXiv + PubMed 并行搜索，相关性排序，去重 |
-| `QueryRouter` | `qa/query_router.py` | 问题类型路由 | BASIC_QUERY/PROFESSIONAL/FRONTIER/APPLICATION 分类 |
-| `CitationManager` | `qa/citation_manager.py` | 引用管理 | 多格式支持(APA/MLA/Chicago/IEEE/Nature) |
-| `ReportGenerator` | `qa/report_generator.py` | 报告生成 | 论文分析，对比，结构化Markdown报告 |
-| `DailyWatcher` | `qa/daily_watcher.py` | 日报监控 | 关键词跟踪，趋势识别，日度总结 |
-| `WeeklyReportGenerator` | `qa/weekly_report.py` | 周报生成 | 多关键词聚合，方法分类，新兴趋势 |
-| `MonthlyReportGenerator` | `qa/monthly_report.py` | 月报生成 | 周度分解，作者统计，研究gap分析 |
+| `PaperSearchAgent` | `paper_search/paper_search.py` | 学术论文搜索 | arXiv/PubMed/Semantic Scholar/OpenAlex 并行搜索 |
+| `QueryRouter` | `paper_search/query_router.py` | 问题类型路由 | BASIC_QUERY/PROFESSIONAL/FRONTIER/APPLICATION 分类 |
+| `CitationManager` | `paper_search/citation_manager.py` | 引用管理 | 多格式支持(APA/MLA/Chicago/IEEE/Nature) |
+| `ReportGenerator` | `paper_search/report_generator.py` | 报告生成 | 论文分析，对比，结构化Markdown报告 |
+| `DailyWatcher` | `paper_search/daily_watcher.py` | 日报监控 | 关键词跟踪，趋势识别，日度总结 |
+| `WeeklyReportGenerator` | `paper_search/weekly_report.py` | 周报生成 | 多关键词聚合，方法分类，新兴趋势 |
+| `MonthlyReportGenerator` | `paper_search/monthly_report.py` | 月报生成 | 周度分解，作者统计，研究gap分析 |
 
 ---
 
@@ -214,74 +217,75 @@ MasterSupervisor
 
 ```
 D:\pycharmprojects\pythonProject1\
-├── src/
-│   └── agents_v2/
-│       ├── base_agent.py              # Agent基类
-│       ├── config.py                  # 配置
-│       ├── config_manager.py          # 配置管理
-│       ├── roles/
-│       │   └── agent_roles.py         # 角色定义
-│       ├── paper_agents/              # Pipeline Agents
-│       │   ├── base_paper_agent.py
-│       │   ├── topic_agent.py
-│       │   ├── literature_agent.py
-│       │   ├── thesis_agent.py
-│       │   ├── outline_agent.py
-│       │   ├── draft_writer.py
-│       │   ├── editor_agent.py
-│       │   ├── reviewer_agent.py
-│       │   └── digest_agent.py
-│       ├── problem_oriented/           # Problem Agents
-│       │   ├── base_problem_agent.py
-│       │   ├── topic_refiner.py
-│       │   ├── literature_mapper.py
-│       │   ├── methodology_advisor.py
-│       │   ├── argument_builder.py
-│       │   ├── section_differentiator.py
-│       │   ├── discussion_deepener.py
-│       │   ├── chart_formatter.py
-│       │   ├── plagiarism_checker.py
-│       │   └── language_polisher.py
-│       ├── writing/                   # Writing Agents
-│       │   ├── base_writing_agent.py
-│       │   ├── literature_review.py
-│       │   ├── outline_generator.py
-│       │   ├── draft_generator.py
-│       │   ├── report_refiner.py
-│       │   ├── proposal_generator.py
-│       │   ├── reference_processor.py
-│       │   └── smart_reviser.py
-│       ├── qa/                       # QA Agents
-│       │   ├── base_qa_agent.py
-│       │   ├── paper_search.py
-│       │   ├── query_router.py
-│       │   ├── citation_manager.py
-│       │   ├── report_generator.py
-│       │   ├── daily_watcher.py
-│       │   ├── weekly_report.py
-│       │   └── monthly_report.py
-│       └── unified/                  # Orchestrators
-│           ├── intent_router.py
-│           ├── master_supervisor.py
-│           └── phase_supervisor.py
-├── frontend/
-│   └── src/
-│       ├── pages/
-│       │   ├── HomePage.jsx
-│       │   ├── WritingPage.jsx
-│       │   ├── OutlinePage.jsx
-│       │   ├── LiteraturePage.jsx
-│       │   ├── ReportsPage.jsx
-│       │   ├── KnowledgeGraphPage.jsx
-│       │   └── SettingsPage.jsx
-│       ├── services/
-│       │   └── api.js                # API封装
-│       └── store/
-│           └── paperStore.js         # 状态管理
-└── docs/
-    └── 开发文档/
-        ├── 前后端接口对照表.md
-        └── ...
+├── src/agents_v2/                  # 后端 Agent 系统 (311 Python 文件)
+│   ├── api_server.py               # aiohttp HTTP 服务入口
+│   ├── main.py                     # 入口: python -m src.main
+│   ├── logging_config.py           # Loguru 日志配置
+│   │
+│   ├── core/                       # 核心基础层
+│   │   ├── base_agent.py           # BaseAgent 基类
+│   │   ├── config.py               # YAML 配置 + 16 模型注册
+│   │   ├── llm_fallback.py         # LLM 降级策略
+│   │   └── react_executor.py       # ReAct 执行器
+│   │
+│   ├── api/                        # RESTful API 路由
+│   │   ├── paper_api.py            # 论文 CRUD
+│   │   ├── reports_api.py          # 报告 API
+│   │   ├── knowledge_graph_api.py  # 知识图谱 API
+│   │   └── workflow_api.py         # 工作流 API
+│   │
+│   ├── unified/                    # 统一编排框架
+│   │   ├── intent_router.py        # 意图路由 (11 种意图)
+│   │   ├── master_supervisor.py    # 全局编排器
+│   │   └── phase_supervisor.py     # 阶段监督器
+│   │
+│   ├── paper_agents/               # Pipeline Agents (9 个)
+│   │   ├── topic_agent.py          # 选题与细化
+│   │   ├── literature_agent.py     # 文献检索
+│   │   ├── thesis_agent.py         # 论点凝练
+│   │   ├── outline_agent.py        # 大纲设计
+│   │   ├── draft_writer.py         # 初稿撰写
+│   │   ├── editor_agent.py         # 内容修订
+│   │   ├── reviewer_agent.py       # 最终评审
+│   │   └── digest_agent.py         # 论文摘要
+│   │
+│   ├── problem_oriented/           # Problem Agents (10 个)
+│   │   ├── topic_refiner.py        # 选题精炼
+│   │   ├── research_gap.py         # 研究空白识别
+│   │   ├── literature_mapper.py    # 文献映射
+│   │   ├── methodology_advisor.py  # 方法论指导
+│   │   ├── argument_builder.py     # 论点构建
+│   │   └── language_polisher.py     # 语言润色
+│   │
+│   ├── paper_search/               # 搜索与报告 (7 个)
+│   │   ├── paper_search.py         # 多源论文搜索
+│   │   ├── daily_watcher.py        # 日报监控
+│   │   └── monthly_report.py       # 月报生成
+│   │
+│   ├── writing/                    # Writing Agents (17 个)
+│   │   ├── outline_generator.py    # 大纲生成
+│   │   ├── draft_generator.py     # 初稿生成
+│   │   ├── smart_reviser.py        # 智能修订
+│   │   └── literature_review.py   # 文献综述
+│   │
+│   ├── memory/                     # 记忆系统 v4 (20 个)
+│   │   ├── unified.py              # 统一记忆管理器
+│   │   ├── short_term.py           # 短期记忆
+│   │   └── long_term.py           # 长期记忆
+│   │
+│   ├── knowledge_graph/            # 知识图谱 (12 个)
+│   ├── retrieval/                  # RAG 检索 (26 个)
+│   ├── langgraph_workflow/        # LangGraph 工作流
+│   └── storage/                    # 存储层 (SQLite + ChromaDB)
+│
+├── frontend/src/                   # 前端 React 应用
+│   ├── pages/                      # 9 个页面
+│   ├── components/                 # 通用组件
+│   └── store/                      # Zustand 状态管理
+│
+├── docs/                           # 文档 (30+ 份)
+├── tests/                          # 测试
+└── data/                           # 数据存储
 ```
 
 ---

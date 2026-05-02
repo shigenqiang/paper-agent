@@ -192,7 +192,7 @@ class TopicRefinerAgent(ProblemAgentBase):
         - available_time: 可用时间
         - available_resources: 可用资源
         """
-        user_idea = input_data.get("user_idea", input_data.get("topic", ""))
+        user_idea = input_data.get("user_idea", input_data.get("user_request", input_data.get("topic", "")))
         user_level = input_data.get("user_level", "硕士")
         available_time = input_data.get("available_time", "6个月")
         available_resources = input_data.get("available_resources", "一般")
@@ -293,7 +293,8 @@ class TopicRefinerAgent(ProblemAgentBase):
             content = _clean_json_markdown(response)
             try:
                 data = json.loads(content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON parse failed in _analyze_topic_issues: {e}, raw_input={content[:500] if content else 'empty'}")
                 return ["选题需要进一步明确"]
             return data.get("issues", [])
         except ValueError as e:
@@ -344,7 +345,8 @@ class TopicRefinerAgent(ProblemAgentBase):
             content = _clean_json_markdown(response)
             try:
                 data = json.loads(content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON parse failed in _evaluate_feasibility: {e}, raw_input={content[:500] if content else 'empty'}")
                 return {"feasible": True, "overall_score": 5.0, "concerns": []}
             return data
         except ValueError as e:
@@ -383,7 +385,8 @@ class TopicRefinerAgent(ProblemAgentBase):
             content = _clean_json_markdown(response)
             try:
                 data = json.loads(content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON parse failed in _evaluate_novelty: {e}, raw_input={content[:500] if content else 'empty'}")
                 return {"novel": False, "novelty_score": 5.0}
             return data
         except ValueError as e:
@@ -452,7 +455,8 @@ class TopicRefinerAgent(ProblemAgentBase):
             content = _clean_json_markdown(response)
             try:
                 data = json.loads(content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON parse failed in _refine_topic: {e}, raw_input={content[:500] if content else 'empty'}")
                 return original
             return data.get("best_choice", original)
         except ValueError as e:

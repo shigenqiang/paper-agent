@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 from src.agents_v2.logging_config import get_logging_logger
+from src.agents_v2.unified.pydantic_validator import parse_json
 
 import json
 
@@ -215,7 +216,9 @@ class ResearchGapAnalyzer:
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                raise ValueError("Failed to parse JSON response")
             gaps = []
             for g in data.get("gaps", []):
                 gaps.append(ResearchGap(
@@ -286,7 +289,9 @@ class ResearchGapAnalyzer:
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                raise ValueError("Failed to parse JSON response")
             gaps = []
             for g in data.get("gaps", []):
                 gaps.append(ResearchGap(
@@ -349,7 +354,9 @@ class ResearchGapAnalyzer:
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                raise ValueError("Failed to parse JSON response")
             gaps = []
             for g in data.get("gaps", []):
                 gaps.append(ResearchGap(
@@ -411,7 +418,9 @@ class ResearchGapAnalyzer:
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                raise ValueError("Failed to parse JSON response")
             gaps = []
             for g in data.get("gaps", []):
                 gaps.append(ResearchGap(
@@ -473,7 +482,9 @@ class ResearchGapAnalyzer:
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                raise ValueError("Failed to parse JSON response")
             gaps = []
             for g in data.get("gaps", []):
                 gaps.append(ResearchGap(
@@ -546,7 +557,9 @@ class ResearchGapAnalyzer:
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                raise ValueError("Failed to parse JSON response")
             scores_map = {s["index"]: s for s in data.get("scores", [])}
 
             # 更新gaps的评分
@@ -633,7 +646,9 @@ class ResearchGapAnalyzer:
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                raise ValueError("Failed to parse JSON response")
             recs = data.get("recommendations", [])
             return [
                 f"问题: {r['research_question']} | 方法: {r['suggested_method']} | 贡献: {r['expected_contribution']}"
@@ -686,7 +701,7 @@ class ResearchGapAnalyzer:
                 pass
 
             llm_cfg = self.llm_config if self.llm_config else LLMConfig(
-                model=config.get("model", "gpt-4"),
+                model=config.get("model", "minimax-m2.7"),
                 api_key=config.get("api_key", ""),
                 api_base=config.get("api_base", "")
             )

@@ -16,7 +16,9 @@ import asyncio
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..paper_search.paper_search import PaperSearchAgent
+from ..storage.paper_db import get_paper_db as get_db
 from ..unified.error_handler import log_error_with_context
+from ..unified.pydantic_validator import parse_json
 
 logger = get_logging_logger(__name__)
 
@@ -205,7 +207,11 @@ class LiteratureAgent(PaperAgentBase):
             return [{"query": topic, "strategy": "基础", "aspect": "综合"}]
 
     async def _multi_engine_search(self, queries: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-        """多引擎并行搜索 - 使用真实API"""
+        """多引擎并行搜索 - 使用真实API + 本地缓存"""
+        # 优先从本地数据库查找已存在的论文
+        db = get_db()
+        local_papers_map = {}  # title -> paper 用于快速去重
+
         async def search_single(query_obj: Dict[str, str]) -> List[Dict[str, Any]]:
             query = query_obj.get("query", "")
             source = "all"
@@ -222,9 +228,15 @@ class LiteratureAgent(PaperAgentBase):
                     {"source": source, "time_range": 365, "max_results": 10}
                 )
                 papers = result.get("papers", [])
+                # 过滤掉本地已存在的论文（通过title去重）
+                new_papers = []
                 for p in papers:
-                    p["relevance_score"] = 0.8  # 默认相关性
-                return papers
+                    title_lower = p.get("title", "").lower().strip()
+                    if title_lower and title_lower not in local_papers_map:
+                        local_papers_map[title_lower] = p
+                        p["relevance_score"] = 0.8  # 默认相关性
+                        new_papers.append(p)
+                return new_papers
             except Exception as e:
                 logger.error(f"Search failed for query '{query}': {e}")
                 return []
@@ -238,22 +250,14 @@ class LiteratureAgent(PaperAgentBase):
         tasks = [bounded_search(q) for q in queries[:8]]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 合并结果
-        all_papers = []
-        for result in results:
-            if isinstance(result, list):
-                all_papers.extend(result)
+        # 合并结果（使用local_papers_map已去重）
+        all_papers = list(local_papers_map.values())
 
-        # 去重
-        seen = set()
-        unique_papers = []
-        for p in all_papers:
-            title = p.get("title", "")
-            if title and title not in seen:
-                seen.add(title)
-                unique_papers.append(p)
+        # 如果本地已有相关论文，打印日志
+        if all_papers:
+            logger.info(f"搜索完成，返回 {len(all_papers)} 篇去重后的论文")
 
-        return unique_papers
+        return all_papers
 
     async def _rank_papers(self, topic: str, papers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """排序论文"""
@@ -373,7 +377,9 @@ class LiteratureAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                raise ValueError("Failed to parse JSON response")
             return data.get("gaps", [])
         except Exception as e:
             log_error_with_context(self.logger, e, "Gap identification", recovered=True)

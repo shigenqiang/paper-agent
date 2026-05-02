@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
+from src.agents_v2.logging_config import get_logging_logger
+
 logger = get_logging_logger(__name__)
 
 

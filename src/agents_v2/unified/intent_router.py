@@ -256,7 +256,7 @@ class IntentRouter:
         try:
             from langchain_openai import ChatOpenAI
 
-            model_name = "gpt-4"
+            model_name = "minimax-m2.7"
             temperature = 0.3
 
             if self.llm_config:
