@@ -200,7 +200,9 @@ class LiteratureAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                return [{"query": topic, "strategy": "基础", "aspect": "综合"}]
             return data.get("queries", [{"query": topic, "strategy": "基础", "aspect": "综合"}])
         except Exception as e:
             log_error_with_context(self.logger, e, "Query generation", recovered=True)
@@ -280,7 +282,9 @@ class LiteratureAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                return sorted(papers, key=lambda p: p.get("relevance_score", 0), reverse=True)
             ranked_info = data.get("ranked", [])
 
             # 创建排序映射
@@ -333,7 +337,16 @@ class LiteratureAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = parse_json(response)
+            if data is None:
+                return {
+                    "paper_id": paper.get("title", "unknown"),
+                    "title": paper.get("title", ""),
+                    "core_problem": "Unknown",
+                    "key_methodology": "Unknown",
+                    "key_findings": "Unknown",
+                    "limitations": "Unknown"
+                }
             return data
         except Exception as e:
             log_error_with_context(self.logger, e, "Paper info extraction", recovered=True)

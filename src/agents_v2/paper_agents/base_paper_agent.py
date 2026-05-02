@@ -213,8 +213,12 @@ class PaperAgentBase(ABC):
         """清理思考块和参考文献，只保留markdown报告内容"""
         import re
 
-        # 1. 移除<think>...</think>块（如果实际内容在块之后，会保留）
-        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        # 0. 处理空响应（API错误时返回的HTML/错误页）
+        if not text or text.strip().startswith('<!') or text.strip().startswith('<html'):
+            return ""
+
+        # 1. 移除<think>...块（如果实际内容在块之后，会保留）
+        text = re.sub(r'<think>.*?', '', text, flags=re.DOTALL)
 
         # 2. 移除参考文献部分（从 "参考文献" 或 "## 参考文献" 到结尾）
         refs_pattern = r'(?:\n|^)##?\s*参考文献.*$'
@@ -229,6 +233,9 @@ class PaperAgentBase(ABC):
         # 5. 修复UTF-8转义
         text = self._fix_utf8_escapes(text)
 
+        # 6. 移除输出前的说明性文字，只保留JSON或实际内容
+        text = self._remove_preamble(text)
+
         return text.strip()
 
     def _remove_code_fences(self, text: str) -> str:
@@ -236,7 +243,7 @@ class PaperAgentBase(ABC):
         import re
         # 匹配 ```json ... ``` 或 ``` ... ```
         cleaned = re.sub(r'```json\s*(.*?)\s*```', r'\1', text, flags=re.DOTALL)
-        cleaned = re.sub(r'```\s*(.*?)\s*```', r'\1', cleaned, flags=re.DOTALL)
+        cleaned = re.sub(r'```\s*(.*?)\s*```', r'\1', cleaned, re.DOTALL)
         return cleaned.strip()
 
     def _fix_utf8_escapes(self, text: str) -> str:
@@ -265,6 +272,29 @@ class PaperAgentBase(ABC):
         # 匹配连续的反斜杠x十六进制模式
         cleaned = re.sub(r'(?:\\x[0-9a-fA-F]{2})+', replace_escape, text)
         return cleaned
+
+    def _remove_preamble(self, text: str) -> str:
+        """移除输出前的说明性文字，只保留JSON或实际内容"""
+        import re
+
+        # 如果文本以 ```json 开头，先提取里面的内容
+        json_match = re.match(r'^```json\s*(.*?)\s*```', text, re.DOTALL | re.IGNORECASE)
+        if json_match:
+            return json_match.group(1).strip()
+
+        # 如果包含 JSON 对象，找到第一个 { 开始
+        if '{' in text:
+            first_brace = text.index('{')
+            if first_brace > 0:
+                before_brace = text[:first_brace]
+                if '\n' in before_brace:
+                    # 有换行，说明有 preamble，取 { 开始的内容
+                    text = text[first_brace:]
+                elif before_brace.strip():
+                    # 没有换行但有其他内容，可能是代码块标记残留
+                    text = text[first_brace:]
+
+        return text
 
     def _setup_logging(self):
         """设置日志"""
