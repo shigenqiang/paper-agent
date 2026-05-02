@@ -249,11 +249,13 @@ class MasterSupervisor:
         """
         phases_to_run = ["diagnostic", "topic", "literature", "methodology", "writing", "polish"]
 
+        import time
         for phase in phases_to_run:
             if phase not in self.phase_supervisors:
                 continue
 
             self.state.current_phase = phase
+            phase_start = time.time()
             logger.info(f"Starting phase: {phase}")
 
             # 获取该阶段的输入
@@ -269,6 +271,10 @@ class MasterSupervisor:
 
             # 更新状态
             self.state.update_phase(phase, result)
+
+            # 阶段耗时计算
+            phase_elapsed = time.time() - phase_start
+            logger.info(f"Phase '{phase}' completed in {phase_elapsed:.2f}s")
 
             # 质量检查
             threshold = self.QUALITY_THRESHOLDS.get(phase, 7.0)
