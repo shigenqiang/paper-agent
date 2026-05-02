@@ -35,3 +35,6 @@ python-dotenv>=1.0.0
 
 # Fast JSON handling
 orjson>=3.8.0
+
+# Loguru logging
+loguru>=0.7.0

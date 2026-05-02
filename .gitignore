@@ -155,3 +155,21 @@ frontend/node_modules/
 # === Node.js ===
 frontend/node_modules/
 frontend/.vite/
+
+# === Test Results & Reports ===
+test_result.json
+tests/TEST_*.md
+test_results/
+docs/test_results/
+*.test_result.md
+
+# === Demo Scripts ===
+demos/demo_*.py
+demos/query_rewrite_comparison_test.py
+demos/*test*.py
+
+# === Claude Logs & Memory ===
+logs/
+.claude/
+memory/
+*.log

@@ -7,15 +7,20 @@ PhaseSupervisor - 阶段协调器
 3. 阶段质量评估
 """
 from typing import Any, Dict, List, Optional, Callable
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import asyncio
 
 from .state_model import PhaseResult, PhaseStatus, QualityScore, QualityLevel, AgentResult, DiagnosticResult, ProblemType
 from .circuit_breaker import CircuitBreaker, CircuitBreakerOpen
 from .error_handler import FallbackHandler, ErrorContext, ErrorSeverity
+from ..problem_oriented.base_problem_agent import AgentOutput as ProblemAgentOutput
+from ..paper_agents.base_paper_agent import AgentOutput as PaperAgentOutput
+from ..writing.base_writing_agent import WritingOutput
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class PhaseSupervisor:
@@ -46,7 +51,7 @@ class PhaseSupervisor:
         self.circuit_breaker = CircuitBreaker(name=f"phase_{phase_name}")
         self.fallback_handler = FallbackHandler()
 
-        logger.info(f"PhaseSupervisor for '{phase_name}' initialized, mode={execution_mode}")
+        logger.debug(f"PhaseSupervisor for '{phase_name}' initialized, mode={execution_mode}")
 
     async def run_agents(
         self,
@@ -65,9 +70,12 @@ class PhaseSupervisor:
         Returns:
             PhaseResult: 阶段结果
         """
+        cls_name = self.__class__.__name__
         start_time = time.time()
         agent_results: List[AgentResult] = []
         output: Dict[str, Any] = {}
+
+        logger.debug(f"Phase {self.phase_name} starting with {len(agents)} agents")
 
         try:
             if self.execution_mode == "parallel":
@@ -81,7 +89,7 @@ class PhaseSupervisor:
             output = self._aggregate_outputs(agent_results)
 
         except Exception as e:
-            logger.error(f"Phase {self.phase_name} failed: {e}")
+            logger.error(f"Phase {self.phase_name} failed: {type(e).__name__}: {e}")
             # 使用降级处理
             output = self.fallback_handler.get_fallback(self.phase_name, context or {}, e)
 
@@ -112,6 +120,8 @@ class PhaseSupervisor:
         context: Optional[Dict[str, Any]]
     ) -> List[AgentResult]:
         """并行运行所有Agent"""
+        cls_name = self.__class__.__name__
+
         tasks = []
         for agent in agents:
             task = self._run_single_agent(agent, input_data, context)
@@ -123,14 +133,17 @@ class PhaseSupervisor:
         for i, result in enumerate(results):
             agent_name = getattr(agents[i], "__name__", None) or getattr(agents[i], "__class__", type(agents[i])).__name__
             if isinstance(result, Exception):
+                logger.error(f"Agent {agent_name} raised exception: {type(result).__name__}: {result}")
                 agent_results.append(AgentResult(
                     agent_name=agent_name,
                     success=False,
                     error=str(result)
                 ))
             else:
+                logger.info(f"Agent {agent_name} completed, success={result.success}, quality={result.quality_score:.2f}")
                 agent_results.append(result)
 
+        logger.debug(f"Parallel execution completed, {len(agent_results)} results")
         return agent_results
 
     async def _run_sequential(
@@ -216,6 +229,46 @@ class PhaseSupervisor:
 
             result = await self.circuit_breaker.call(_invoke_agent)
 
+            # 处理ProblemAgent返回的AgentOutput
+            if isinstance(result, ProblemAgentOutput):
+                return AgentResult(
+                    agent_name=agent_name,
+                    success=result.success,
+                    result=result.result,
+                    quality_score=result.quality_score,
+                    execution_time=time.time() - start_time,
+                    error=result.error
+                )
+
+            # 处理PaperAgent返回的AgentOutput
+            if isinstance(result, PaperAgentOutput):
+                return AgentResult(
+                    agent_name=agent_name,
+                    success=result.success,
+                    result=result.result,
+                    quality_score=result.quality_score,
+                    execution_time=time.time() - start_time,
+                    error=result.error
+                )
+
+            # 处理WritingOutput (writing模块的agent返回格式)
+            if isinstance(result, WritingOutput):
+                # 从WritingOutput中提取结果
+                output_data = {}
+                if result.result:
+                    output_data = result.result if isinstance(result.result, dict) else {"text": result.result}
+                    # WritingOutput使用polished_text字段，映射到标准格式
+                    if "polished_text" in output_data:
+                        output_data["text"] = output_data["polished_text"]
+                return AgentResult(
+                    agent_name=agent_name,
+                    success=result.success,
+                    result=output_data,
+                    quality_score=result.quality_score,
+                    execution_time=time.time() - start_time,
+                    error=result.error
+                )
+
             if isinstance(result, AgentResult):
                 return result
 
@@ -237,7 +290,8 @@ class PhaseSupervisor:
             )
 
         except CircuitBreakerOpen:
-            logger.warning(f"Circuit breaker open for {agent_name}")
+            cls_name = self.__class__.__name__
+            logger.warning(f"[{cls_name}:252] Circuit breaker open for {agent_name}")
             return AgentResult(
                 agent_name=agent_name,
                 success=False,
@@ -246,7 +300,23 @@ class PhaseSupervisor:
             )
 
         except Exception as e:
-            logger.error(f"Agent {agent_name} failed: {e}")
+            cls_name = self.__class__.__name__
+            logger.error(f"[{cls_name}:261] Agent {agent_name} failed: {type(e).__name__}: {e}")
+
+            # 对于polish阶段，如果agent失败，返回原始文本作为降级处理
+            if self.phase_name == "polish" and isinstance(input_data, dict):
+                original_text = input_data.get("text", "")
+                if original_text:
+                    logger.warning(f"[{cls_name}:304] Polish agent failed, returning original text as fallback")
+                    return AgentResult(
+                        agent_name=agent_name,
+                        success=False,
+                        result={"text": original_text, "polished_text": original_text, "fallback": True},
+                        quality_score=0.3,  # 低质量分表示使用了降级处理
+                        execution_time=time.time() - start_time,
+                        error=str(e)
+                    )
+
             return AgentResult(
                 agent_name=agent_name,
                 success=False,
@@ -283,7 +353,7 @@ class PhaseSupervisor:
 
         # 检查成功率
         success_count = sum(1 for r in agent_results if r.success)
-        success_rate = success_count / len(agent_results)
+        success_rate = success_count / len(agent_results) if agent_results else 0
 
         # 综合评分
         final_score = avg_score * success_rate

@@ -13,7 +13,9 @@ MasterSupervisor - 全局协调器
 3. 错误隔离：单阶段失败不影响全局
 """
 from typing import Any, Dict, List, Optional, Callable, Type
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import asyncio
 
@@ -25,7 +27,7 @@ from .phase_supervisor import PhaseSupervisor
 from .circuit_breaker import MultiCircuitBreaker, CircuitBreakerOpen
 from .error_handler import FallbackHandler, ErrorAccumulator, ErrorContext, ErrorSeverity
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class MasterSupervisor:
@@ -47,14 +49,14 @@ class MasterSupervisor:
     # 定义阶段流程
     PHASES = ["diagnostic", "topic", "literature", "methodology", "writing", "polish"]
 
-    # 质量阈值
+    # 质量阈值 - 统一使用0-1 scale
     QUALITY_THRESHOLDS = {
-        "diagnostic": 6.0,  # 诊断阶段不需要太高
-        "topic": 7.0,
-        "literature": 7.0,
-        "methodology": 7.0,
-        "writing": 7.0,
-        "polish": 8.0  # 最终润色需要更高
+        "diagnostic": 0.6,  # 诊断阶段
+        "topic": 0.7,        # 选题阶段
+        "literature": 0.7,   # 文献阶段
+        "methodology": 0.7,  # 方法阶段
+        "writing": 0.7,      # 写作阶段
+        "polish": 0.8         # 最终润色需要更高
     }
 
     def __init__(self, llm_config: Optional[Any] = None):
@@ -77,7 +79,7 @@ class MasterSupervisor:
         self.max_iterations = 3
         self.enable_diagnostic = True
 
-        logger.info("MasterSupervisor initialized")
+        logger.debug("MasterSupervisor initialized")
 
     def _init_phase_supervisors(self):
         """初始化各阶段的PhaseSupervisor"""
@@ -134,7 +136,7 @@ class MasterSupervisor:
             self.agents["language_polisher"] = LanguagePolisherAgent(self.llm_config)
             self.agents["plagiarism_checker"] = PlagiarismCheckerAgent(self.llm_config)
 
-            logger.info("Problem-oriented agents registered")
+            logger.debug("Problem-oriented agents registered")
         except ImportError as e:
             logger.warning(f"Could not import problem-oriented agents: {e}")
 
@@ -159,7 +161,7 @@ class MasterSupervisor:
             self.agents["editor"] = EditorAgent(self.llm_config)
             self.agents["reviewer"] = ReviewerAgent(self.llm_config)
 
-            logger.info("Pipeline agents registered")
+            logger.debug("Pipeline agents registered")
         except ImportError as e:
             logger.warning(f"Could not import pipeline agents: {e}")
 
@@ -187,7 +189,7 @@ class MasterSupervisor:
             self.agents["smart_reviser"] = SmartReviserAgent(self.llm_config)
             self.agents["language_polisher_writing"] = LanguagePolisherAgent(self.llm_config)
 
-            logger.info("Writing agents registered")
+            logger.debug("Writing agents registered")
         except ImportError as e:
             logger.warning(f"Could not import writing agents: {e}")
 
@@ -269,8 +271,9 @@ class MasterSupervisor:
             self.state.update_phase(phase, result)
 
             # 质量检查
-            if result.quality_score and result.quality_score.score < self.QUALITY_THRESHOLDS.get(phase, 7.0):
-                logger.warning(f"Phase {phase} quality below threshold: {result.quality_score.score}")
+            threshold = self.QUALITY_THRESHOLDS.get(phase, 7.0)
+            if result.quality_score and result.quality_score.score < threshold:
+                logger.warning(f"Phase {phase} quality below threshold: score={result.quality_score.score:.2f}, threshold={threshold}")
 
                 # 如果有诊断问题，转到完善阶段
                 if result.diagnostic and result.diagnostic.problems_found:
@@ -405,11 +408,18 @@ class MasterSupervisor:
                 self.agents.get("draft")
             ]
         elif phase == "polish":
-            agents = [
-                self.agents.get("chart_formatter"),
-                self.agents.get("language_polisher"),
-                self.agents.get("plagiarism_checker")
+            # Polish阶段：使用写作型agents执行润色
+            writing_agents = [
+                self.agents.get("language_polisher_writing"),  # writing模块的LanguagePolisherAgent
+                self.agents.get("smart_reviser"),
+                self.agents.get("report_refiner")
             ]
+            available = [a for a in writing_agents if a is not None]
+            if available:
+                logger.info(f"Polish phase using agents: {[getattr(a, 'name', str(a)) for a in available]}")
+            else:
+                logger.warning(f"Polish phase: no writing agents available")
+            return available
         elif phase == "literature_review":
             agents = [self.agents.get("literature_review")]
         elif phase == "outline_gen":
@@ -440,6 +450,19 @@ class MasterSupervisor:
                 "topic": self.state.context.get("topic", {}),
                 "literature_result": self.state.context.get("literature_result", {}),
                 "thesis_statement": self.state.context.get("thesis_statement", "")
+            }
+        elif phase == "polish":
+            # 从writing阶段的输出中获取待润色的文本
+            writing_output = self.state.context.get("writing_output", {})
+            if not writing_output:
+                # 尝试从phase_results获取
+                if "writing" in self.state.phase_results:
+                    writing_output = self.state.phase_results["writing"].output or {}
+            draft_text = writing_output.get("full_draft", writing_output.get("report", writing_output.get("draft", "")))
+            return {
+                "text": draft_text,  # LanguagePolisherAgent 使用 'text'
+                "language": "zh",
+                "polish_level": "medium"
             }
         else:
             return self.state.context
@@ -491,12 +514,26 @@ class MasterSupervisor:
         # 尝试获取最终论文
         final_paper = ""
         if "polish" in self.state.phase_results:
-            final_paper = self.state.phase_results["polish"].output or {}
-            final_paper = final_paper.get("polished_text", final_paper.get("text", ""))
+            output = self.state.phase_results["polish"].output
+            if isinstance(output, dict):
+                final_paper = output.get("polished_text", output.get("text", ""))
+            elif isinstance(output, str) and output:
+                final_paper = output
 
         if not final_paper and "writing" in self.state.phase_results:
-            final_paper = self.state.phase_results["writing"].output or {}
-            final_paper = final_paper.get("report", final_paper.get("draft", ""))
+            output = self.state.phase_results["writing"].output
+            if isinstance(output, dict):
+                final_paper = output.get("full_draft", output.get("report", output.get("draft", "")))
+            elif isinstance(output, str) and output:
+                final_paper = output
+
+        # 检查是否有polish阶段的降级处理
+        polish_fallback = False
+        if "polish" in self.state.phase_results:
+            polish_output = self.state.phase_results["polish"].output
+            if isinstance(polish_output, dict) and polish_output.get("fallback"):
+                polish_fallback = True
+                logger.warning("Polish phase used fallback: returning original text (polish failed)")
 
         return {
             "success": True,
@@ -507,6 +544,7 @@ class MasterSupervisor:
             "quality_level": self.state.get_quality_level().value,
             "problems_identified": [p.value for p in self.state.problems],
             "iterations": self.state.iteration,
+            "polish_fallback": polish_fallback,
             "state": self.state.to_dict()
         }
 

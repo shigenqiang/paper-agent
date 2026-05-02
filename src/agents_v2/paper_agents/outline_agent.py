@@ -7,13 +7,69 @@ OutlineAgent - 大纲制定Agent
 - 确定关键论点
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
+import re
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..unified.translation import EnglishFirstMixin
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
+
+
+def _clean_json_markdown(text: str) -> str:
+    """清理JSON markdown格式（去除```json...```包裹），并提取纯JSON"""
+    # 去除 ```json ... ``` 包裹
+    text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    # 去除 ``` ... ``` 包裹
+    text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    text = text.strip()
+
+    # 如果不是以 { 开头，尝试找到第一个 { 的位置
+    if text and not text.startswith('{'):
+        match = re.search(r'\{', text)
+        if match:
+            text = text[match.start():]
+            logger.warning(f"JSON doesn't start with '{{', extracting from position {match.start()}")
+
+    # 尝试只提取第一个完整的JSON对象（处理JSON后有多余内容的情况）
+    if text.startswith('{'):
+        try:
+            # 尝试标准 json.loads
+            json.loads(text)
+            return text
+        except json.JSONDecodeError as e:
+            # 如果失败，尝试找到匹配的闭合括号
+            logger.warning(f"JSON parse failed: {e}, attempting to extract complete JSON")
+
+            # 找到第一个 { 的位置，从那里开始找匹配的 }
+            start = text.index('{')
+            depth = 0
+            end_pos = -1
+
+            for i, c in enumerate(text[start:], start):
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end_pos = i + 1
+                        break
+
+            if end_pos > 0:
+                extracted = text[start:end_pos]
+                try:
+                    json.loads(extracted)
+                    logger.debug(f"Successfully extracted complete JSON, length={end_pos}")
+                    return extracted
+                except json.JSONDecodeError:
+                    pass
+
+    return text
 
 
 class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
@@ -138,17 +194,38 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
     "total_chapters": 5,
     "word_count_estimate": 8000
 }}}}"""
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                raise ValueError(f"[{cls_name}:152] LLM返回空响应")
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             structure = data.get("structure", {})
             if not structure or not structure.get("chapters"):
-                raise ValueError("LLM returned empty structure")
+                raise ValueError(f"[{cls_name}:157] LLM returned empty structure")
             return structure
+        except json.JSONDecodeError as e:
+            self.logger.error(f"[{cls_name}:160] Structure design failed (JSON解析错误): {e}, response前100字符: {response[:100] if response else 'None'}")
+            # 返回通用结构而不是抛异常，让流程继续
+            return {
+                "title": f"{thesis_en}研究",
+                "paper_type": "empirical",
+                "chapters": [
+                    {"name": "研究背景与意义", "purpose": "阐述研究背景和意义", "order": 1},
+                    {"name": "文献综述", "purpose": "梳理相关研究现状", "order": 2},
+                    {"name": "研究方法", "purpose": "介绍研究方法设计", "order": 3},
+                    {"name": "研究结果", "purpose": "展示主要发现", "order": 4},
+                    {"name": "讨论与结论", "purpose": "总结并指出未来方向", "order": 5}
+                ],
+                "total_chapters": 5,
+                "word_count_estimate": 8000
+            }
+        except ValueError:
+            raise  # 重新抛出ValueError
         except Exception as e:
-            cls_name = self.__class__.__name__
-            self.logger.error(f"[{cls_name}:148] Structure design failed: {type(e).__name__}: {e}")
-            raise
+            self.logger.error(f"[{cls_name}:164] Structure design failed: {type(e).__name__}: {e}")
+            raise ValueError(f"[{cls_name}:164] Structure design failed: {type(e).__name__}: {e}") from e
 
     async def _plan_chapters(
         self,
@@ -187,12 +264,23 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
         "content_guidance": "本章节的具体写作指导"
     }}
 ]}}"""
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                self.logger.error(f"[{cls_name}:209] LLM返回空响应")
+                return chapters
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data.get("chapter_plans", chapters)
+        except json.JSONDecodeError as e:
+            self.logger.error(f"[{cls_name}:213] Chapter planning failed (JSON解析错误): {e}")
+            return chapters
+        except ValueError as e:
+            self.logger.error(f"[{cls_name}:215] Chapter planning failed: {e}")
+            return chapters
         except Exception as e:
-            self.logger.error(f"Chapter planning failed: {e}")
+            self.logger.error(f"[{cls_name}:217] Chapter planning failed: {e}")
             return chapters
 
     async def _identify_key_arguments(
@@ -234,17 +322,18 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
         "rebuttal": "学术反驳"
     }}
 ]}}"""
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
             if not response or not response.strip():
-                self.logger.warning("LLM返回空响应")
+                self.logger.warning(f"[{cls_name}:269] LLM返回空响应")
                 return []
-            data = json.loads(response)
+            content = _clean_json_markdown(response)
+            data = json.loads(content)
             return data.get("key_arguments", [])
         except json.JSONDecodeError as e:
-            self.logger.error(f"Key arguments identification failed (JSON解析错误): {e}")
+            self.logger.error(f"[{cls_name}:274] Key arguments identification failed (JSON解析错误): {e}, response前100字符: {response[:100] if response else 'None'}")
             try:
-                import re
                 match = re.search(r'\{.*\}', response, re.DOTALL)
                 if match:
                     data = json.loads(match.group())
@@ -252,6 +341,9 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
             except Exception:
                 pass
             return []
+        except ValueError as e:
+            self.logger.error(f"[{cls_name}:282] Key arguments identification failed: {e}")
+            return []
         except Exception as e:
-            self.logger.error(f"Key arguments identification failed: {e}")
+            self.logger.error(f"[{cls_name}:284] Key arguments identification failed: {e}")
             return []
