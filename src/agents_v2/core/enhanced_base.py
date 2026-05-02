@@ -51,7 +51,7 @@ class AgentCapability(BaseModel):
 class LLMConfig(BaseModel):
     """LLM配置"""
     provider: str = Field(default="openai", description="LLM提供商")
-    model_name: str = Field(default="gpt-4", description="模型名称")
+    model_name: str = Field(default="MiniMax-M2.7", description="模型名称")
     temperature: float = Field(default=0.7, description="温度参数")
     max_tokens: int = Field(default=4096, description="最大token数")
     api_key: Optional[str] = Field(None, description="API密钥")
