@@ -11,65 +11,29 @@ from src.agents_v2.logging_config import get_logging_logger
 
 import json
 
-import re
-
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..unified.translation import EnglishFirstMixin
+from ..unified.pydantic_validator import (
+    parse_with_pydantic, PaperStructure, ChapterOutline
+)
 
 logger = get_logging_logger(__name__)
 
 
-def _clean_json_markdown(text: str) -> str:
-    """清理JSON markdown格式（去除```json...```包裹），并提取纯JSON"""
-    # 去除 ```json ... ``` 包裹
-    text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
-    # 去除 ``` ... ``` 包裹
-    text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
-    text = text.strip()
-
-    # 如果不是以 { 开头，尝试找到第一个 { 的位置
-    if text and not text.startswith('{'):
-        match = re.search(r'\{', text)
-        if match:
-            text = text[match.start():]
-            logger.warning(f"JSON doesn't start with '{{', extracting from position {match.start()}")
-
-    # 尝试只提取第一个完整的JSON对象（处理JSON后有多余内容的情况）
-    if text.startswith('{'):
-        try:
-            # 尝试标准 json.loads
-            json.loads(text)
-            return text
-        except json.JSONDecodeError as e:
-            # 如果失败，尝试找到匹配的闭合括号
-            logger.warning(f"JSON parse failed: {e}, attempting to extract complete JSON")
-
-            # 找到第一个 { 的位置，从那里开始找匹配的 }
-            start = text.index('{')
-            depth = 0
-            end_pos = -1
-
-            for i, c in enumerate(text[start:], start):
-                if c == '{':
-                    depth += 1
-                elif c == '}':
-                    depth -= 1
-                    if depth == 0:
-                        end_pos = i + 1
-                        break
-
-            if end_pos > 0:
-                extracted = text[start:end_pos]
-                try:
-                    json.loads(extracted)
-                    logger.debug(f"Successfully extracted complete JSON, length={end_pos}")
-                    return extracted
-                except json.JSONDecodeError:
-                    pass
-
-    return text
+# Fallback 通用结构
+FALLBACK_STRUCTURE = {
+    "title": "研究论文",
+    "paper_type": "empirical",
+    "chapters": [
+        {"name": "研究背景与意义", "purpose": "阐述研究背景和意义", "order": 1},
+        {"name": "文献综述", "purpose": "梳理相关研究现状", "order": 2},
+        {"name": "研究方法", "purpose": "介绍研究方法设计", "order": 3},
+        {"name": "研究结果", "purpose": "展示主要发现", "order": 4},
+        {"name": "讨论与结论", "purpose": "总结并指出未来方向", "order": 5}
+    ],
+    "total_chapters": 5,
+    "word_count_estimate": 8000
+}
 
 
 class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
@@ -198,34 +162,28 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
         try:
             response = await self._llm_call(prompt)
             if not response or not response.strip():
-                raise ValueError(f"[{cls_name}:152] LLM返回空响应")
-            content = _clean_json_markdown(response)
-            data = json.loads(content)
-            structure = data.get("structure", {})
-            if not structure or not structure.get("chapters"):
-                raise ValueError(f"[{cls_name}:157] LLM returned empty structure")
+                raise ValueError(f"[{cls_name}] LLM返回空响应")
+
+            # 使用 Pydantic 校验 JSON
+            parsed = parse_with_pydantic(response, PaperStructure, PaperStructure())
+
+            # 转换为字典返回
+            structure = parsed.model_dump()
+            if not structure.get("chapters"):
+                raise ValueError(f"[{cls_name}] LLM returned empty structure")
+
+            # 确保 title 不为空
+            if not structure.get("title"):
+                structure["title"] = f"{thesis_en}研究"
+
             return structure
-        except json.JSONDecodeError as e:
-            self.logger.error(f"[{cls_name}:160] Structure design failed (JSON解析错误): {e}, response前100字符: {response[:100] if response else 'None'}")
-            # 返回通用结构而不是抛异常，让流程继续
-            return {
-                "title": f"{thesis_en}研究",
-                "paper_type": "empirical",
-                "chapters": [
-                    {"name": "研究背景与意义", "purpose": "阐述研究背景和意义", "order": 1},
-                    {"name": "文献综述", "purpose": "梳理相关研究现状", "order": 2},
-                    {"name": "研究方法", "purpose": "介绍研究方法设计", "order": 3},
-                    {"name": "研究结果", "purpose": "展示主要发现", "order": 4},
-                    {"name": "讨论与结论", "purpose": "总结并指出未来方向", "order": 5}
-                ],
-                "total_chapters": 5,
-                "word_count_estimate": 8000
-            }
-        except ValueError:
-            raise  # 重新抛出ValueError
+
         except Exception as e:
-            self.logger.error(f"[{cls_name}:164] Structure design failed: {type(e).__name__}: {e}")
-            raise ValueError(f"[{cls_name}:164] Structure design failed: {type(e).__name__}: {e}") from e
+            self.logger.error(f"[{cls_name}] Structure design failed: {type(e).__name__}: {e}")
+            # 返回通用结构让流程继续
+            fallback = FALLBACK_STRUCTURE.copy()
+            fallback["title"] = f"{thesis_en}研究"
+            return fallback
 
     async def _plan_chapters(
         self,

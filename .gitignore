@@ -173,3 +173,4 @@ logs/
 .claude/
 memory/
 *.log
+CLAUDE.md

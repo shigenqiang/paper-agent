@@ -10,12 +10,46 @@ ThesisAgent - 研究问题凝练Agent
 """
 from typing import Any, Dict, List, Optional
 from src.agents_v2.logging_config import get_logging_logger
+from pydantic import BaseModel, Field
 
 import json
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
+from ..unified.pydantic_validator import parse_with_pydantic
 
 logger = get_logging_logger(__name__)
+
+
+# Pydantic Models for Thesis
+class ResearchAnalysis(BaseModel):
+    """研究分析"""
+    summary: str = Field(default="", description="研究总结")
+    key_themes: List[str] = Field(default_factory=list, description="关键主题")
+    main_methods: List[str] = Field(default_factory=list, description="主要方法")
+    main_gaps: List[str] = Field(default_factory=list, description="研究空白")
+    trends: List[str] = Field(default_factory=list, description="发展趋势")
+
+
+class ResearchMotivation(BaseModel):
+    """研究动机"""
+    primary_motivation: str = Field(default="", description="主要动机")
+    secondary_motivation: str = Field(default="", description="次要动机")
+    academic_significance: str = Field(default="", description="学术意义")
+    practical_significance: str = Field(default="", description="实践意义")
+    justification: str = Field(default="", description="必要性论证")
+
+
+class ResearchObjective(BaseModel):
+    """研究目标"""
+    id: int = Field(default=0, ge=1)
+    description: str = Field(default="", description="目标描述")
+    measurability: str = Field(default="", description="如何测量")
+    alignment: str = Field(default="", description="对应的研究空白")
+
+
+class ObjectivesResponse(BaseModel):
+    """目标响应"""
+    objectives: List[ResearchObjective] = Field(default_factory=list)
 
 
 class ThesisAgent(PaperAgentBase):
@@ -150,7 +184,8 @@ class ThesisAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            return json.loads(response)
+            result = parse_with_pydantic(response, ResearchAnalysis, ResearchAnalysis())
+            return result.model_dump()
         except Exception as e:
             self.logger.error(f"Research analysis failed: {e}")
             return {"summary": "Analysis failed", "key_themes": [], "main_gaps": []}
@@ -180,7 +215,8 @@ class ThesisAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            return json.loads(response)
+            result = parse_with_pydantic(response, ResearchMotivation, ResearchMotivation())
+            return result.model_dump()
         except Exception as e:
             self.logger.error(f"Motivation refinement failed: {e}")
             return {"primary_motivation": "Research needed", "academic_significance": "Unknown"}
@@ -211,8 +247,8 @@ class ThesisAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
-            return data.get("objectives", [])
+            result = parse_with_pydantic(response, ObjectivesResponse, ObjectivesResponse())
+            return [obj.model_dump() for obj in result.objectives]
         except Exception as e:
             self.logger.error(f"Objective definition failed: {e}")
             return [{"id": 1, "description": "Research objective", "measurability": "TBD"}]
@@ -237,8 +273,10 @@ class ThesisAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
-            return data.get("scope", {})
+            result = parse_with_pydantic(response, dict, {})
+            if isinstance(result, dict):
+                return result.get("scope", {})
+            return {"content_scope": "To be determined"}
         except Exception as e:
             self.logger.error(f"Scope definition failed: {e}")
             return {"content_scope": "To be determined"}
@@ -265,8 +303,10 @@ class ThesisAgent(PaperAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
-            return data.get("hypotheses", [])
+            result = parse_with_pydantic(response, dict, {})
+            if isinstance(result, dict):
+                return result.get("hypotheses", [])
+            return []
         except Exception as e:
             self.logger.error(f"Hypothesis formulation failed: {e}")
             return ["Hypothesis to be defined"]

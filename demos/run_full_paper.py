@@ -77,7 +77,7 @@ async def run_full_paper(topic: str):
     print("执行结果")
     print("=" * 60)
     print(f"成功: {result.get('success', False)}")
-    print(f"最终质量: {result.get('final_quality', 'N/A')}")
+    print(f"最终质量: {result.get('final_quality', 'N/A'):.2f}" if isinstance(result.get('final_quality'), (int, float)) else f"最终质量: {result.get('final_quality', 'N/A')}")
     print()
 
     # 打印各阶段结果

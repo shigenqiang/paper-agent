@@ -7,6 +7,7 @@ Search Orchestrator - 搜索编排器
 from src.agents_v2.logging_config import get_logging_logger
 
 import asyncio
+import time
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -44,9 +45,13 @@ class SearchConfig:
 class OrchestratorConfig:
     """编排器配置"""
     enable_parallel: bool = True
-    max_parallel_sources: int = 3
+    max_parallel_sources: int = 5  # 提高并发数
     fail_fast: bool = False
     partial_results_on_error: bool = True
+    # 熔断配置
+    enable_circuit_breaker: bool = True
+    circuit_breaker_threshold: int = 3  # 连续失败次数触发熔断
+    circuit_breaker_timeout: float = 60.0  # 熔断窗口时间(秒)
 
 
 class SearchOrchestrator:
@@ -73,6 +78,9 @@ class SearchOrchestrator:
         self.rate_manager = rate_manager or get_rate_manager()
         self.merger = SearchResultMerger(merge_config)
         self.cache_manager = get_cache_manager()
+        # 熔断器状态
+        self._circuit_breaker_failures: Dict[str, int] = {}
+        self._circuit_breaker_open: Dict[str, float] = {}  # timestamp when opened
 
     def register_searcher(self, name: str, searcher: Any):
         """注册搜索器"""
@@ -164,6 +172,17 @@ class SearchOrchestrator:
                     logger.warning(f"Searcher {source} not found")
                     return None
 
+                # 熔断器检查
+                if self.config.enable_circuit_breaker and source in self._circuit_breaker_open:
+                    elapsed = time.time() - self._circuit_breaker_open[source]
+                    if elapsed < self.config.circuit_breaker_timeout:
+                        logger.debug(f"{source} circuit breaker open, skipping")
+                        return None
+                    else:
+                        # 熔断超时，重置
+                        del self._circuit_breaker_open[source]
+                        self._circuit_breaker_failures[source] = 0
+
                 try:
                     # 使用缓存
                     if config.enable_cache:
@@ -176,14 +195,26 @@ class SearchOrchestrator:
                             searcher.search(query, config.max_results_per_source),
                             timeout=config.timeout_per_source
                         )
+
+                    # 成功：重置失败计数
+                    if source in self._circuit_breaker_failures:
+                        del self._circuit_breaker_failures[source]
                     return result
 
                 except asyncio.TimeoutError:
                     logger.warning(f"{source} search timeout")
+                    # 超时不计入失败（网络波动正常）
                     return None
 
                 except Exception as e:
                     logger.error(f"{source} search failed: {e}")
+                    # 失败：增加失败计数
+                    if self.config.enable_circuit_breaker:
+                        failures = self._circuit_breaker_failures.get(source, 0) + 1
+                        self._circuit_breaker_failures[source] = failures
+                        if failures >= self.config.circuit_breaker_threshold:
+                            self._circuit_breaker_open[source] = time.time()
+                            logger.warning(f"{source} circuit breaker opened for {self.config.circuit_breaker_timeout}s")
                     if self.config.fail_fast:
                         raise
                     return None

@@ -307,10 +307,9 @@ class ArxivSearcher(EnhancedBaseSearcher):
         """
         import asyncio
 
-        responses = []
-        for query in queries:
-            response = await self.search(query, max_results_per_query)
-            responses.append(response)
-            # 已在search中自动处理速率控制
-
-        return responses
+        # 并行执行所有查询
+        tasks = [
+            self.search(query, max_results_per_query)
+            for query in queries
+        ]
+        return await asyncio.gather(*tasks)

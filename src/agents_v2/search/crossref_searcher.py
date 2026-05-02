@@ -9,6 +9,7 @@ from src.agents_v2.logging_config import get_logging_logger
 
 from typing import List, Optional
 from .base_searcher import BaseSearcher, SearchResult, SearchResponse
+from .rate_manager import get_rate_manager
 
 logger = get_logging_logger(__name__)
 
@@ -38,7 +39,13 @@ class CrossRefSearcher(BaseSearcher):
         Returns:
             SearchResponse
         """
+        # 获取速率管理器
+        rate_manager = get_rate_manager()
+
         try:
+            # 获取速率许可
+            await rate_manager.acquire("crossref")
+
             import httpx
 
             headers = {
@@ -59,6 +66,7 @@ class CrossRefSearcher(BaseSearcher):
                 )
 
                 if response.status_code == 429:
+                    rate_manager.record_rate_limit("crossref")
                     logger.warning("CrossRef rate limit reached")
                     return SearchResponse(source="crossref", query=query, results=[], total=0)
 

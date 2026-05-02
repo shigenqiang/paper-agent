@@ -9,12 +9,58 @@ ReviewerAgent - 最终审核Agent
 """
 from typing import Any, Dict, List, Optional
 from src.agents_v2.logging_config import get_logging_logger
-
-import json
+from pydantic import BaseModel, Field
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
+from ..unified.pydantic_validator import parse_with_pydantic
 
 logger = get_logging_logger(__name__)
+
+
+# Pydantic Models for Review
+class CritiqueScores(BaseModel):
+    novelty: float = Field(default=5.0, ge=0, le=10)
+    methodology: float = Field(default=5.0, ge=0, le=10)
+    contribution: float = Field(default=5.0, ge=0, le=10)
+
+
+class ExpertView(BaseModel):
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    scores: CritiqueScores = Field(default_factory=CritiqueScores)
+
+
+class ReviewerView(BaseModel):
+    issues: List[str] = Field(default_factory=list)
+    readability_score: float = Field(default=5.0, ge=0, le=10)
+
+
+class CriticView(BaseModel):
+    logical_gaps: List[str] = Field(default_factory=list)
+    counter_arguments: List[str] = Field(default_factory=list)
+
+
+class DimensionScores(BaseModel):
+    structure: float = Field(default=6.0, ge=0, le=10)
+    logic: float = Field(default=6.0, ge=0, le=10)
+    originality: float = Field(default=6.0, ge=0, le=10)
+    language: float = Field(default=6.0, ge=0, le=10)
+    citation: float = Field(default=6.0, ge=0, le=10)
+    completeness: float = Field(default=6.0, ge=0, le=10)
+    format: float = Field(default=6.0, ge=0, le=10)
+
+
+class ReviewCritiques(BaseModel):
+    expert_view: ExpertView = Field(default_factory=ExpertView)
+    reviewer_view: ReviewerView = Field(default_factory=ReviewerView)
+    critic_view: CriticView = Field(default_factory=CriticView)
+
+
+class ReviewResponse(BaseModel):
+    dimension_scores: DimensionScores = Field(default_factory=DimensionScores)
+    critiques: ReviewCritiques = Field(default_factory=ReviewCritiques)
+    recommendation: str = Field(default="revision")
+    suggestions: List[str] = Field(default_factory=list)
 
 # 7维度定义（与QualityEvaluator一致）
 REVIEW_DIMENSIONS = {
@@ -233,11 +279,12 @@ JSON格式：
 
         try:
             response = await self._llm_call(prompt)
-            return json.loads(response)
+            result = parse_with_pydantic(response, ReviewResponse, ReviewResponse())
+            return result.model_dump()
         except Exception as e:
             self.logger.error(f"LLM structured review failed: {e}")
             return {
-                "dimension_scores": {dim: 6 for dim in REVIEW_DIMENSIONS},
+                "dimension_scores": {dim: 6.0 for dim in REVIEW_DIMENSIONS},
                 "critiques": {},
                 "suggestions": ["评审服务暂时不可用"],
             }

@@ -11,11 +11,130 @@ from typing import Any, Dict, List, Optional
 from src.agents_v2.logging_config import get_logging_logger
 
 import json
+import re
+from pydantic import BaseModel, Field, ValidationError
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..unified.error_handler import log_error_with_context
 
 logger = get_logging_logger(__name__)
+
+
+# ==================== Pydantic Models ====================
+
+class DomainAnalysis(BaseModel):
+    """领域分析结果模型"""
+    main_domain: str = Field(default="未知", description="主要学科领域")
+    sub_domains: List[str] = Field(default_factory=list, description="子领域")
+    keywords: List[str] = Field(default_factory=list, description="关键词")
+    related_fields: List[str] = Field(default_factory=list, description="相关领域")
+    research_level: str = Field(default="硕士", description="研究水平")
+
+
+class TopicCandidate(BaseModel):
+    """主题候选模型"""
+    title: str = Field(default="", description="主题标题")
+    description: str = Field(default="", description="主题描述")
+    scope: str = Field(default="", description="研究范围")
+    potential_methods: List[str] = Field(default_factory=list, description="可能使用的方法")
+    expected_contribution: str = Field(default="", description="预期贡献")
+
+
+class TopicScores(BaseModel):
+    """主题评分模型"""
+    literature_adequacy: float = Field(default=5.0, ge=1, le=10, description="文献充足性")
+    method_feasibility: float = Field(default=5.0, ge=1, le=10, description="方法可行性")
+    novelty: float = Field(default=5.0, ge=1, le=10, description="创新性")
+    time_reasonableness: float = Field(default=5.0, ge=1, le=10, description="时间合理性")
+    resource_accessibility: float = Field(default=5.0, ge=1, le=10, description="资源可获取性")
+
+
+class EvaluatedTopic(BaseModel):
+    """评估后的主题模型"""
+    original: TopicCandidate = Field(default_factory=TopicCandidate, description="原始主题")
+    scores: TopicScores = Field(default_factory=TopicScores, description="评分")
+    overall_score: float = Field(default=5.0, ge=0, le=10, description="综合评分")
+    risk_factors: List[str] = Field(default_factory=list, description="风险因素")
+
+
+class CandidatesResponse(BaseModel):
+    """候选主题响应模型"""
+    candidates: List[TopicCandidate] = Field(default_factory=list)
+
+
+class EvaluatedResponse(BaseModel):
+    """评估响应模型"""
+    evaluated: List[EvaluatedTopic] = Field(default_factory=list)
+
+
+def _clean_json_markdown(text: str) -> str:
+    """清理JSON markdown格式"""
+    if not text:
+        return ""
+
+    text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    text = text.strip()
+
+    if not text:
+        return ""
+
+    if not text.startswith('{'):
+        match = re.search(r'\{', text)
+        if match:
+            text = text[match.start():]
+
+    if text.startswith('{'):
+        try:
+            json.loads(text)
+            return text
+        except json.JSONDecodeError:
+            start = text.index('{')
+            depth = 0
+            end_pos = -1
+            for i, c in enumerate(text[start:], start):
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end_pos = i + 1
+                        break
+            if end_pos > 0:
+                return text[start:end_pos]
+
+    return text
+
+
+def parse_with_pydantic(text: str, model_class: type[BaseModel], default_value: Any = None) -> Any:
+    """使用 Pydantic 模型解析 JSON 文本
+
+    Args:
+        text: LLM 返回的文本
+        model_class: Pydantic 模型类
+        default_value: 解析失败时的默认值
+
+    Returns:
+        解析后的 Pydantic 模型实例或默认值
+    """
+    try:
+        cleaned = _clean_json_markdown(text)
+        data = json.loads(cleaned)
+        return model_class.model_validate(data)
+    except (json.JSONDecodeError, ValidationError) as e:
+        logger.debug(f"Pydantic parse failed: {e}, trying regex extraction")
+        # 尝试正则提取
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group())
+                return model_class.model_validate(data)
+            except (json.JSONDecodeError, ValidationError) as e2:
+                logger.warning(f"Regex extraction also failed: {e2}")
+                return default_value
+        return default_value
 
 
 class TopicAgent(PaperAgentBase):
@@ -228,23 +347,24 @@ class TopicAgent(PaperAgentBase):
 
     async def _analyze_domain(self, user_request: str) -> Dict[str, Any]:
         """分析研究领域"""
-        prompt = f"""
-分析以下研究请求，确定相关的研究领域：
+        prompt = f"""分析以下研究请求，确定相关的研究领域。严格按照JSON格式输出，不要包含任何其他文字。
 
 研究请求：{user_request}
 
-请输出JSON格式的领域分析：
+示例输出：
 {{
-    "main_domain": "主要学科领域",
-    "sub_domains": ["子领域1", "子领域2"],
-    "keywords": ["关键词1", "关键词2", "关键词3"],
-    "related_fields": ["相关领域1", "相关领域2"],
-    "research_level": "本科/硕士/博士/博士后"
+    "main_domain": "计算机科学",
+    "sub_domains": ["人工智能", "机器学习"],
+    "keywords": ["深度学习", "神经网络", "优化算法"],
+    "related_fields": ["统计学", "数学"],
+    "research_level": "硕士"
 }}
-"""
+
+严格按照上述JSON格式输出，JSON外不要有任何内容："""
         try:
             response = await self._llm_call(prompt)
-            return json.loads(response)
+            result = parse_with_pydantic(response, DomainAnalysis, DomainAnalysis())
+            return result.model_dump()
         except Exception as e:
             log_error_with_context(self.logger, e, "Domain analysis", recovered=True)
             return {
@@ -261,8 +381,7 @@ class TopicAgent(PaperAgentBase):
         user_request: str
     ) -> List[Dict[str, Any]]:
         """生成候选主题"""
-        prompt = f"""
-基于以下领域分析，生成5个候选研究主题：
+        prompt = f"""基于以下领域分析，生成5个候选研究主题。严格按照JSON格式输出，不要包含任何其他文字。
 
 领域分析：{json.dumps(domain_analysis, ensure_ascii=False)}
 原始请求：{user_request}
@@ -273,23 +392,24 @@ class TopicAgent(PaperAgentBase):
 3. 要有研究价值
 4. 要考虑可行性
 
-输出JSON格式：
+示例输出格式：
 {{
     "candidates": [
         {{
-            "title": "主题标题",
-            "description": "主题描述",
-            "scope": "研究范围",
-            "potential_methods": ["方法1", "方法2"],
-            "expected_contribution": "预期贡献"
+            "title": "基于深度学习的图像超分辨率重建方法",
+            "description": "研究利用深度卷积神经网络提升图像分辨率的技术",
+            "scope": "聚焦于自然图像的2倍超分辨率",
+            "potential_methods": ["卷积神经网络", "生成对抗网络"],
+            "expected_contribution": "提出一种新的特征融合策略"
         }}
     ]
 }}
-"""
+
+严格按照上述JSON格式输出，JSON外不要有任何内容："""
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
-            return data.get("candidates", [])
+            result = parse_with_pydantic(response, CandidatesResponse, CandidatesResponse())
+            return [c.model_dump() for c in result.candidates]
         except Exception as e:
             log_error_with_context(self.logger, e, "Candidate generation", recovered=True)
             return [{"title": user_request, "description": "Research topic", "scope": "中等"}]
@@ -299,23 +419,22 @@ class TopicAgent(PaperAgentBase):
         if not candidates:
             return []
 
-        prompt = f"""
-评估以下研究主题的可行性：
+        prompt = f"""评估以下研究主题的可行性。严格按照JSON格式输出，不要包含任何其他文字。
 
 主题列表：{json.dumps(candidates, ensure_ascii=False)}
 
-评估维度：
-1. 文献充足性 (1-10)
-2. 方法可行性 (1-10)
-3. 创新性 (1-10)
-4. 时间合理性 (1-10)
-5. 资源可获取性 (1-10)
+评估维度（每个维度1-10分）：
+1. literature_adequacy - 文献充足性
+2. method_feasibility - 方法可行性
+3. novelty - 创新性
+4. time_reasonableness - 时间合理性
+5. resource_accessibility - 资源可获取性
 
-输出JSON格式：
+示例输出格式：
 {{
     "evaluated": [
         {{
-            "original": {{"title": "...", "description": "..."}},
+            "original": {{"title": "示例主题", "description": "主题描述"}},
             "scores": {{
                 "literature_adequacy": 8,
                 "method_feasibility": 7,
@@ -324,18 +443,32 @@ class TopicAgent(PaperAgentBase):
                 "resource_accessibility": 7
             }},
             "overall_score": 7.8,
-            "risk_factors": ["风险1", "风险2"]
+            "risk_factors": ["需要大量计算资源"]
         }}
     ]
 }}
-"""
+
+严格按照上述JSON格式输出，JSON外不要有任何内容："""
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
-            evaluated = data.get("evaluated", [])
+            result = parse_with_pydantic(response, EvaluatedResponse, EvaluatedResponse())
+
+            evaluated = []
+            for item in result.evaluated:
+                evaluated.append({
+                    "original": item.original.model_dump(),
+                    "scores": item.scores.model_dump(),
+                    "overall_score": item.overall_score,
+                    "risk_factors": item.risk_factors
+                })
 
             # 按overall_score排序
             evaluated = sorted(evaluated, key=lambda x: x.get("overall_score", 0), reverse=True)
+            return evaluated
+
+        except Exception as e:
+            log_error_with_context(self.logger, e, "Feasibility evaluation", recovered=True)
+            return [{"original": c, "scores": {}, "overall_score": 0.5} for c in candidates]
             return evaluated
 
         except Exception as e:
