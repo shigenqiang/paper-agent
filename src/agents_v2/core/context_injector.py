@@ -12,6 +12,10 @@ Intelligent Context Injector - 智能上下文注入器
 """
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
+import time
+import math
+
+from src.agents_v2.logging_config import get_logging_logger
 
 logger = get_logging_logger(__name__)
 
@@ -71,6 +75,11 @@ class IntelligentContextInjector:
 
     根据当前任务动态决定上下文中应包含什么
 
+    改进:
+    1. 智能触发判断 - 是否需要召回记忆
+    2. 时间衰减 - 基于遗忘曲线计算保留分数
+    3. 重要性阈值过滤 - 低重要性记忆被过滤
+
     使用示例:
         injector = IntelligentContextInjector(max_context_tokens=128000)
 
@@ -88,10 +97,22 @@ class IntelligentContextInjector:
     # 保留给系统的token
     SYSTEM_TOKEN_RESERVE = 2000
 
+    # 重要性阈值 - 低于此值的记忆将被过滤
+    IMPORTANCE_THRESHOLD = 0.3
+
+    # 历史关键词列表 - 包含这些词时触发记忆召回
+    HISTORY_KEYWORDS = [
+        "之前", "上次", "之前那个", "上次那个",
+        "以前", "曾经", "之前你", "上次我",
+        "还记得", "之前提到", "上次说的"
+    ]
+
     def __init__(
         self,
         max_context_tokens: int = 128000,
-        token_reserve: int = 2000
+        token_reserve: int = 2000,
+        importance_threshold: float = 0.3,
+        enable_time_decay: bool = True
     ):
         """
         初始化智能上下文注入器
@@ -99,9 +120,13 @@ class IntelligentContextInjector:
         Args:
             max_context_tokens: 最大上下文token数
             token_reserve: 保留给系统的token数
+            importance_threshold: 重要性阈值，低于此值的记忆被过滤
+            enable_time_decay: 是否启用时间衰减
         """
         self.max_context_tokens = max_context_tokens
         self.token_reserve = token_reserve
+        self.importance_threshold = importance_threshold
+        self.enable_time_decay = enable_time_decay
         self._token_counter = TokenCounter()
 
     def build_context(
@@ -134,12 +159,13 @@ class IntelligentContextInjector:
         context_parts.append(user_input)
         remaining_tokens -= self._token_counter.count(user_input)
 
-        # 2. 相关记忆（智能检索）
-        relevant_memories = self._retrieve_relevant_memories(task, memory_state, limit=5000)
-        if relevant_memories:
-            memories_text = f"## 相关记忆\n{relevant_memories}"
-            context_parts.append(memories_text)
-            remaining_tokens -= self._token_counter.count(relevant_memories)
+        # 2. 相关记忆（智能检索 + 触发判断）
+        if self._should_recall_memories(task, memory_state):
+            relevant_memories = self._retrieve_relevant_memories(task, memory_state, limit=5000)
+            if relevant_memories:
+                memories_text = f"## 相关记忆\n{relevant_memories}"
+                context_parts.append(memories_text)
+                remaining_tokens -= self._token_counter.count(relevant_memories)
 
         # 3. 会话历史（最近优先，智能截断）
         if remaining_tokens > 500:
@@ -161,6 +187,81 @@ class IntelligentContextInjector:
         return f"""## 用户请求
 {task}
 """
+
+    def _should_recall_memories(self, task: str, memory_state: Any) -> bool:
+        """
+        判断是否需要召回记忆
+
+        触发条件:
+        1. 问题涉及历史上下文关键词（之前、上次、曾经等）
+        2. 用户明确要求查看之前的上下文
+
+        Args:
+            task: 当前任务/查询
+            memory_state: 记忆状态
+
+        Returns:
+            是否应该召回记忆
+        """
+        # 触发条件1: 检查历史关键词
+        for keyword in self.HISTORY_KEYWORDS:
+            if keyword in task:
+                logger.debug(f"[ContextInjector] 检测到历史关键词: {keyword}")
+                return True
+
+        # 触发条件2: 可以扩展为检查memory_state是否包含高重要性记忆
+        # 暂时省略，避免额外的存储查询
+
+        return False
+
+    def _get_memory_importance(self, mem: Any) -> float:
+        """获取记忆的重要性分数"""
+        if hasattr(mem, 'importance'):
+            return getattr(mem, 'importance', 0.5)
+        return 0.5
+
+    def _calculate_retention_score(self, mem: Any, current_time: float) -> float:
+        """
+        计算记忆的保留分数（基于遗忘曲线）
+
+        公式: retention = importance * e^(-t/S)
+        其中:
+        - t: 距离上次访问的时间
+        - S: 记忆强度参数（基于重要性）
+
+        Args:
+            mem: 记忆条目
+            current_time: 当前时间戳
+
+        Returns:
+            保留分数 (0.0 - 1.0)
+        """
+        if not self.enable_time_decay:
+            return 1.0
+
+        importance = self._get_memory_importance(mem)
+
+        # 如果记忆没有last_accessed字段，跳过时间衰减
+        if not hasattr(mem, 'last_accessed') or mem.last_accessed == 0:
+            return importance
+
+        t = current_time - mem.last_accessed
+
+        # 根据重要性设置记忆强度S
+        # 高重要性 = 长时间保留，低重要性 = 短时间保留
+        if importance >= 0.8:
+            S = 86400 * 7  # 7天
+        elif importance >= 0.6:
+            S = 86400       # 1天
+        elif importance >= 0.4:
+            S = 3600 * 12   # 12小时
+        else:
+            S = 3600        # 1小时
+
+        # 计算保留分数
+        retention = importance * math.exp(-t / S) if S > 0 else importance
+
+        return min(1.0, max(0.0, retention))
 
     def _retrieve_relevant_memories(
         self,
@@ -211,29 +312,61 @@ class IntelligentContextInjector:
         task_memories: List[Any],
         preference_memories: List[Any]
     ) -> List[Any]:
-        """优先级排序"""
+        """优先级排序 - 集成时间衰减和重要性阈值过滤
+
+        改进:
+        1. 应用遗忘曲线计算保留分数
+        2. 过滤低于阈值的低重要性记忆
+        3. 结合基础分数和保留分数计算最终分数
+        """
         scored = []
+        current_time = time.time()
 
-        # 任务相关记忆
+        # 任务相关记忆 (权重 0.7)
         for mem in task_memories:
-            if hasattr(mem, 'importance'):
-                score = mem.importance * 0.7 + 0.3
-            else:
-                score = 0.5
-            scored.append((score, mem))
+            importance = self._get_memory_importance(mem)
 
-        # 偏好相关记忆
+            # 重要性阈值过滤
+            if importance < self.importance_threshold:
+                continue
+
+            # 计算时间衰减后的保留分数
+            retention = self._calculate_retention_score(mem, current_time)
+
+            # 基础分数 + 保留分数加权
+            base_score = importance * 0.7 + 0.3
+            final_score = base_score * retention
+
+            scored.append((final_score, mem))
+
+        # 偏好相关记忆 (权重 0.5)
         for mem in preference_memories:
-            if hasattr(mem, 'importance'):
-                score = mem.importance * 0.5 + 0.5
-            else:
-                score = 0.5
+            importance = self._get_memory_importance(mem)
+
+            # 重要性阈值过滤
+            if importance < self.importance_threshold:
+                continue
+
+            # 计算时间衰减后的保留分数
+            retention = self._calculate_retention_score(mem, current_time)
 
             # 避免重复
-            if mem not in [m for _, m in scored]:
-                scored.append((score, mem))
+            if mem in [m for _, m in scored]:
+                continue
 
+            # 基础分数 + 保留分数加权
+            base_score = importance * 0.5 + 0.5
+            final_score = base_score * retention
+
+            scored.append((final_score, mem))
+
+        # 按最终分数排序
         scored.sort(key=lambda x: x[0], reverse=True)
+
+        # 记录排序结果日志
+        if scored:
+            logger.debug(f"[ContextInjector] 记忆排序: top 3 scores = {[s for s, _ in scored[:3]]}")
+
         return [mem for _, mem in scored]
 
     def _truncate_to_limit(
