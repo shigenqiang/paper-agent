@@ -80,7 +80,7 @@ LOG_LEVEL_MAP = {
 _DEFAULT_FORMAT = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
     "<level>{level: <8}</level> | "
-    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+    "<cyan>{extra[file]}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
     "<level>{message}</level>"
 )
 
@@ -88,7 +88,7 @@ _DEFAULT_FORMAT = (
 _PLAIN_FORMAT = (
     "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
     "{level: <8} | "
-    "{name}:{function}:{line} | "
+    "{extra[file]}:{function}:{line} | "
     "{message}"
 )
 
@@ -350,6 +350,11 @@ def setup_logging(
             else:
                 format_string = _PLAIN_FORMAT
 
+        # patch 函数：只显示文件名，不显示完整路径
+        def patcher(record):
+            import os
+            record["extra"]["file"] = os.path.basename(record["file"])
+
         # 1. 添加控制台输出
         _loguru_logger.add(
             sys.stderr,
@@ -358,6 +363,7 @@ def setup_logging(
             colorize=use_color and sys.stdout.isatty(),
             backtrace=backtrace,
             diagnose=diagnose,
+            patch=patcher,
         )
 
         # 2. 添加文件输出（如果指定了 log_file）
@@ -376,6 +382,7 @@ def setup_logging(
                 serialize=serialize,
                 backtrace=backtrace,
                 diagnose=diagnose,
+                patch=patcher,
             )
 
         # 3. 添加错误专用日志文件
@@ -392,6 +399,7 @@ def setup_logging(
                 serialize=serialize,
                 backtrace=backtrace,
                 diagnose=diagnose,
+                patch=patcher,
                 filter=lambda record: record["level"].no >= 40  # 只记录 ERROR 及以上
             )
 
