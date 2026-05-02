@@ -84,10 +84,14 @@ class BaseQAAgent(ABC):
         import os
 
         api_key = os.getenv("OPENAI_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
+        model = os.getenv("LLM_MODEL", "MiniMax-M2.7")
+
         llm = ChatOpenAI(
-            model="gpt-4",
+            model=model,
             temperature=0.3,
-            api_key=api_key
+            api_key=api_key,
+            base_url=base_url if base_url else None
         )
 
         from langchain_core.messages import HumanMessage, SystemMessage
