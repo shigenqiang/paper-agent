@@ -9,12 +9,13 @@ PlagiarismCheckerAgent - 查重检测Agent
 - 强化原创观点
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class PlagiarismCheckerAgent(ProblemAgentBase):
@@ -153,7 +154,7 @@ class PlagiarismCheckerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data.get("high_risk", [])
         except Exception as e:
-            logger.error(f"[PlagiarismCheckerAgent:156] High risk identification failed: {e}")
+            logger.error(f"High risk identification failed: {e}")
             return []
 
     async def _assess_originality(self, text: str, high_risk: List[Dict]) -> Dict[str, Any]:
@@ -204,7 +205,7 @@ class PlagiarismCheckerAgent(ProblemAgentBase):
             data = json.loads(response)
             return [p.get("improvement", "") for p in data.get("points", [])]
         except Exception as e:
-            logger.error(f"[PlagiarismCheckerAgent:207] Improvement points identification failed: {e}")
+            logger.error(f"Improvement points identification failed: {e}")
             return []
 
     async def _generate_rewrite_suggestions(self, high_risk: List[Dict]) -> List[str]:
@@ -261,7 +262,7 @@ class PlagiarismCheckerAgent(ProblemAgentBase):
             data = json.loads(response)
             return data.get("suggestions", [])
         except Exception as e:
-            logger.error(f"[PlagiarismCheckerAgent:264] Originality suggestions failed: {e}")
+            logger.error(f"Originality suggestions failed: {e}")
             return []
 
     def _truncate(self, text: str, max_length: int) -> str:

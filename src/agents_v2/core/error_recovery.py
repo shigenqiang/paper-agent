@@ -12,15 +12,17 @@ Core Error Recovery - 共享错误恢复原语
 - 同时支持 sync 和 async callable
 - 各子系统（unified/memory/agents）可组合使用这些原语
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 import time
-import logging
+
 from typing import Any, Callable, Optional, TypeVar
 from dataclasses import dataclass
 from enum import Enum
 
 T = TypeVar('T')
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 # ============ 错误分类 ============

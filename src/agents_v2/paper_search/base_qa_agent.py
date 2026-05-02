@@ -3,9 +3,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
-import logging
 
-logger = logging.getLogger(__name__)
+from src.agents_v2.logging_config import get_logging_logger
+
+logger = get_logging_logger(__name__)
 
 
 class QuestionType(str, Enum):
@@ -39,7 +40,7 @@ class BaseQAAgent(ABC):
     def __init__(self, name: str, description: str = ""):
         self.name = name
         self.description = description
-        self.logger = logging.getLogger(f"QA.{name}")
+        self.logger = get_logging_logger(f"QA.{name}")
 
     @abstractmethod
     async def execute(self, question: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

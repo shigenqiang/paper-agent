@@ -3,12 +3,14 @@ Table Detector - 表格检测器
 
 检测PDF或图像中的表格位置和结构。
 """
-import logging
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

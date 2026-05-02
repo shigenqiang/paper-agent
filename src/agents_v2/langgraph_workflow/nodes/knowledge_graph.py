@@ -3,12 +3,12 @@ Knowledge Graph Node - LangGraph 工作流知识图谱节点
 
 集成知识图谱服务，提供实体抽取、关系构建和图推理查询。
 """
-import logging
+
 from typing import Any, Dict, List, Optional
 
 from ..state import PaperAgentState, Paper
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class KnowledgeGraphNode:

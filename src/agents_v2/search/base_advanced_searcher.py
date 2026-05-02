@@ -4,11 +4,13 @@ BASE Advanced Searcher - Bielefeld Academic Search Engine
 BASE 是欧洲最大的学术搜索平台之一，索引了超过 10 亿条学术资源。
 免费 API，但需要遵守使用条款。
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 from typing import List, Optional
 from .base_searcher import BaseSearcher, SearchResult, SearchResponse
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class BASEAdvancedSearcher(BaseSearcher):

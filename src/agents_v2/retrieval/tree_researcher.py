@@ -17,14 +17,16 @@ Tree-Deep Researcher - GPT Researcher 式树状深度研究
     )
     print(report.summary)
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ResearchNodeType(str, Enum):

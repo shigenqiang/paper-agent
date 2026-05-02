@@ -6,7 +6,9 @@ Enhanced Retrieval Pipeline - 增强检索管道
 
 阶段1-Week1: 检索优化集成
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,7 +19,7 @@ from .query_expander import QueryExpander, ExpansionResult
 from .cross_encoder_reranker import CrossEncoderReranker, RerankedDoc
 from .self_rag_controller import SELF_RAGController, RAGResponse
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

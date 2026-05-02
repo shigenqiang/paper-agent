@@ -6,16 +6,18 @@ SmartReviserAgent - 智能改稿Agent
 - 针对性修改文本
 - 保持修改前后一致性
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import os
 from typing import Any, Dict, List, Optional
 import json
-import logging
+
 import re
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
 from ..problem_oriented.base_problem_agent import AgentOutput
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class TrinkaGrammarChecker:

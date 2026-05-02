@@ -14,13 +14,15 @@
 - 可配置的反思策略
 - 分层反思，从宏观结构到微观表达
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ReflectionLevel(str, Enum):

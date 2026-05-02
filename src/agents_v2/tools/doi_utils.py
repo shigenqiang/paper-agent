@@ -7,12 +7,14 @@ DOI Utils - DOI验证与信息增强
 - DOI批量验证
 - DOI解析与标准化
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
-import logging
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

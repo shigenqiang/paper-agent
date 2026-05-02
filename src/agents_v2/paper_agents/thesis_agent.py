@@ -9,12 +9,13 @@ ThesisAgent - 研究问题凝练Agent
 - 形成Thesis Statement
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ThesisAgent(PaperAgentBase):

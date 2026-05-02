@@ -7,8 +7,9 @@ Error Recovery System - 错误恢复系统
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
 
 from ..core.error_recovery import (
     ErrorCategory,
@@ -18,7 +19,7 @@ from ..core.error_recovery import (
     classify_error as core_classify_error,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 # 保留原有枚举用于向后兼容，映射到 core ErrorCategory

@@ -9,12 +9,13 @@
 - 格式规范 (引用格式、参考文献)
 - 整体完成度
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

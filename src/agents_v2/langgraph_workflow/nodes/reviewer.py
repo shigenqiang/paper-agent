@@ -8,13 +8,15 @@ Reviewer Agent - LangGraph 工作流节点
 
 集成现有的 ReviewerAgent (paper_agents/reviewer_agent.py)。
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from typing import List
 
 from ..state import PaperAgentState
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ReviewerAgent:

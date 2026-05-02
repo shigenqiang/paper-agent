@@ -8,12 +8,13 @@ ReferenceProcessorAgent - 参考文献处理Agent
 - 统一引用风格
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ReferenceProcessorAgent(WritingAgentBase):

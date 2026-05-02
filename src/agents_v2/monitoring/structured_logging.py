@@ -10,12 +10,15 @@
 6. 日志采样器（LogSampler）
 7. 分布式追踪支持（TraceContext）
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import time
 import traceback
 import threading
 import gzip
+import logging
 from typing import Any, Dict, List, Optional, Callable
 from datetime import datetime, timedelta
 from collections import deque
@@ -465,7 +468,7 @@ class StructuredLogger:
     def __init__(self, name: str, structured: bool = True):
         self.name = name
         self.structured = structured
-        self._logger = logging.getLogger(name)
+        self._logger = get_logging_logger(name)
         self._logger.setLevel(logging.INFO)
 
         # 设置格式化器

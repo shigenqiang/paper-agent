@@ -12,9 +12,8 @@
 - 为问答生成提供相关论文
 """
 from typing import Dict, Any
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class QASearchNode:

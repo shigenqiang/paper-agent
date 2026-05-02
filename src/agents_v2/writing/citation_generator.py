@@ -14,8 +14,10 @@
 - 引用一致性验证
 - CrossRef / Semantic Scholar 验证
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
 import re
 import ssl
 import urllib.request
@@ -23,7 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class CitationStyle(str, Enum):

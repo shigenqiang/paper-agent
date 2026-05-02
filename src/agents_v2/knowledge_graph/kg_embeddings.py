@@ -5,13 +5,15 @@
 1. TransE: 翻译距离模型
 2. ComplEx: 复数域嵌入模型
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
+from src.agents_v2.logging_config import get_logging_logger
+
 import math
 import random
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

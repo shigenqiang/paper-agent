@@ -6,8 +6,10 @@
 - MemoryTracer: 记忆系统追踪
 - OperationLog: 操作日志
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -57,7 +59,7 @@ class MemoryLogger:
     """
 
     def __init__(self, name: str = "memory"):
-        self._logger = logging.getLogger(name)
+        self._logger = get_logging_logger(name)
         self._operation_logs: List[OperationLog] = []
         self._retrieval_logs: List[RetrievalLog] = []
         self._max_logs = 10000

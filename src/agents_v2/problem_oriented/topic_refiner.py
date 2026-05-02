@@ -10,22 +10,68 @@ TopicRefinerAgent - 选题精炼Agent
 - 检查创新性
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 def _clean_json_markdown(text: str) -> str:
-    """清理JSON markdown格式（去除```json...```包裹）"""
+    """清理JSON markdown格式（去除```json...```包裹），并提取纯JSON"""
     import re
+    if not text:
+        return ""
+
+    # 去除 ```json ... ``` 包裹
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    # 去除 ``` ... ``` 包裹
     text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
-    return text.strip()
+    text = text.strip()
+
+    if not text:
+        return ""
+
+    # 如果不是以 { 开头，尝试找到第一个 { 的位置
+    if not text.startswith('{'):
+        match = re.search(r'\{', text)
+        if match:
+            text = text[match.start():]
+
+    # 尝试只提取第一个完整的JSON对象（处理JSON后有多余内容的情况）
+    if text.startswith('{'):
+        try:
+            # 尝试标准 json.loads
+            json.loads(text)
+            return text
+        except json.JSONDecodeError:
+            # 如果失败，尝试找到匹配的闭合括号
+            start = text.index('{')
+            depth = 0
+            end_pos = -1
+
+            for i, c in enumerate(text[start:], start):
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end_pos = i + 1
+                        break
+
+            if end_pos > 0:
+                extracted = text[start:end_pos]
+                try:
+                    json.loads(extracted)
+                    return extracted
+                except json.JSONDecodeError:
+                    pass
+
+    return text
 
 
 class TopicRefinerAgent(ProblemAgentBase):
@@ -245,11 +291,11 @@ class TopicRefinerAgent(ProblemAgentBase):
                 return ["选题需要进一步明确"]
             # 清理markdown代码块
             content = _clean_json_markdown(response)
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                return ["选题需要进一步明确"]
             return data.get("issues", [])
-        except json.JSONDecodeError as e:
-            logger.error(f"[{self.__class__.__name__}:235] Topic analysis failed (JSON解析错误): {e}, response前50字符: {response[:50] if response else 'None'}")
-            return ["选题需要进一步明确"]
         except ValueError as e:
             logger.error(f"[{self.__class__.__name__}:237] Topic analysis failed: {e}")
             return ["选题需要进一步明确"]
@@ -296,11 +342,11 @@ class TopicRefinerAgent(ProblemAgentBase):
                 logger.error(f"[{cls_name}:292] LLM返回空响应")
                 return {"feasible": True, "overall_score": 5.0, "concerns": []}
             content = _clean_json_markdown(response)
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                return {"feasible": True, "overall_score": 5.0, "concerns": []}
             return data
-        except json.JSONDecodeError as e:
-            logger.error(f"[{cls_name}:296] Feasibility evaluation failed (JSON解析错误): {e}")
-            return {"feasible": True, "overall_score": 5.0, "concerns": []}
         except ValueError as e:
             logger.error(f"[{cls_name}:298] Feasibility evaluation failed: {e}")
             return {"feasible": True, "overall_score": 5.0, "concerns": []}
@@ -333,20 +379,18 @@ class TopicRefinerAgent(ProblemAgentBase):
         try:
             response = await self._llm_call(prompt)
             if not response or not response.strip():
-                logger.error(f"[{cls_name}:332] LLM返回空响应")
                 return {"novel": False, "novelty_score": 5.0}
             content = _clean_json_markdown(response)
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                return {"novel": False, "novelty_score": 5.0}
             return data
-        except json.JSONDecodeError as e:
-            logger.error(f"[{cls_name}:336] Novelty evaluation failed (JSON解析错误): {e}")
-            return {"novel": False, "novelty_score": 5.0}
         except ValueError as e:
             logger.error(f"[{cls_name}:338] Novelty evaluation failed: {e}")
             return {"novel": False, "novelty_score": 5.0}
         except Exception as e:
             logger.error(f"[{cls_name}:340] Novelty evaluation failed: {e}")
-            return {"novel": False, "novelty_score": 5.0}
             return {"novel": False, "novelty_score": 5.0}
 
     async def _generate_recommendations(
@@ -404,20 +448,18 @@ class TopicRefinerAgent(ProblemAgentBase):
         try:
             response = await self._llm_call(prompt)
             if not response or not response.strip():
-                logger.error(f"[{cls_name}:403] LLM返回空响应")
                 return original
             content = _clean_json_markdown(response)
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                return original
             return data.get("best_choice", original)
-        except json.JSONDecodeError as e:
-            logger.error(f"[{cls_name}:407] Topic refinement failed (original={original}) (JSON解析错误): {e}")
-            return original
         except ValueError as e:
             logger.error(f"[{cls_name}:409] Topic refinement failed (original={original}): {e}")
             return original
         except Exception as e:
             logger.error(f"[{cls_name}:411] Topic refinement failed (original={original}): {e}")
-            return original
             return original
 
     def _calculate_quality_score(self, feasibility: Dict, novelty: Dict) -> float:

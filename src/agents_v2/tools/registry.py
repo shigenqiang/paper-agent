@@ -3,12 +3,14 @@
 
 ToolRegistry: 全局工具注册表
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from typing import Any, Callable, Dict, List, Optional
 from .tool_spec import ToolSpec, ValidationResult, ToolResult
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ToolRegistry:

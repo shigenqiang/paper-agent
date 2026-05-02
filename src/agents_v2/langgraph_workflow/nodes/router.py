@@ -12,9 +12,8 @@
 - 保持状态不变，只添加路由信息
 """
 from typing import Dict, Any
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class RouteNode:

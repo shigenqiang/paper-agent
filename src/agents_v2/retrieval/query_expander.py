@@ -3,11 +3,11 @@ Query Expander - 查询扩展器
 
 生成查询的多个扩展版本以提高召回率。
 """
-import logging
+
 from typing import Any, Dict, List, Set
 from dataclasses import dataclass
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

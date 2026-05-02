@@ -1,12 +1,13 @@
 """报告生成Agent - 基于论文生成专业报告"""
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .base_qa_agent import BaseQAAgent
 from .paper_search import Paper
+from src.agents_v2.logging_config import get_logging_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

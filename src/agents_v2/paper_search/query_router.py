@@ -1,11 +1,12 @@
 """问题路由Agent - 判断问题类型并决定处理策略"""
 from typing import Dict, Any, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_qa_agent import BaseQAAgent, QuestionType, RoutingDecision
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class QueryRouter(BaseQAAgent):

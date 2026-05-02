@@ -11,13 +11,15 @@
 - 提供语言统一的预处理
 - 支持跨语言查询扩展
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class Language(str, Enum):

@@ -7,12 +7,12 @@
 3. 实体描述生成 (Entity Description Generation)
 4. GraphRAG上下文构建
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from collections import defaultdict
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

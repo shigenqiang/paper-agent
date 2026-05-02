@@ -8,12 +8,12 @@
 - OpenAlex
 - 论文引用分析
 """
-import logging
+
 from typing import Any, Dict, List, Optional
 from .tool_spec import ToolSpec, ParameterSpec, ParameterType
 from .registry import ToolRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 # ============== Semantic Scholar ==============

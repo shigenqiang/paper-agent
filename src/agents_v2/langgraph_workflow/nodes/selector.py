@@ -8,14 +8,16 @@ Selector Agent - LangGraph 工作流节点
 
 集成现有的 CrossEncoderReranker。
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from typing import List, Optional
 
 from ...retrieval.cross_encoder_reranker import CrossEncoderReranker
 from ..state import PaperAgentState, Paper
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class SelectorAgent:

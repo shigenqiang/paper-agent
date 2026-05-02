@@ -3,9 +3,11 @@ Reports API - Paper Intelligence Digest API (论文资讯快报)
 
 Auto-generated daily/weekly/monthly paper intelligence reports.
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import json
-import logging
+
 import os
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
@@ -15,7 +17,7 @@ import asyncio
 
 from src.agents_v2.api.paper_api import DEFAULT_API_KEY, DEFAULT_BASE_URL
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 # 持久化存储路径
 STORAGE_DIR = os.path.join(os.path.dirname(__file__), "../../data")

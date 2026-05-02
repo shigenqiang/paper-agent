@@ -12,9 +12,8 @@ Intelligent Context Injector - 智能上下文注入器
 """
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

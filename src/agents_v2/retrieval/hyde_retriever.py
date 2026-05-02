@@ -14,11 +14,11 @@ HyDE (Hypothetical Document Embeddings) 是一种检索增强技术，
 - 保持生成的可控性
 - 与现有检索系统兼容
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

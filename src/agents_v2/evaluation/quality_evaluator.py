@@ -15,13 +15,15 @@
 - 与现有 OutputValidator / RAGEvaluator 集成
 - 可配置维度权重和阈值
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class EvalDimension(str, Enum):

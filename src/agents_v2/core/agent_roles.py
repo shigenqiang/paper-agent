@@ -6,9 +6,8 @@ Agent Role System - Agent角色系统
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ConstraintType(str, Enum):

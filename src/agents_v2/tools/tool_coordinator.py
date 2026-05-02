@@ -10,9 +10,8 @@
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class DependencyType(str, Enum):
@@ -424,6 +423,8 @@ def get_coordination_engine() -> ToolCoordinationEngine:
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from abc import ABC, abstractmethod
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 from datetime import datetime
 from .tool_spec import ToolResult

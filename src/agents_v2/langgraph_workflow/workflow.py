@@ -3,7 +3,9 @@ LangGraph 工作流构建器
 
 组装所有 Agent 节点，定义边和条件路由，编译为可执行应用。
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from typing import Optional
 
@@ -19,7 +21,7 @@ from .nodes.reviewer import ReviewerAgent
 from .nodes.evaluator import EvaluatorNode
 from .observability.tracer import WorkflowTracer, create_tracer
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class PaperAgentWorkflow:

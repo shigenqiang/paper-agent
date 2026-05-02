@@ -12,9 +12,8 @@
 - 提升语言质量
 """
 from typing import Dict, Any
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class PolishNode:

@@ -6,13 +6,15 @@ SELF-RAG控制器 - Self-RAG Reflection Controller
 2. 评估检索质量：判断检索结果是否相关
 3. 决定是否采纳：根据质量决定是否使用检索结果
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 import asyncio
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

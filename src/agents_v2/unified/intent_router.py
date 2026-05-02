@@ -11,10 +11,12 @@ IntentRouter - 意图路由Agent
 from typing import Any, Dict, List, Optional, Callable
 from enum import Enum
 from dataclasses import dataclass, field
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class IntentType(str, Enum):

@@ -6,10 +6,11 @@ Dependency Scheduler - 依赖调度器
 from typing import Any, Callable, Dict, List, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
-import asyncio
-import logging
+from src.agents_v2.logging_config import get_logging_logger
 
-logger = logging.getLogger(__name__)
+import asyncio
+
+logger = get_logging_logger(__name__)
 
 
 class TaskStatus(str, Enum):

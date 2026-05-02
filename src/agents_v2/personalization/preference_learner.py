@@ -8,13 +8,15 @@
 - 主题兴趣 (AI/医学/金融等)
 - 时间偏好 (工作日/周末)
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

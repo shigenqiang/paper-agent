@@ -14,8 +14,10 @@ Enhanced PDF Parser - 多引擎PDF解析器
         ├── TableExtractor (表格)
         └── LayoutAnalyzer (布局)
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 import os
 import re
 import subprocess
@@ -24,7 +26,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class PDFParserType(Enum):

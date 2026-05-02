@@ -9,11 +9,13 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import os
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class AgentOutput(BaseModel):
@@ -58,7 +60,7 @@ class ProblemAgentBase(ABC):
         self._init_llm()
         self._setup_logging()
 
-        logger.info(f"ProblemAgent {self.name} initialized, targeting: {target_problem}")
+        logger.debug(f"ProblemAgent {self.name} initialized, targeting: {target_problem}")
 
     @abstractmethod
     async def diagnose(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
@@ -148,25 +150,22 @@ class ProblemAgentBase(ABC):
                 HumanMessage(content=prompt)
             ]
 
-            logger.info(f"[{cls_name}:148] LLM调用开始，prompt长度={len(prompt)}")
             response = await self._llm.ainvoke(messages)
             content = response.content if hasattr(response, 'content') else str(response)
-
-            logger.info(f"[{cls_name}:153] LLM返回内容长度={len(content) if content else 0}")
 
             # 清理MiniMax模型的思考块
             content = self._clean_thinking_blocks(content)
 
             if not content or not content.strip():
-                logger.error(f"[{cls_name}:160] LLM返回空内容，response类型={type(response)}")
-                raise ValueError(f"[{cls_name}:160] LLM返回空内容，无法解析JSON")
+                logger.error(f"LLM返回空内容，response类型={type(response)}")
+                raise ValueError(f"LLM返回空内容，无法解析JSON")
 
             return content
         except ValueError:
             raise  # 重新抛出ValueError，保留原始堆栈
         except Exception as e:
-            logger.error(f"[{cls_name}:165] LLM调用失败: {type(e).__name__}: {e}")
-            raise ValueError(f"[{cls_name}:165] LLM调用失败: {type(e).__name__}: {e}") from e
+            logger.error(f"LLM调用失败: {type(e).__name__}: {e}")
+            raise ValueError(f"LLM调用失败: {type(e).__name__}: {e}") from e
 
     def _clean_thinking_blocks(self, text: str) -> str:
         """清理思考块 (MiniMax等模型会输出)"""
@@ -179,7 +178,7 @@ class ProblemAgentBase(ABC):
 
     def _setup_logging(self):
         """设置日志"""
-        self.logger = logging.getLogger(f"ProblemAgent.{self.name}")
+        self.logger = get_logging_logger(f"ProblemAgent.{self.name}")
 
     async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
         """执行诊断"""

@@ -6,13 +6,14 @@ GAIA基准包含3个难度等级:
 - Level 2: 多步骤推理，需要信息整合
 - Level 3: 复杂任务，需要规划与工具组合
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 import json
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

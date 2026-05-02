@@ -1,12 +1,14 @@
 """
 熔断器 - 防止级联失败的防护机制
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from typing import Callable, Any, Optional
-import logging
+
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class CircuitState(str, Enum):

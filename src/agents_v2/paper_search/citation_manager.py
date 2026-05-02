@@ -1,11 +1,12 @@
 """引用管理Agent - 管理论文参考文献和引用格式"""
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .base_qa_agent import BaseQAAgent
+from src.agents_v2.logging_config import get_logging_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

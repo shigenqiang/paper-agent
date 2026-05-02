@@ -12,15 +12,17 @@
 - 模块间接口验证
 - 故障恢复测试
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class IntegrationStage(str, Enum):

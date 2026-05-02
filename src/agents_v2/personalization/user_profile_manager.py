@@ -6,12 +6,14 @@
 - 偏好设置
 - 关联的记忆和知识
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 if TYPE_CHECKING:
     from .preference_learner import PreferenceProfile

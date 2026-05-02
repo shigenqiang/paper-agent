@@ -12,12 +12,12 @@ RAG评估器 - RAG Evaluator
 - 可配置的评估指标
 - 详细的评估报告
 """
-import logging
+
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class EvaluationMetric(str, Enum):

@@ -9,10 +9,12 @@ Key features over BaseAgent:
   - MCP-native tool registration bridge
   - Permission system for tool execution
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 import inspect
 import json
-import logging
+
 import os
 import time
 from dataclasses import dataclass, field
@@ -22,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from .tool import ToolDefinition, ToolRegistry, tool_registry, get_tool_schemas
 from .context import ContextCompressor
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class AgentState(Enum):
@@ -112,7 +114,7 @@ class Agent:
         self.system_prompt = system_prompt
         self.config = config or AgentConfig()
         self.state = AgentState.IDLE
-        self.logger = logging.getLogger(f"SDKAgent.{name}")
+        self.logger = get_logging_logger(f"SDKAgent.{name}")
 
         # Tool management
         self._local_tools: Dict[str, ToolDefinition] = {}

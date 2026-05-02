@@ -12,13 +12,15 @@
 - 自动识别公式类型
 - 提供验证和错误提示
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class FormulaType(str, Enum):

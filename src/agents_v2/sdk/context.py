@@ -8,13 +8,15 @@ When the conversation exceeds a token threshold:
 
 This mirrors Claude Agent SDK's automatic context compression behavior.
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 # Approximate token counting — ~4 chars per token for CJK/English mix

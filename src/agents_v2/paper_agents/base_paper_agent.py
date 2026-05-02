@@ -5,12 +5,14 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Callable
 from pydantic import BaseModel, Field
 from datetime import datetime
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import asyncio
 import os
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 # ============ Agent输入输出模型 ============
@@ -78,7 +80,7 @@ class PaperAgentBase(ABC):
         self._init_llm()
         self._setup_logging()
 
-        logger.info(f"Agent {self.name} initialized")
+        logger.debug(f"Agent {self.name} initialized")
 
     @abstractmethod
     async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
@@ -150,7 +152,7 @@ class PaperAgentBase(ABC):
             else:
                 raise ValueError(f"不支持的LLM提供商: {provider}")
 
-            logger.info(f"Initialized LLM: {self.llm_config.provider} - {self.llm_config.model_name}")
+            logger.debug(f"Initialized LLM: {self.llm_config.provider} - {self.llm_config.model_name}")
         except Exception as e:
             logger.error(f"LLM初始化失败: {e}")
             self._llm = None
@@ -203,8 +205,9 @@ class PaperAgentBase(ABC):
 
             return content
         except Exception as e:
-            logger.error(f"LLM调用失败: {e}")
-            return ""  # 返回空字符串而不是抛出异常
+            cls_name = self.__class__.__name__
+            logger.error(f"[{cls_name}:206] LLM调用失败: {type(e).__name__}: {e}")
+            raise ValueError(f"[{cls_name}:206] LLM调用失败: {type(e).__name__}: {e}") from e
 
     def _clean_thinking_blocks(self, text: str) -> str:
         """清理思考块和参考文献，只保留markdown报告内容"""
@@ -265,8 +268,7 @@ class PaperAgentBase(ABC):
 
     def _setup_logging(self):
         """设置日志"""
-        self.logger = logging.getLogger(f"PaperAgent.{self.name}")
-        self.logger.setLevel(logging.INFO)
+        self.logger = get_logging_logger(f"PaperAgent.{self.name}")
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""

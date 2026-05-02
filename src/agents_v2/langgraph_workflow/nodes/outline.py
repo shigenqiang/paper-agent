@@ -8,13 +8,15 @@ Outline Agent - LangGraph 工作流节点
 
 集成现有的 OutlineAgent (paper_agents/outline_agent.py)。
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from typing import Any, Dict, List, Optional
 
 from ..state import PaperAgentState, Paper
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class OutlineAgent:

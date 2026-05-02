@@ -7,14 +7,16 @@
 3. 基于任务上下文的工具选择
 4. 工具变更观察者模式
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 import time
-import logging
+
 from typing import Any, Callable, Dict, List, Optional, Protocol, Set
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ToolEvent(Enum):

@@ -3,12 +3,12 @@ Figure Classifier - 图表分类器
 
 对学术论文中的图表进行分类和理解。
 """
-import logging
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class FigureType(Enum):

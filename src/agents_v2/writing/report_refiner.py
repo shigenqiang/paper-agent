@@ -8,12 +8,13 @@ ReportRefinerAgent - 报告精炼Agent
 - 针对性问题修复
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ReportRefinerAgent(WritingAgentBase):

@@ -8,13 +8,15 @@
 - 散点图: 相关性识别、离群点
 - 热力图: 分布分析、密度
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ChartType(Enum):

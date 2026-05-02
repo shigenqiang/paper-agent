@@ -7,11 +7,13 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Callable
 from pydantic import BaseModel, Field
 from datetime import datetime
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import os
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class WritingInput(BaseModel):
@@ -69,7 +71,7 @@ class WritingAgentBase(ABC):
         self._init_llm()
         self._setup_logging()
 
-        logger.info(f"WritingAgent {self.name} initialized")
+        logger.debug(f"WritingAgent {self.name} initialized")
 
     @abstractmethod
     async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> WritingOutput:
@@ -123,7 +125,7 @@ class WritingAgentBase(ABC):
             else:
                 raise ValueError(f"不支持的LLM提供商: {provider}")
 
-            logger.info(f"Initialized LLM: {self.llm_config.provider} - {self.llm_config.model_name}")
+            logger.debug(f"Initialized LLM: {self.llm_config.provider} - {self.llm_config.model_name}")
         except Exception as e:
             logger.error(f"LLM初始化失败: {e}")
             self._llm = None
@@ -173,8 +175,7 @@ class WritingAgentBase(ABC):
 
     def _setup_logging(self):
         """设置日志"""
-        self.logger = logging.getLogger(f"WritingAgent.{self.name}")
-        self.logger.setLevel(logging.INFO)
+        self.logger = get_logging_logger(f"WritingAgent.{self.name}")
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""

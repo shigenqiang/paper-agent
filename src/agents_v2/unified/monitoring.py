@@ -6,16 +6,18 @@
 2. PerformanceMonitor: 性能监控器
 3. 并发优化工具
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import asyncio
 import inspect
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
+
 from functools import wraps
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

@@ -7,13 +7,14 @@ AgentBench适配器 - 多领域Agent评估适配器
 - code: 代码生成与修复
 - web: Web导航与交互
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Callable
 from enum import Enum
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class Domain(Enum):

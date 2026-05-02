@@ -1,6 +1,8 @@
 """ReAct循环引擎 - Agent的核心引擎"""
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 import inspect
 from typing import Any, Dict, List, Optional, Callable, TYPE_CHECKING
 import time
@@ -19,7 +21,7 @@ from src.models.state import AgentContext, AgentState, ToolCall
 from ..core.base_agent import BaseAgent, VirtualTool
 from ..tools.registry import ToolRegistry, get_tool_registry
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class TerminationCondition:

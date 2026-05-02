@@ -8,15 +8,17 @@ LiteratureAgent - 文献工作Agent
 - 识别研究空白
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
 import asyncio
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..paper_search.paper_search import PaperSearchAgent
 from ..unified.error_handler import log_error_with_context
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class LiteratureAgent(PaperAgentBase):

@@ -14,7 +14,7 @@ Agent链路追踪Mixin
                 # 追踪的执行逻辑
                 pass
 """
-import logging
+
 from typing import Any, Dict, Optional, Callable
 from functools import wraps
 
@@ -32,7 +32,7 @@ from .chain_tracer import (
     trace_phase as global_trace_phase
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ChainTracerMixin:

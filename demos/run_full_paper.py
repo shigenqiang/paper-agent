@@ -97,4 +97,8 @@ async def run_full_paper(topic: str):
 
 if __name__ == "__main__":
     topic = sys.argv[1] if len(sys.argv) > 1 else "人工智能在教育领域的应用"
-    asyncio.run(run_full_paper(topic))
+    try:
+        asyncio.run(run_full_paper(topic))
+    except KeyboardInterrupt:
+        print("\n\n已取消执行")
+        sys.exit(0)

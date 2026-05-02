@@ -7,13 +7,15 @@ DraftWriterAgent - 分节撰写Agent
 - 添加引用和参考文献
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
 import asyncio
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class DraftWriterAgent(PaperAgentBase):

@@ -7,14 +7,16 @@
 3. Label Propagation - 大规模快速检测
 4. 社区层次结构管理
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
+from src.agents_v2.logging_config import get_logging_logger
+
 import math
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class CommunityAlgorithm(str, Enum):

@@ -6,8 +6,10 @@
 - POST /knowledge-graph/generate - 生成知识图谱
 - GET /knowledge-graph/entity/{entityId} - 获取实体关联
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
 import time
 import re
 from typing import Any, Dict, List, Optional, Tuple, Set
@@ -15,7 +17,7 @@ from datetime import datetime
 
 from aiohttp import web
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 # 内存中的图谱存储（生产环境应使用Neo4j）
 _graph_storage: Dict[str, Any] = {

@@ -8,14 +8,16 @@ Evaluator Node - LangGraph 工作流评估节点
 4. 写作质量评估（字数、引用密度、分析深度）
 5. 综合评估报告
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..state import PaperAgentState, Paper
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

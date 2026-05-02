@@ -9,12 +9,13 @@ ChartFormatterAgent - 图表规范化Agent
 - 标准化格式
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ChartFormatterAgent(ProblemAgentBase):
@@ -151,7 +152,7 @@ class ChartFormatterAgent(ProblemAgentBase):
             data = json.loads(response)
             return data
         except Exception as e:
-            logger.error(f"[ChartFormatterAgent:154] Single chart check failed: {e}")
+            logger.error(f"Single chart check failed: {e}")
             return {"score": 5.0, "issues": ["检查失败"], "suggestions": []}
 
     async def _generate_recommendations(self, chart_checks: List[Dict]) -> List[str]:

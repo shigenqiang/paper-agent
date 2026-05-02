@@ -9,12 +9,14 @@ Zotero是免费开源的参考文献管理软件，支持:
 
 API文档: https://www.zotero.org/support/dev/web_api/v3/start
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import os
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

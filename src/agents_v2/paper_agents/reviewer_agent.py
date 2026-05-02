@@ -8,12 +8,13 @@ ReviewerAgent - 最终审核Agent
 - 决定是否通过
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 # 7维度定义（与QualityEvaluator一致）
 REVIEW_DIMENSIONS = {

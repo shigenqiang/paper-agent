@@ -10,8 +10,10 @@ Paper Agent 性能测试脚本
 - 输出质量基本验证
 - 成功率统计
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 import os
 import sys
 import time
@@ -23,11 +25,9 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 # 设置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

@@ -7,6 +7,8 @@
 3. 生成文档健康报告
 4. 后台持续运行
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import os
 import time
 import hashlib
@@ -17,12 +19,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import threading
-import logging
+
 import watchdog
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class DocStatus(str, Enum):
@@ -316,5 +318,4 @@ def run_monitor_terminal():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     run_monitor_terminal()

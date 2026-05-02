@@ -10,14 +10,16 @@
 6. 修改工作流：论文修改和润色
 7. HITL：人机协作中断/恢复
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 from typing import Any, Dict, Optional
 from datetime import datetime
 from aiohttp import web
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 # 工作流实例缓存（按 HITL 模式分开缓存）
 _workflow_instances: Dict[str, Any] = {}

@@ -7,13 +7,15 @@
 3. MMR去重重排序 (Maximal Marginal Relevance)
 4. 混合检索融合 (Hybrid Search)
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from src.agents_v2.logging_config import get_logging_logger
+
 import math
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class RetrievalMethod(str, Enum):

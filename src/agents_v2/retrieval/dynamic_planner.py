@@ -8,8 +8,10 @@
 - comparison: 比较类 -> hybrid+rerank
 - definition: 定义类 -> sparse
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 import json
@@ -17,7 +19,7 @@ import json
 # Re-export QueryType from query_classifier for backward compatibility
 from .query_classifier import QueryType, QueryTypeClassifier
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

@@ -3,9 +3,11 @@ Paper API - RESTful API for Paper Agent Frontend
 
 Provides CRUD operations for papers, literature, and writing sessions.
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import asyncio
-import logging
+
 import os
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -20,7 +22,7 @@ try:
 except ImportError:
     pass
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 # 读取环境变量
 DEFAULT_API_KEY = os.getenv("OPENAI_API_KEY", "dev-api-key")

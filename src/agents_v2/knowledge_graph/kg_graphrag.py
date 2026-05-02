@@ -7,12 +7,12 @@
 3. 子图上下文构建
 4. 答案生成支持
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class QueryType(str, Enum):

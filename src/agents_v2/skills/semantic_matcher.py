@@ -5,10 +5,11 @@ Semantic Skill Matcher - 语义技能匹配器
 """
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
-import math
-import logging
+from src.agents_v2.logging_config import get_logging_logger
 
-logger = logging.getLogger(__name__)
+import math
+
+logger = get_logging_logger(__name__)
 
 
 @dataclass

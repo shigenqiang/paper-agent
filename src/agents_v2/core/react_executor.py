@@ -12,10 +12,11 @@ ReAct Executor - ReAct执行器
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
-import time
-import logging
+from src.agents_v2.logging_config import get_logging_logger
 
-logger = logging.getLogger(__name__)
+import time
+
+logger = get_logging_logger(__name__)
 
 
 class ActionType(str, Enum):

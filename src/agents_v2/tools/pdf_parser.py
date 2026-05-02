@@ -8,13 +8,15 @@ PDF解析器 - 论文PDF文档深度解析
 4. 参考文献解析
 5. 论文结构化（标题、摘要、正文、引用）
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

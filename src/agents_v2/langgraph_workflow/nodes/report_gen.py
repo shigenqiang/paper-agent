@@ -12,9 +12,8 @@
 - ��成可读性强的报告
 """
 from typing import Dict, Any
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ReportGenNode:

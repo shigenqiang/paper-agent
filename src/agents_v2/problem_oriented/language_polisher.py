@@ -9,12 +9,13 @@ LanguagePolisherAgent - 语言润色Agent
 - 术语一致性
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class LanguagePolisherAgent(ProblemAgentBase):

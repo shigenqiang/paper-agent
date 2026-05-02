@@ -10,15 +10,17 @@ LiteratureReviewAgent - 文献综述Agent
 - 文献总结能力（多篇论文对比分析，优缺点总结）
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
 import asyncio
 from datetime import datetime, timedelta
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
 from ..paper_search.paper_search import PaperSearchAgent
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class LiteratureReviewAgent(WritingAgentBase):

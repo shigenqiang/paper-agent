@@ -12,14 +12,16 @@ Marker特点:
 - 公式→LaTeX，代码块保留
 - 支持GPU/CPU/MPS加速
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class MarkerConfig:

@@ -6,12 +6,14 @@
 - 构建图结构
 - 生成文本描述
 """
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

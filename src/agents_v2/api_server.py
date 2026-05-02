@@ -9,8 +9,11 @@ API Server - HTTP接口服务
 认证:
     设置环境变量 API_KEY，然后请求头添加 X-API-Key
 """
+from src.agents_v2.logging_config import get_logging_logger, add_sink
+
 import asyncio
-import logging
+import uuid
+
 import time
 from typing import Any, Dict, Optional
 from datetime import datetime
@@ -26,11 +29,7 @@ except ImportError:
     pass
 
 # 设置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 # API Key配置
 API_KEY = os.getenv('API_KEY', 'dev-api-key')
@@ -42,6 +41,46 @@ PUBLIC_ENDPOINTS = {'/', '/health', '/docs', '/openapi.json'}
 def is_public_endpoint(path: str) -> bool:
     """检查是否是公开端点"""
     return path in PUBLIC_ENDPOINTS or path.startswith('/static')
+
+
+@web.middleware
+async def request_logging_middleware(request: web.Request, handler):
+    """
+    请求日志中间件
+
+    使用 Loguru 的上下文绑定为每个请求添加唯一的 request_id
+    """
+    request_id = request.headers.get('X-Request-ID') or str(uuid.uuid4())[:8]
+    start_time = time.time()
+
+    # 创建带 request_id 上下文的日志记录器
+    req_logger = logger.bind(request_id=request_id, path=request.path)
+
+    # 将请求日志绑定到请求对象，供后续处理函数使用
+    request['logger'] = req_logger
+    request['request_id'] = request_id
+
+    req_logger.info("Request started", method=request.method)
+
+    try:
+        response = await handler(request)
+        duration_ms = (time.time() - start_time) * 1000
+
+        req_logger.info(
+            "Request completed",
+            status=response.status,
+            duration_ms=round(duration_ms, 2)
+        )
+        return response
+
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        req_logger.exception(
+            "Request failed",
+            duration_ms=round(duration_ms, 2),
+            error_type=type(e).__name__
+        )
+        raise
 
 
 @web.middleware
@@ -1532,6 +1571,9 @@ def create_app() -> web.Application:
     """创建Web应用"""
     app = web.Application()
 
+    # 添加日志中间件（按顺序：先日志，后认证）
+    app.middlewares.append(request_logging_middleware)
+
     # 添加认证中间件
     app.middlewares.append(api_key_auth_middleware)
 
@@ -1756,10 +1798,14 @@ def main():
             try:
                 loop.add_signal_handler(sig, lambda s=sig: handle_signal(s))
             except NotImplementedError:
-                # Windows 不支持 add_signal_handler，使用默认行为
+                # Windows 不支持 add_signal_handler
                 pass
 
-        await stop_event.wait()
+        try:
+            await stop_event.wait()
+        except asyncio.CancelledError:
+            logger.info("服务被中断")
+            stop_event.set()
 
         # 清理
         logger.info("正在关闭服务...")
@@ -1770,4 +1816,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n服务已停止")

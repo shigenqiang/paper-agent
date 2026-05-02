@@ -1,6 +1,8 @@
 """论文快讯Agent - 热点论文快速解读"""
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -10,7 +12,7 @@ import json
 from .base_qa_agent import BaseQAAgent
 from .paper_search import PaperSearchAgent
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class FlashType(str, Enum):

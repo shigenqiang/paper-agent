@@ -1,6 +1,8 @@
 """每周论文报告Agent - 汇总一周内特定主题的论文"""
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -10,7 +12,7 @@ from .base_qa_agent import BaseQAAgent
 from .paper_search import PaperSearchAgent
 from .daily_watcher import DailyWatcher
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

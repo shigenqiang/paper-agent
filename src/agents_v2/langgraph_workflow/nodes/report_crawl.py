@@ -12,10 +12,10 @@
 - 保持状态一致性
 """
 from typing import Dict, Any, List
-import logging
+
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ReportCrawlNode:

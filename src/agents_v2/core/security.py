@@ -8,6 +8,8 @@
 4. PermissionChecker: 权限检查
 5. 安全配置
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
 import html
 import hashlib
@@ -19,9 +21,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timedelta
 from collections import defaultdict
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class AuditEventType(str, Enum):

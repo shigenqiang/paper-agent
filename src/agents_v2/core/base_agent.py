@@ -1,15 +1,17 @@
 """Agent基础框架 - 新架构核心"""
-import logging
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import os
 
 from src.models.state import AgentContext, AgentState, AgentMessage
 from src.models.task import Task
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class AgentInput(BaseModel):
@@ -303,7 +305,7 @@ class BaseAgent(ABC):
 
     def _setup_logging(self):
         """设置日志"""
-        self.logger = logging.getLogger(f"Agent.{self.name}")
+        self.logger = get_logging_logger(f"Agent.{self.name}")
         self.logger.setLevel(logging.INFO)
 
     def to_dict(self) -> Dict[str, Any]:

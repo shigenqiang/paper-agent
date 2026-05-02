@@ -25,13 +25,15 @@ Diff/Patch Manager - 文本对比与补丁管理
     # 变更摘要
     summary = manager.change_summary(old_text, new_text)
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import difflib
-import logging
+
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class DiffLineType(str, Enum):

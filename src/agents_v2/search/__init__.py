@@ -18,6 +18,27 @@ from .search_result_merger import (
     deduplicate_by_doi,
 )
 
+# 新增模块
+from .rate_manager import RateManager, get_rate_manager, PlatformConfig
+from .enhanced_base_searcher import EnhancedBaseSearcher, RetryConfig
+from .cache_manager import SearchCache, SearchCacheManager, get_cache_manager, CacheConfig, cached_search
+from .search_orchestrator import (
+    SearchOrchestrator,
+    SearchStrategy,
+    SearchConfig,
+    OrchestratorConfig,
+    get_orchestrator,
+    quick_search,
+)
+from .strategies import (
+    SearchScenario,
+    ScenarioConfig,
+    get_search_config,
+    get_orchestrator_config,
+    get_sources_for_scenario,
+    search_for_scenario,
+)
+
 __all__ = [
     # 基类
     "BaseSearcher",
@@ -47,4 +68,36 @@ __all__ = [
     "MergeConfig",
     "merge_search_results",
     "deduplicate_by_doi",
+
+    # 频率管理
+    "RateManager",
+    "get_rate_manager",
+    "PlatformConfig",
+
+    # 增强基类
+    "EnhancedBaseSearcher",
+    "RetryConfig",
+
+    # 缓存
+    "SearchCache",
+    "SearchCacheManager",
+    "get_cache_manager",
+    "CacheConfig",
+    "cached_search",
+
+    # 编排器
+    "SearchOrchestrator",
+    "SearchStrategy",
+    "SearchConfig",
+    "OrchestratorConfig",
+    "get_orchestrator",
+    "quick_search",
+
+    # 策略
+    "SearchScenario",
+    "ScenarioConfig",
+    "get_search_config",
+    "get_orchestrator_config",
+    "get_sources_for_scenario",
+    "search_for_scenario",
 ]

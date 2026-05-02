@@ -9,13 +9,15 @@ DigestReportAgent - 学术资讯快报Agent
 支持多种报告类型的差异化生成策略。
 """
 from typing import Any, Dict, List, Optional
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 from datetime import datetime, timedelta
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class DigestReportAgent(PaperAgentBase):

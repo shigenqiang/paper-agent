@@ -8,14 +8,15 @@
 4. 配置合并
 """
 import os
-import logging
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 from dataclasses import dataclass, field
 
 from .exceptions import ConfigurationError
 
-logger = logging.getLogger(__name__)
+# 使用新的日志系统
+from src.agents_v2.logging_config import get_logging_logger
+logger = get_logging_logger(__name__)
 
 # yaml is optional - graceful fallback if not installed
 try:

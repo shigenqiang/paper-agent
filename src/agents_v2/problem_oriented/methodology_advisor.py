@@ -10,22 +10,75 @@ MethodologyAdvisorAgent - 方法指导Agent
 - 识别方法漏洞
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 def _clean_json_markdown(text: str) -> str:
-    """清理JSON markdown格式（去除```json...```包裹）"""
+    """清理JSON markdown格式（去除```json...```包裹），并提取纯JSON"""
     import re
+    if not text:
+        return ""
+
+    # 去除 ```json ... ``` 包裹
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
+    # 去除 ``` ... ``` 包裹
     text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
-    return text.strip()
+    text = text.strip()
+
+    if not text:
+        return ""
+
+    # 如果不是以 { 开头，尝试找到第一个 { 的位置
+    if not text.startswith('{'):
+        match = re.search(r'\{', text)
+        if match:
+            text = text[match.start():]
+
+    # 尝试只提取第一个完整的JSON对象（处理JSON后有多余内容的情况）
+    if text.startswith('{'):
+        try:
+            # 尝试标准 json.loads
+            json.loads(text)
+            return text
+        except json.JSONDecodeError:
+            # 如果失败，尝试找到匹配的闭合括号
+            start = text.index('{')
+            depth = 0
+            end_pos = -1
+
+            for i, c in enumerate(text[start:], start):
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end_pos = i + 1
+                        break
+
+            if end_pos > 0:
+                extracted = text[start:end_pos]
+                try:
+                    json.loads(extracted)
+                    return extracted
+                except json.JSONDecodeError:
+                    # Try removing trailing content after the closing brace
+                    for trim_end in range(end_pos - 1, start, -1):
+                        trimmed = text[start:trim_end]
+                        try:
+                            json.loads(trimmed)
+                            return trimmed
+                        except json.JSONDecodeError:
+                            continue
+
+    return text
 
 
 class MethodologyAdvisorAgent(ProblemAgentBase):
@@ -54,6 +107,12 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
             description="研究方法论指导",
             system_prompt=system_prompt
         )
+
+    def _safe_get_evaluation(self, method_evaluation: Any, key: str, default: Any) -> Any:
+        """安全获取字典值，避免对非字典类型调用get"""
+        if isinstance(method_evaluation, dict):
+            return method_evaluation.get(key, default)
+        return default
 
     async def diagnose(
         self,
@@ -103,7 +162,13 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
 
             # 计算质量分数
             rigor_score = 1.0 - (len(rigor_issues) / 10)
-            quality_score = round(rigor_score * 0.7 + method_evaluation.get("suitability", 0.5) * 0.3, 2)
+            # 获取 suitability 并确保是数值类型
+            suitability = self._safe_get_evaluation(method_evaluation, "suitability", 0.5)
+            try:
+                suitability = float(suitability) if suitability else 0.5
+            except (ValueError, TypeError):
+                suitability = 0.5
+            quality_score = round(rigor_score * 0.7 + suitability * 0.3, 2)
 
             return AgentOutput(
                 success=True,
@@ -167,11 +232,25 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
                 self.logger.error(f"[{cls_name}:154] LLM返回空响应")
                 return []
             content = _clean_json_markdown(response)
-            data = json.loads(content)
+            if not content:
+                self.logger.error(f"[{cls_name}:215] Cleaned content is empty")
+                return []
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                # Try regex extraction on original response
+                import re
+                match = re.search(r'\{.*\}', response, re.DOTALL)
+                if match:
+                    try:
+                        data = json.loads(match.group())
+                    except Exception as e2:
+                        self.logger.warning(f"[{cls_name}:244] Regex extraction failed: {e2}")
+                        return []
+                else:
+                    self.logger.warning(f"[{cls_name}:247] No JSON found in response")
+                    return []
             return data.get("methods", [])
-        except json.JSONDecodeError as e:
-            self.logger.error(f"[{cls_name}:158] Method recommendation failed (JSON解析错误): {e}")
-            return []
         except ValueError as e:
             self.logger.error(f"[{cls_name}:160] Method recommendation failed: {e}")
             return []
@@ -218,11 +297,19 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
                 self.logger.error(f"[{cls_name}:215] LLM返回空响应")
                 return {"suitability": 5.0, "suitable": False}
             content = _clean_json_markdown(response)
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                import re
+                match = re.search(r'\{.*\}', response, re.DOTALL)
+                if match:
+                    try:
+                        data = json.loads(match.group())
+                    except Exception:
+                        return {"suitability": 5.0, "suitable": False}
+                else:
+                    return {"suitability": 5.0, "suitable": False}
             return data
-        except json.JSONDecodeError as e:
-            self.logger.error(f"[{cls_name}:219] Method evaluation failed (JSON解析错误): {e}")
-            return {"suitability": 5.0, "suitable": False}
         except ValueError as e:
             self.logger.error(f"[{cls_name}:221] Method evaluation failed: {e}")
             return {"suitability": 5.0, "suitable": False}
@@ -230,34 +317,52 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
             self.logger.error(f"[{cls_name}:223] Method evaluation failed: {e}")
             return {"suitability": 5.0, "suitable": False}
 
-    async def _check_rigor(self, method_evaluation: Dict) -> List[str]:
+    async def _check_rigor(self, method_evaluation: Any) -> List[str]:
         """检查方法严谨性"""
         issues = []
 
-        if not method_evaluation.get("suitable", False):
+        if not self._safe_get_evaluation(method_evaluation, "suitable", False):
             issues.append("方法与研究问题匹配度不高")
 
-        suitability = method_evaluation.get("suitability", 5)
+        # 获取 suitability 并确保是数值类型
+        suitability = self._safe_get_evaluation(method_evaluation, "suitability", 5)
+        try:
+            suitability = float(suitability) if suitability else 5.0
+        except (ValueError, TypeError):
+            suitability = 5.0
         if suitability < 6:
             issues.append(f"方法适合度偏低: {suitability}/10")
 
-        feasibility = method_evaluation.get("feasibility", 5)
+        # 获取 feasibility 并确保是数值类型
+        feasibility = self._safe_get_evaluation(method_evaluation, "feasibility", 5)
+        try:
+            feasibility = float(feasibility) if feasibility else 5.0
+        except (ValueError, TypeError):
+            feasibility = 5.0
         if feasibility < 6:
             issues.append(f"方法可行性存疑: {feasibility}/10")
 
-        risks = method_evaluation.get("risks", [])
+        risks = self._safe_get_evaluation(method_evaluation, "risks", [])
         for risk in risks:
             issues.append(f"潜在风险: {risk}")
 
         return issues
 
-    async def _identify_problems(self, topic: str, method_evaluation: Dict) -> List[str]:
+    async def _identify_problems(self, topic: str, method_evaluation: Any) -> List[str]:
         """识别潜在方法论问题"""
+        # 安全处理 method_evaluation 序列化
+        if method_evaluation is None:
+            eval_str = "{}"
+        elif isinstance(method_evaluation, dict):
+            eval_str = json.dumps(method_evaluation, ensure_ascii=False, default=str)
+        else:
+            eval_str = str(method_evaluation)
+
         prompt = f"""
 识别以下研究可能存在的方法论问题：
 
 研究主题：{topic}
-方法评估：{json.dumps(method_evaluation, ensure_ascii=False)}
+方法评估：{eval_str}
 
 请识别常见问题：
 1. 样本量问题
@@ -278,18 +383,38 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
     ]
 }}
 """
+        cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            if not response or not response.strip():
+                self.logger.error(f"[{cls_name}:282] LLM返回空响应")
+                return []
+            content = _clean_json_markdown(response)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                import re
+                match = re.search(r'\{.*\}', response, re.DOTALL)
+                if match:
+                    try:
+                        data = json.loads(match.group())
+                    except Exception:
+                        return []
+                else:
+                    return []
             problems = data.get("problems", [])
             return [p.get("description", "") for p in problems]
+        except ValueError as e:
+            self.logger.error(f"[{cls_name}:288] Problem identification failed: {e}")
+            return []
         except Exception as e:
-            self.logger.error(f"[{self.__class__.__name__}:255] Problem identification failed: {e}")
+            self.logger.error(f"[{cls_name}:290] Problem identification failed: {e}")
+            return []
             return []
 
     async def _generate_recommendations(
         self,
-        method_evaluation: Dict,
+        method_evaluation: Any,
         rigor_issues: List[str],
         potential_problems: List[str]
     ) -> List[str]:

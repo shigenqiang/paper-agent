@@ -3,12 +3,14 @@
 
 使用交叉编码器进行精细化的两两排序，而非简单的向量相似度。
 """
-import logging
+
 from dataclasses import dataclass
 from typing import Any, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import numpy as np
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

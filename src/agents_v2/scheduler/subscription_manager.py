@@ -1,13 +1,15 @@
 """订阅管理 - 用户订阅配置和管理"""
-import logging
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 
 from ..paper_search.paper_flash import FlashType
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

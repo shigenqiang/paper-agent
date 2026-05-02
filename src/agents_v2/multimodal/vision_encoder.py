@@ -3,12 +3,14 @@
 
 使用CLIP/ViT集成进行图像编码和文本-图像相似度计算。
 """
-import logging
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
+from src.agents_v2.logging_config import get_logging_logger
+
 import numpy as np
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

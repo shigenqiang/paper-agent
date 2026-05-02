@@ -8,12 +8,14 @@ Workflow Observability - LangGraph 工作流可观测性
 4. 成本估算
 5. 结构化日志
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

@@ -6,11 +6,11 @@
 - LaTeX → 图片渲染
 - 公式解释
 """
-import logging
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

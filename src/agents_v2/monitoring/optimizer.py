@@ -6,11 +6,12 @@ Performance Optimizer - 性能优化器
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import asyncio
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class MetricType(str, Enum):

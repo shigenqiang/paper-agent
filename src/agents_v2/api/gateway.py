@@ -8,13 +8,15 @@ API网关 - API Gateway
 - /v1/audit - 审计日志
 - /v1/hitl - 人机协作管理
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class APIEndpoint:

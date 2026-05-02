@@ -6,11 +6,12 @@ Dashboard - Web监控面板
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from aiohttp import web
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import asyncio
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class DashboardData:

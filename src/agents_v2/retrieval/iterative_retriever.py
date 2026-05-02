@@ -3,13 +3,15 @@
 
 支持多轮检索-评估-修正循环。
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Callable
 import asyncio
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

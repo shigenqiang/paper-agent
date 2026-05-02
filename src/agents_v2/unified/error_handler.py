@@ -9,13 +9,15 @@
 5. log_error_with_context: 智能日志记录
 6. RecoveryStrategy: 恢复策略
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from typing import Any, Callable, Dict, List, Optional, Type
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ErrorSeverity(str, Enum):

@@ -7,14 +7,16 @@
 3. 增量更新 (Incremental Update)
 4. CDC支持 (Change Data Capture)
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Set, Tuple, Callable
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class BatchMode(str, Enum):

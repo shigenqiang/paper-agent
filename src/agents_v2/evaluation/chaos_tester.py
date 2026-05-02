@@ -12,6 +12,8 @@
 - 安全的故障注入
 - 全面的测试报告
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 import random
 import time
@@ -19,9 +21,8 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ChaosAction(str, Enum):

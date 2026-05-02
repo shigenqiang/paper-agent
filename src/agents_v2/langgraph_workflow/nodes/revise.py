@@ -12,9 +12,8 @@
 - 提供修改建议
 """
 from typing import Dict, Any
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ReviseNode:

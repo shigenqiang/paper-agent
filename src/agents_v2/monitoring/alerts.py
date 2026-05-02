@@ -8,6 +8,8 @@
 4. AlertRule: 告警规则引擎
 5. AlertAggregator: 告警聚合器
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import os
 import asyncio
@@ -18,12 +20,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
 from datetime import datetime, timedelta
-import logging
+
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class AlertSeverity(str, Enum):
@@ -93,7 +95,7 @@ class LogAlertChannel(AlertChannel):
 
     def __init__(self, min_severity: AlertSeverity = AlertSeverity.WARNING):
         self.min_severity = min_severity
-        self.logger = logging.getLogger("alerts")
+        self.logger = get_logging_logger("alerts")
 
     def send(self, alert: Alert):
         """发送告警到日志"""

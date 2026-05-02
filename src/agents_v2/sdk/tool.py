@@ -7,14 +7,16 @@ Converts Python functions into tool definitions with:
 - Tool registry for MCP-style tool listing
 - Async/sync function support
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import functools
 import inspect
 import json
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, get_type_hints
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 # Type hint → JSON Schema type mapping
 _TYPE_MAP = {

@@ -11,11 +11,13 @@ LLM Call with Fallback - 多层降级LLM调用
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 import hashlib
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ModelLevel(str, Enum):

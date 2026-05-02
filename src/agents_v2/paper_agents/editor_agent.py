@@ -7,12 +7,13 @@ EditorAgent - 修订编辑Agent
 - 格式调整
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class EditorAgent(PaperAgentBase):

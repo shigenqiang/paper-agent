@@ -3,12 +3,12 @@ Citation Graph - 引用图谱
 
 构建和管理论文之间的引用关系图。
 """
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 from collections import defaultdict
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

@@ -7,7 +7,9 @@ ProblemSupervisor - 问题导向论文写作协调者
 3. 完善阶段 - 多Agent协作润色
 """
 from typing import Any, Dict, List, Optional
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
@@ -21,7 +23,7 @@ from .chart_formatter import ChartFormatterAgent
 from .language_polisher import LanguagePolisherAgent
 from .plagiarism_checker import PlagiarismCheckerAgent
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ProblemSupervisor:

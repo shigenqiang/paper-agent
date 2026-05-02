@@ -12,13 +12,15 @@
 - 安全检查在LLM调用前执行
 - 错误信息不泄露系统细节
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import unicodedata
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

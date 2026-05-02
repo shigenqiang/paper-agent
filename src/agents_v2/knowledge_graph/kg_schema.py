@@ -7,12 +7,12 @@
 3. 约束管理 (唯一性约束、存在性约束)
 4. 查询优化提示
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class NodeType(str, Enum):

@@ -4,19 +4,18 @@ Writer Agent - LangGraph 工作流节点
 职责：
 - 基于大纲和选中论文逐章节撰写
 - 整合文献引用
-- 生成连贯的学术文本
-- 对每章节进行质量反思（SectionReflector）
-- 验证引用（CitationVerifier）
-
-集成现有的 DraftWriter (paper_agents/draft_writer.py)。
+- 章节并行生成（核心优化）
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
+import asyncio
 from typing import Dict, List, Optional
 
 from ..state import PaperAgentState, Paper
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class WriterAgent:
@@ -120,13 +119,13 @@ Write the section content:"""
             return self._build_section_template(section, papers)
 
     def execute(self, state: PaperAgentState) -> PaperAgentState:
-        """LangGraph 节点入口"""
+        """LangGraph 节点入口 - 章节并行撰写优化版"""
         outline = state.outline
         papers = state.selected_papers or state.papers
         sections = outline.get("sections", [])
         feedback = state.feedback
 
-        logger.info(f"[Writer] 开始撰写 {len(sections)} 个章节")
+        logger.info(f"[Writer] 开始撰写 {len(sections)} 个章节（并行模式）")
         start = time.time()
 
         if not sections:
@@ -135,54 +134,30 @@ Write the section content:"""
             state.current_phase = "review"
             return state
 
-        import asyncio
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        # 逐章节撰写
+        # 并行撰写所有章节
+        draft_contents = loop.run_until_complete(
+            self._write_sections_parallel(sections, papers, feedback, loop)
+        )
+
+        # 组装草稿
         draft_parts = [f"# {outline.get('title', 'Survey Paper')}", ""]
-        section_reflections = []
-
-        for section in sections:
-            section_content = loop.run_until_complete(
-                self._write_section_llm(section, papers, feedback)
-            )
-            draft_parts.append(section_content)
+        for content in draft_contents:
+            draft_parts.append(content)
             draft_parts.append("")
-
-            # 章节质量反思
-            try:
-                from ...writing.reflection_engine import SectionReflector
-                section_reflector = SectionReflector(llm_provider=self.llm)
-                reflection = loop.run_until_complete(
-                    section_reflector.reflect(section.get("title", ""), section_content)
-                )
-                section_reflections.append({
-                    "title": section.get("title", ""),
-                    "score": reflection.score,
-                    "passed": reflection.passed,
-                    "issues": reflection.issues,
-                })
-                logger.info(f"[Writer] 章节 '{section.get('title', '')}' 反思: score={reflection.score:.3f}")
-            except Exception as e:
-                logger.debug(f"[Writer] 章节反思跳过: {e}")
 
         state.draft = "\n".join(draft_parts)
         state.current_phase = "review"
 
-        # 存储章节反思结果
-        if section_reflections:
-            state["section_reflections"] = section_reflections
-
-        # 引用验证（异步，非阻塞）
+        # 引用验证
         try:
-            from ...writing.citation_generator import CitationVerifier, Citation
-            verifier = CitationVerifier()
+            from ...writing.citation_generator import CitationVerifier
             import re
-            # 从草稿中提取引用标记
             citations_in_text = re.findall(r'\[(\d+(?:[,-]\d+)*)\]', state.draft)
             if citations_in_text:
                 logger.info(f"[Writer] 发现 {len(citations_in_text)} 处引用标记")
@@ -191,5 +166,40 @@ Write the section content:"""
             logger.debug(f"[Writer] 引用验证跳过: {e}")
 
         elapsed = time.time() - start
-        logger.info(f"[Writer] 写作完成，总长度 {len(state.draft)} 字符，耗时 {elapsed:.2f}s")
+        logger.info(f"[Writer] 写作完成（并行），总长度 {len(state.draft)} 字符，耗时 {elapsed:.2f}s")
         return state
+
+    async def _write_sections_parallel(
+        self,
+        sections: List[Dict],
+        papers: List[Paper],
+        feedback: List[str],
+        loop
+    ) -> List[str]:
+        """并行撰写所有章节
+
+        使用 asyncio.gather 实现章节并行生成，显著减少总耗时。
+        """
+        semaphore = asyncio.Semaphore(3)  # 限制并发数，避免API限流
+
+        async def write_section_with_semaphore(section: Dict) -> str:
+            async with semaphore:
+                return await self._write_section_llm(section, papers, feedback)
+
+        # 创建所有章节的写作任务
+        tasks = [write_section_with_semaphore(section) for section in sections]
+
+        # 并行执行
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 处理异常结果
+        contents = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning(f"[Writer] 章节 {i} 生成失败: {result}")
+                # 使用模板作为降级
+                contents.append(self._build_section_template(sections[i], papers))
+            else:
+                contents.append(result)
+
+        return contents

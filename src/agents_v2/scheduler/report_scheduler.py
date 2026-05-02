@@ -1,6 +1,8 @@
 """定时调度器 - 定时生成报告并推送"""
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Callable
@@ -20,7 +22,7 @@ from .subscription_manager import (
     get_subscription_manager
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ScheduleType(str, Enum):

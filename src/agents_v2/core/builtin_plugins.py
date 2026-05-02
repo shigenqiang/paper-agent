@@ -7,14 +7,16 @@
 3. CitationPlugin - 引用格式化
 """
 from typing import Any, Dict, List, Optional
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 
 from .plugins import (
     ToolPlugin, PluginMetadata, PluginType, PluginState
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class WebSearchPlugin(ToolPlugin):

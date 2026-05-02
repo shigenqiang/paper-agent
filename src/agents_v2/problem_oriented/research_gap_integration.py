@@ -7,7 +7,6 @@
 - 基于知识图谱路径分析的研究机会评估
 """
 from typing import Any, Dict, List, Optional, Set, Tuple
-import logging
 
 from .research_gap import (
     ResearchGapAnalyzer,
@@ -24,7 +23,7 @@ from .knowledge_graph import (
     ExtractedRelation
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class GapAwareKnowledgeGraphGenerator(KnowledgeGraphGenerator):

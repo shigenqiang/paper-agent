@@ -12,13 +12,15 @@
 - 发现问题后提供具体的修复建议
 - 不阻断生成流程，但标记需要人工审核的区域
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

@@ -5,7 +5,7 @@ Memory Integration Node - LangGraph 工作流记忆节点
 在检索前召回历史记忆，在筛选后记住检索结果，
 在最终输出时生成个性化响应。
 """
-import logging
+
 from typing import List, Optional
 
 from ...personalization.enhanced_memory_system import (
@@ -15,7 +15,7 @@ from ...personalization.enhanced_memory_system import (
 )
 from ..state import PaperAgentState
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class MemoryNode:

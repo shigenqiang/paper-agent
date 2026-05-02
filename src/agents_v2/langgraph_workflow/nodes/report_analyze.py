@@ -13,10 +13,11 @@
 """
 from typing import Dict, Any, List, Optional, Callable
 from collections import Counter
-import json
-import logging
+from src.agents_v2.logging_config import get_logging_logger
 
-logger = logging.getLogger(__name__)
+import json
+
+logger = get_logging_logger(__name__)
 
 
 class ReportAnalyzeNode:

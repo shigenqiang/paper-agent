@@ -3,12 +3,14 @@
 
 集成视觉编码器、图表分析、公式识别、流程图解析的多模态RAG系统。
 """
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
+from src.agents_v2.logging_config import get_logging_logger
+
 import numpy as np
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

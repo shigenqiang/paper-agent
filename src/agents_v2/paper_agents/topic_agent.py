@@ -8,13 +8,14 @@ TopicAgent - 主题选择Agent
 - 凝练具体研究问题
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..unified.error_handler import log_error_with_context
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class TopicAgent(PaperAgentBase):

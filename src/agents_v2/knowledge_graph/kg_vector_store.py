@@ -6,13 +6,15 @@
 2. 内存向量存储（演示用）
 3. 嵌入模型封装
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
+from src.agents_v2.logging_config import get_logging_logger
+
 import math
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

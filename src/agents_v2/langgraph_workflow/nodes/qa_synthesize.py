@@ -12,12 +12,14 @@
 - 为回答生成提供结构化数据
 """
 from typing import Dict, Any, List, Optional, Callable
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import re
-import logging
+
 from collections import Counter
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class QASynthesizeNode:

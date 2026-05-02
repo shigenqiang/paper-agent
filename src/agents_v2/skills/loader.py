@@ -13,7 +13,9 @@ Directory structure:
     references/        # Optional: additional reference docs
     assets/            # Optional: images, templates, etc.
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
 import os
 import yaml
@@ -21,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 SKILL_MD_FILENAME = "SKILL.md"
 DEFINITIONS_DIR = "definitions"

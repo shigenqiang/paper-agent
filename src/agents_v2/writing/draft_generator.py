@@ -8,14 +8,16 @@ DraftGeneratorAgent - 全文初稿生成Agent
 - 保持风格一致性
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
 import asyncio
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
 from .logic_coherence import LogicCoherenceChecker, SelfReviseManager, CoherenceReport
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class DraftGeneratorAgent(WritingAgentBase):

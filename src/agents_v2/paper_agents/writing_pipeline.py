@@ -6,7 +6,9 @@ Complete Writing Pipeline - 完整论文写作流程
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import asyncio
 
@@ -14,7 +16,7 @@ from .state import PaperState, PaperPhase, StateStatus, create_initial_state
 from .intent import IntentType, IntentClassifier
 from .validation import InputValidator, ValidationType, TextCleaner, QueryNormalizer
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class WritingPhase(str, Enum):

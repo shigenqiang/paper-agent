@@ -7,12 +7,14 @@ Human-In-the-Loop (HITL) Manager - 人机协作管理器
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 import time
-import logging
+
 import uuid
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class InterventionType(str, Enum):

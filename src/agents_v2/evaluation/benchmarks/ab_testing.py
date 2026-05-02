@@ -6,16 +6,18 @@ A/B测试框架 - Agent策略对比与统计检验
 - 统计显著性检验
 - 在线/离线评估
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import uuid
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from enum import Enum
 import random
 import math
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class TestTypeEnum(Enum):

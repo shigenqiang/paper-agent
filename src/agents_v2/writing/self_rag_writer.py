@@ -12,13 +12,15 @@ Self-RAG 生成控制器 - 用于论文写作的自我反思生成
 - 根据评估结果决定是否修订
 - 确保内容的原创性
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ReflectionType(str, Enum):

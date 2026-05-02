@@ -5,12 +5,14 @@ Checkpoint Manager - 检查点管理器
 """
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 from dataclasses import dataclass, field
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import json
-import logging
+
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

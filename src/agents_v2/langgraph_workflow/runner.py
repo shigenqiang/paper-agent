@@ -10,15 +10,15 @@ CLI 使用:
     from agents_v2.langgraph_workflow.runner import run_query
     result = run_query("deep learning in medical imaging")
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 from typing import Optional
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+s [%(name)s] %(levelname)s: %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 def run_query(

@@ -14,13 +14,15 @@
 - 生成时考虑章节间的衔接
 - 输出符合学术规范的章节内容
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ChapterType(str, Enum):

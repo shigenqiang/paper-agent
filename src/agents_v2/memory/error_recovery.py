@@ -8,12 +8,13 @@
 
 底层使用 core/error_recovery.py 的共享原语。
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 import time
 from typing import Any, Callable, Optional, TypeVar, Generic
 from dataclasses import dataclass
 from enum import Enum
-import logging
 
 from ..core.error_recovery import (
     CircuitBreaker,
@@ -25,7 +26,7 @@ from ..core.error_recovery import (
 
 T = TypeVar('T')
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class FailureType(Enum):

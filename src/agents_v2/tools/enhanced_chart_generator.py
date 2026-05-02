@@ -12,13 +12,15 @@ Enhanced Chart Generator - 交互式图表生成器
         ├── PlotlyChartMaker (交互式图表)
         └── StatisticalChartMaker (统计图表)
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
+
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 # 学术论文配色方案

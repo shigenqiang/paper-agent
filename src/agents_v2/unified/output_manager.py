@@ -12,16 +12,18 @@
 - 保留版本历史便于回溯
 - 增量更新避免重复处理
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import hashlib
 import json
-import logging
+
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ExportFormat(str, Enum):

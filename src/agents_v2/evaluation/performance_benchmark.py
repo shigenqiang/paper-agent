@@ -12,9 +12,11 @@
 - 多维度性能评估
 - 自动化报告生成
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 import time
-import logging
+
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
@@ -28,7 +30,7 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class BenchmarkType(str, Enum):

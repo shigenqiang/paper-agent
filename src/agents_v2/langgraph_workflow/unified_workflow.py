@@ -16,7 +16,9 @@
 - 复用现有节点
 - 保持状态一致性
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import uuid
 from typing import Optional
 
@@ -47,7 +49,7 @@ from .nodes.polish import PolishNode
 from .observability.tracer import create_tracer
 from ..writing.diff_manager import DiffManager
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 # HITL 中断点定义：在哪些节点前暂停等待人工审核
 HITL_INTERRUPT_POINTS = {

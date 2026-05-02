@@ -1,6 +1,8 @@
 """论文搜索Agent - 从arXiv和PubMed搜索统计学论文"""
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
-import logging
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
@@ -9,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 from .base_qa_agent import BaseQAAgent
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass
@@ -92,7 +94,7 @@ class PaperSearchAgent(BaseQAAgent):
         Returns:
             搜索结果字典
         """
-        self.logger.info(f"搜索论文: {query}")
+        self.logger.debug(f"搜索论文: {query}")
 
         context = context or {}
         source = context.get("source", "all")  # all, arxiv, pubmed
@@ -140,7 +142,7 @@ class PaperSearchAgent(BaseQAAgent):
             results.total_count = len(results.papers)
             results.search_time = asyncio.get_event_loop().time() - start_time
 
-            self.logger.info(f"找到 {results.total_count} 篇论文")
+            self.logger.debug(f"找到 {results.total_count} 篇论文")
 
             return {
                 "success": True,
@@ -186,17 +188,19 @@ class PaperSearchAgent(BaseQAAgent):
             # 尝试不同查询策略，从精确到宽泛
             queries_to_try = []
 
-            # 策略1: 完整查询（带日期过滤）
-            search_query = f"ti:{query} OR abs:{query}"
+            # 策略1: 使用all字段搜索（最简单最稳定）
+            queries_to_try.append(f"all:{query}")
+
+            # 策略2: 简单的 abs 搜索
+            queries_to_try.append(f"abs:{query}")
+
+            # 策略3: 简单的 ti 搜索
+            queries_to_try.append(f"ti:{query}")
+
+            # 策略4: 带日期过滤的all字段搜索
             start_date = datetime.now() - timedelta(days=time_range)
             date_query = f"submittedDate:[{start_date.strftime('%Y%m%d')} TO NOW]"
-            queries_to_try.append(f"({search_query}) AND {date_query}")
-
-            # 策略2: 去掉日期过滤
-            queries_to_try.append(search_query)
-
-            # 策略3: 仅用all字段搜索（最宽泛）
-            queries_to_try.append(f"all:{query}")
+            queries_to_try.append(f"all:{query} AND {date_query}")
 
             max_retries = 3
             for idx, search_query_str in enumerate(queries_to_try):
@@ -209,42 +213,42 @@ class PaperSearchAgent(BaseQAAgent):
                             "sortBy": "relevance"
                         })
                         url = f"{base_url}?{params}"
-                        self.logger.info(f"[PaperSearchAgent:214] arXiv请求 [{idx+1}/3]: {url[:150]}...")
+                        self.logger.debug(f"arXiv请求 [{idx+1}/4]: query={search_query_str[:80]}...")
 
                         with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
                             data = response.read().decode("utf-8")
-                            self.logger.info(f"[PaperSearchAgent:219] arXiv响应长度: {len(data)} bytes")
+                            self.logger.debug(f"arXiv响应长度: {len(data)} bytes")
 
                         papers = self._parse_arxiv_xml(data, query)
                         if papers:
-                            self.logger.info(f"[PaperSearchAgent:221] arXiv找到 {len(papers)} 篇论文")
+                            self.logger.debug(f"arXiv找到 {len(papers)} 篇论文")
                             return papers
                         # 没有结果但没有报错，继续尝试下一个策略
-                        self.logger.warning(f"[PaperSearchAgent:222] 策略{idx+1}返回0结果，继续...")
+                        self.logger.warning(f"策略{idx+1}返回0结果，继续...")
                         break
                     except urllib.error.HTTPError as e:
                         if e.code == 429:
                             # Rate limiting，等待后重试
                             wait_time = (retry + 1) * 5
-                            self.logger.warning(f"[PaperSearchAgent:229] arXiv API限流，等待{wait_time}秒后重试...")
+                            self.logger.warning(f"arXiv API限流，等待{wait_time}秒后重试...")
                             time.sleep(wait_time)
                             continue
                         elif e.code == 500:
                             # HTTP 500可能是查询格式问题，尝试简化
-                            self.logger.warning(f"[PaperSearchAgent:233] arXiv查询策略{idx+1}失败 (HTTP 500)")
+                            self.logger.warning(f"arXiv查询策略{idx+1}失败 (HTTP 500): query={search_query_str[:80]}...")
                             break
                         else:
-                            self.logger.warning(f"[PaperSearchAgent:235] arXiv查询策略{idx+1}失败 (HTTP {e.code})")
+                            self.logger.warning(f"arXiv查询策略{idx+1}失败 (HTTP {e.code}): query={search_query_str[:80]}...")
                             break
                     except Exception as e:
-                        self.logger.warning(f"[PaperSearchAgent:238] arXiv查询策略{idx+1}失败: {type(e).__name__}: {e}")
+                        self.logger.warning(f"arXiv查询策略{idx+1}失败: {type(e).__name__}: {e}")
                         break
 
-            self.logger.warning(f"[PaperSearchAgent:241] arXiv所有查询策略均未找到结果: {query}")
+            self.logger.warning(f"arXiv所有查询策略均未找到结果: {query}")
             return []
 
         except Exception as e:
-            self.logger.error(f"[PaperSearchAgent:244] arXiv搜索失败: {e}")
+            self.logger.error(f"arXiv搜索失败: {e}")
             return []
 
     async def _search_pubmed(
@@ -308,7 +312,7 @@ class PaperSearchAgent(BaseQAAgent):
 
             # 解析结果
             papers = self._parse_pubmed_summary(summary_data, query)
-            self.logger.info(f"PubMed找到 {len(papers)} 篇论文")
+            self.logger.debug(f"PubMed找到 {len(papers)} 篇论文")
             return papers
 
         except Exception as e:

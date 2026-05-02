@@ -10,17 +10,18 @@ LiteratureMapperAgent - 文献映射Agent
 - 生成文献地图
 """
 from typing import Any, Dict, List, Optional
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
-import logging
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 from ..paper_search.paper_search import PaperSearchAgent
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 def _clean_json_markdown(text: str) -> str:
-    """清理JSON markdown格式（去除```json...```包裹）"""
+    """清理JSON markdown格式（去除```json...```包裹），并提取纯JSON"""
     import re
     # 去除 ```json ... ``` 包裹
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
@@ -28,7 +29,51 @@ def _clean_json_markdown(text: str) -> str:
     # 去除 ``` ... ``` 包裹
     text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
-    return text.strip()
+    text = text.strip()
+
+    # 如果不是以 { 开头，尝试找到第一个 { 的位置
+    if text and not text.startswith('{'):
+        match = re.search(r'\{', text)
+        if match:
+            text = text[match.start():]
+            cls_name = "LiteratureMapperAgent"
+            logger.warning(f"[{cls_name}:30] JSON doesn't start with '{{', extracting from position {match.start()}")
+
+    # 尝试只提取第一个完整的JSON对象（处理JSON后有多余内容的情况）
+    if text.startswith('{'):
+        try:
+            # 尝试标准 json.loads
+            json.loads(text)
+            return text
+        except json.JSONDecodeError as e:
+            # 如果失败，尝试找到匹配的闭合括号
+            cls_name = "LiteratureMapperAgent"
+            logger.warning(f"[{cls_name}:40] JSON parse failed: {e}, attempting to extract complete JSON")
+
+            # 找到第一个 { 的位置，从那里开始找匹配的 }
+            start = text.index('{')
+            depth = 0
+            end_pos = -1
+
+            for i, c in enumerate(text[start:], start):
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end_pos = i + 1
+                        break
+
+            if end_pos > 0:
+                extracted = text[start:end_pos]
+                try:
+                    json.loads(extracted)
+                    logger.info(f"[{cls_name}:55] Successfully extracted complete JSON, length={end_pos}")
+                    return extracted
+                except json.JSONDecodeError:
+                    pass
+
+    return text
 
 
 class LiteratureMapperAgent(ProblemAgentBase):
@@ -171,22 +216,17 @@ class LiteratureMapperAgent(ProblemAgentBase):
                 logger.error(f"[{cls_name}:158] LLM响应为空格")
                 return [topic]
 
-            # 清理markdown代码块标记
+            # 清理markdown代码块标记（使用增强版本，可提取完整JSON）
             content = _clean_json_markdown(content)
 
-            data = json.loads(content)
-            return data.get("queries", [topic])
-        except json.JSONDecodeError as e:
-            logger.error(f"[{cls_name}:166] Query generation failed (JSON解析错误): {e}, response长度={len(response)}, 前100字符: {response[:100] if response else 'None'}")
-            # 尝试从响应中提取JSON
             try:
-                import re
-                match = re.search(r'\{.*\}', response, re.DOTALL)
-                if match:
-                    data = json.loads(match.group())
-                    return data.get("queries", [topic])
-            except Exception:
-                pass
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.warning(f"[{cls_name}:221] JSON parse failed: {e}, using fallback")
+                return [topic]
+            return data.get("queries", [topic])
+        except ValueError as e:
+            logger.error(f"[{cls_name}:178] Query generation failed: {e}")
             return [topic]
         except Exception as e:
             logger.error(f"[{cls_name}:178] Query generation failed: {e}")
@@ -203,20 +243,20 @@ class LiteratureMapperAgent(ProblemAgentBase):
 
         # 合并已有文献
         all_papers = list(existing_papers)
-        self.logger.info(f"[{cls_name}:189] 开始搜索文献，查询数量: {len(queries)}, 已有文献: {len(existing_papers)}")
+        self.logger.debug(f"开始搜索文献，查询数量: {len(queries)}, 已有文献: {len(existing_papers)}")
 
         async def search_query(query: str) -> List[Dict[str, Any]]:
             try:
-                self.logger.info(f"[{cls_name}:193] 搜索查询: {query[:50]}...")
+                # 注意：PaperSearchAgent 会记录 "搜索论文: {query}"，这里不再重复记录
                 result = await self.search_agent.execute(
                     query,
                     {"source": "all", "time_range": 365, "max_results": 10}
                 )
                 papers = result.get("papers", [])
-                self.logger.info(f"[{cls_name}:196] 查询 '{query[:30]}...' 返回 {len(papers)} 篇论文")
+                self.logger.debug(f"查询 '{query[:30]}...' 返回 {len(papers)} 篇论文")
                 return papers
             except Exception as e:
-                self.logger.error(f"[{cls_name}:198] Search failed for query '{query}': {e}")
+                self.logger.error(f"Search failed for query '{query}': {e}")
                 return []
 
         # 并行搜索
@@ -232,7 +272,7 @@ class LiteratureMapperAgent(ProblemAgentBase):
             if isinstance(result, list):
                 all_papers.extend(result)
 
-        self.logger.info(f"[{cls_name}:220] 搜索完成，总论文数: {len(all_papers)}")
+        self.logger.debug(f"搜索完成，总论文数: {len(all_papers)}")
 
         # 去重
         seen = set()
@@ -243,7 +283,7 @@ class LiteratureMapperAgent(ProblemAgentBase):
                 seen.add(title)
                 unique_papers.append(p)
 
-        self.logger.info(f"[{cls_name}:227] 去重后论文数: {len(unique_papers)}")
+        self.logger.debug(f"去重后论文数: {len(unique_papers)}")
         return unique_papers
 
     async def _categorize_papers(self, papers: List[Dict[str, Any]]) -> Dict[str, List]:
@@ -285,11 +325,12 @@ class LiteratureMapperAgent(ProblemAgentBase):
                 logger.error(f"[{cls_name}:282] LLM返回空响应")
                 return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
             content = _clean_json_markdown(response)
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.warning(f"[{cls_name}:327] Categorization JSON parse failed: {e}")
+                return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
             return data
-        except json.JSONDecodeError as e:
-            logger.error(f"[{cls_name}:286] Categorization failed (JSON解析错误): {e}")
-            return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
         except ValueError as e:
             logger.error(f"[{cls_name}:288] Categorization failed: {e}")
             return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
@@ -328,11 +369,12 @@ class LiteratureMapperAgent(ProblemAgentBase):
                 logger.error(f"[{cls_name}:325] LLM返回空响应")
                 return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
             content = _clean_json_markdown(response)
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.warning(f"[{cls_name}:371] Gap identification JSON parse failed: {e}")
+                return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
             return data.get("gaps", [])
-        except json.JSONDecodeError as e:
-            logger.error(f"[{cls_name}:329] Gap identification failed (JSON解析错误): {e}")
-            return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]
         except ValueError as e:
             logger.error(f"[{cls_name}:331] Gap identification failed: {e}")
             return [{"description": "Further research needed", "potential_direction": "Explore new methods"}]

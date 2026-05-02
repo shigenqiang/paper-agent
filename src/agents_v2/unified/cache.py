@@ -6,16 +6,18 @@
 2. LLMLCallOptimizer: LLM调用优化器
 3. ResultCache: 结果缓存
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import hashlib
 import json
-import logging
+
 import asyncio
 from typing import Any, Callable, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class CacheStrategy(str, Enum):

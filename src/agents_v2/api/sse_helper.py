@@ -3,14 +3,16 @@ SSE (Server-Sent Events) Helper for aiohttp
 
 Provides SSE streaming support for long-running LLM operations.
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import json
 import asyncio
 import time
-import logging
+
 from typing import Any, AsyncIterator, Optional
 from aiohttp import web
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class SSEResponse(web.StreamResponse):

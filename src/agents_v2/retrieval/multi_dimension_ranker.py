@@ -12,13 +12,13 @@
 - 灵活的权重调整
 - 多种排序策略
 """
-import logging
+
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class RankingStrategy(str, Enum):

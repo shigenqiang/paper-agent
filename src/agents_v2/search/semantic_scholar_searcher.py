@@ -2,71 +2,74 @@
 Semantic Scholar Searcher - 语义学术搜索
 
 搜索Semantic Scholar学术数据库。
-支持真实GraphQL API接入。
+
+限制说明:
+- 免费版: 每秒5次请求
+- 需要API Key获得更高配额
+- API Key环境变量: SEMANTIC_SCHOLAR_API_KEY
 """
-import logging
+
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import os
 from typing import Optional
 
-from .base_searcher import BaseSearcher, SearchResult, SearchResponse
+from .enhanced_base_searcher import EnhancedBaseSearcher, PlatformConfig, RetryConfig
+from .base_searcher import SearchResult, SearchResponse
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
-class SemanticScholarSearcher(BaseSearcher):
+class SemanticScholarSearcher(EnhancedBaseSearcher):
     """Semantic Scholar搜索器 - AI增强学术搜索"""
 
-    API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")
     BASE_URL = "https://api.semanticscholar.org/graph/v1"
+    API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")
 
-    def __init__(self):
-        super().__init__("semantic_scholar")
+    # 请求字段
+    PAPER_SEARCH_FIELDS = (
+        "paperId,title,abstract,authors,year,citationCount,venue,"
+        "externalIds,openAccessPdf,tldr,venue"
+    )
+    PAPER_DETAIL_FIELDS = (
+        "paperId,title,abstract,authors,year,citationCount,venue,"
+        "externalIds,openAccessPdf,tldr,references,citations"
+    )
 
-    async def _make_request(self, url: str, params: dict = None, max_retries: int = 3) -> dict:
-        """发送HTTP请求，带指数退避重试"""
-        import aiohttp
-        import asyncio
+    def __init__(self, rate_manager=None, api_key: str = None):
+        config = PlatformConfig(
+            name="semantic_scholar",
+            min_interval=0.2,         # 免费版5次/秒，即0.2秒间隔
+            max_requests_per_second=5,
+            max_requests_per_hour=18000,
+            max_requests_per_day=100000,
+            use_api_key=True,
+            api_key_env_var="SEMANTIC_SCHOLAR_API_KEY",
+        )
+        super().__init__("semantic_scholar", platform_config=config, rate_manager=rate_manager)
+        self._custom_api_key = api_key
 
-        headers = {"x-api-key": self.API_KEY} if self.API_KEY else {}
-        timeout = aiohttp.ClientTimeout(total=30)
+    @property
+    def api_key(self) -> Optional[str]:
+        if self._custom_api_key:
+            return self._custom_api_key
+        return super().api_key
 
-        for attempt in range(max_retries):
-            try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url, params=params, headers=headers) as resp:
-                        if resp.status == 429:
-                            wait_time = min(2 ** attempt * 1.5, 10)
-                            logger.warning(
-                                f"Semantic Scholar API rate limit (attempt {attempt + 1}/{max_retries}), "
-                                f"waiting {wait_time:.1f}s"
-                            )
-                            if attempt < max_retries - 1:
-                                await asyncio.sleep(wait_time)
-                                continue
-                            return {"data": [], "error": "Rate limit exceeded after retries"}
-                        if resp.status != 200:
-                            text = await resp.text()
-                            logger.error(f"Semantic Scholar API error: {resp.status} - {text}")
-                            return {"data": [], "error": f"API error: {resp.status}"}
-                        return await resp.json()
-            except asyncio.TimeoutError:
-                logger.warning(f"Semantic Scholar request timeout (attempt {attempt + 1}/{max_retries})")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(1)
-                    continue
-                return {"data": [], "error": "Request timeout after retries"}
-            except Exception as e:
-                logger.error(f"Semantic Scholar request failed: {e}")
-                return {"data": [], "error": str(e)}
-
-        return {"data": [], "error": "Max retries exceeded"}
-
-    async def search(self, query: str, max_results: int = 10) -> SearchResponse:
+    async def search(
+        self,
+        query: str,
+        max_results: int = 10,
+        year_filter: str = None,
+        venue_filter: str = None
+    ) -> SearchResponse:
         """搜索Semantic Scholar论文
 
         Args:
             query: 搜索查询
-            max_results: 最大结果数
+            max_results: 最大结果数 (最大100)
+            year_filter: 年份过滤 (如 "2024" 或 "2023-2024")
+            venue_filter: 期刊/会议过滤
 
         Returns:
             SearchResponse
@@ -76,10 +79,22 @@ class SemanticScholarSearcher(BaseSearcher):
             params = {
                 "query": query,
                 "limit": min(max_results, 100),
-                "fields": "title,abstract,authors,year,citationCount,venue,externalIds,openAccessPdf,tldr"
+                "fields": self.PAPER_SEARCH_FIELDS
             }
 
-            data = await self._make_request(url, params)
+            # 添加过滤
+            filters = []
+            if year_filter:
+                filters.append(f"year:{year_filter}")
+            if venue_filter:
+                filters.append(f"venue:{venue_filter}")
+
+            if filters:
+                params["filter"] = ",".join(filters)
+
+            headers = self._build_headers()
+
+            data = await self._make_request(url, params, headers)
 
             if "error" in data:
                 return self._create_response(query, [], self.name, data["error"])
@@ -107,17 +122,30 @@ class SemanticScholarSearcher(BaseSearcher):
         if not venue and paper.get("year"):
             venue = f"({paper.get('year')})"
 
+        # 构建URL
+        paper_id = paper.get("paperId", "")
+        url = f"https://www.semanticscholar.org/paper/{paper_id}"
+
+        # TLDR摘要
+        tldr = paper.get("tldr", {})
+        abstract = tldr.get("text", "") if isinstance(tldr, dict) else (paper.get("abstract", "") or "")
+
         return SearchResult(
-            paper_id=paper.get("paperId", ""),
+            paper_id=paper_id,
             title=paper.get("title", ""),
-            abstract=paper.get("abstract", "") or "",
+            abstract=abstract,
             authors=authors,
             year=paper.get("year", 0) or 0,
             venue=venue,
-            url=f"https://www.semanticscholar.org/paper/{paper.get('paperId', '')}",
+            url=url,
             citations=paper.get("citationCount", 0) or 0,
             doi=doi,
-            raw_data=paper
+            raw_data={
+                "s2_paper_id": paper_id,
+                "external_ids": external_ids,
+                "open_access_pdf": paper.get("openAccessPdf", {}),
+                "tldr": tldr,
+            }
         )
 
     async def get_paper(self, paper_id: str) -> Optional[SearchResult]:
@@ -131,12 +159,14 @@ class SemanticScholarSearcher(BaseSearcher):
         """
         try:
             url = f"{self.BASE_URL}/paper/{paper_id}"
-            params = {
-                "fields": "title,abstract,authors,year,citationCount,venue,externalIds,openAccessPdf,tldr,references"
-            }
+            params = {"fields": self.PAPER_DETAIL_FIELDS}
 
-            data = await self._make_request(url, params)
+            headers = self._build_headers()
+
+            data = await self._make_request(url, params, headers)
+
             if "error" in data:
+                logger.error(f"Get paper failed: {data['error']}")
                 return None
 
             return self._parse_paper(data)
@@ -145,8 +175,12 @@ class SemanticScholarSearcher(BaseSearcher):
             logger.error(f"Get Semantic Scholar paper failed: {e}")
             return None
 
-    async def get_citations(self, paper_id: str, max_results: int = 50) -> SearchResponse:
-        """获取论文引用
+    async def get_citations(
+        self,
+        paper_id: str,
+        max_results: int = 50
+    ) -> SearchResponse:
+        """获取论文引用（被引用的论文）
 
         Args:
             paper_id: 论文ID
@@ -159,10 +193,12 @@ class SemanticScholarSearcher(BaseSearcher):
             url = f"{self.BASE_URL}/paper/{paper_id}/citations"
             params = {
                 "limit": min(max_results, 100),
-                "fields": "title,abstract,authors,year,citationCount,venue,externalIds"
+                "fields": self.PAPER_SEARCH_FIELDS
             }
 
-            data = await self._make_request(url, params)
+            headers = self._build_headers()
+
+            data = await self._make_request(url, params, headers)
 
             if "error" in data:
                 return self._create_response(f"citations:{paper_id}", [], f"{self.name}_citations", data["error"])
@@ -174,7 +210,11 @@ class SemanticScholarSearcher(BaseSearcher):
             logger.error(f"Get citations failed: {e}")
             return self._create_response(f"citations:{paper_id}", [], f"{self.name}_citations", str(e))
 
-    async def get_references(self, paper_id: str, max_results: int = 50) -> SearchResponse:
+    async def get_references(
+        self,
+        paper_id: str,
+        max_results: int = 50
+    ) -> SearchResponse:
         """获取论文参考文献
 
         Args:
@@ -188,10 +228,12 @@ class SemanticScholarSearcher(BaseSearcher):
             url = f"{self.BASE_URL}/paper/{paper_id}/references"
             params = {
                 "limit": min(max_results, 100),
-                "fields": "title,abstract,authors,year,citationCount,venue,externalIds"
+                "fields": self.PAPER_SEARCH_FIELDS
             }
 
-            data = await self._make_request(url, params)
+            headers = self._build_headers()
+
+            data = await self._make_request(url, params, headers)
 
             if "error" in data:
                 return self._create_response(f"references:{paper_id}", [], f"{self.name}_references", data["error"])
@@ -203,7 +245,11 @@ class SemanticScholarSearcher(BaseSearcher):
             logger.error(f"Get references failed: {e}")
             return self._create_response(f"references:{paper_id}", [], f"{self.name}_references", str(e))
 
-    async def get_similar_papers(self, paper_id: str, max_results: int = 10) -> SearchResponse:
+    async def get_similar_papers(
+        self,
+        paper_id: str,
+        max_results: int = 10
+    ) -> SearchResponse:
         """获取相似论文
 
         Args:
@@ -217,10 +263,12 @@ class SemanticScholarSearcher(BaseSearcher):
             url = f"{self.BASE_URL}/paper/{paper_id}/similar"
             params = {
                 "limit": min(max_results, 20),
-                "fields": "title,abstract,authors,year,citationCount,venue,externalIds"
+                "fields": self.PAPER_SEARCH_FIELDS
             }
 
-            data = await self._make_request(url, params)
+            headers = self._build_headers()
+
+            data = await self._make_request(url, params, headers)
 
             if "error" in data:
                 return self._create_response(f"similar:{paper_id}", [], f"{self.name}_similar", data["error"])
@@ -231,3 +279,17 @@ class SemanticScholarSearcher(BaseSearcher):
         except Exception as e:
             logger.error(f"Get similar papers failed: {e}")
             return self._create_response(f"similar:{paper_id}", [], f"{self.name}_similar", str(e))
+
+    async def batch_get_papers(self, paper_ids: list) -> list:
+        """批量获取论文详情
+
+        Args:
+            paper_ids: 论文ID列表
+
+        Returns:
+            SearchResult列表
+        """
+        import asyncio
+
+        tasks = [self.get_paper(pid) for pid in paper_ids]
+        return await asyncio.gather(*tasks)

@@ -4,12 +4,12 @@ Multimodal Node - LangGraph 工作流多模态节点
 集成多模态检索器、图表分析器和公式识别器，
 为论文工作流添加图文理解能力。
 """
-import logging
+
 from typing import Any, Dict, List, Optional
 
 from ..state import PaperAgentState, Paper
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class MultimodalNode:

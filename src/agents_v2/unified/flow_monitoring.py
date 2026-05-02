@@ -12,8 +12,10 @@
 - 快速检测异常
 - 提供可视化界面
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
-import logging
+
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -21,7 +23,7 @@ from enum import Enum
 from collections import defaultdict
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class AlertLevel(str, Enum):

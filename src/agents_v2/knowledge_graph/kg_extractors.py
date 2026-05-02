@@ -6,14 +6,16 @@
 2. 关系提取 (Relation Extraction)
 3. 知识图谱生成 (Knowledge Graph Generation)
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import asyncio
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class EntityType(str, Enum):

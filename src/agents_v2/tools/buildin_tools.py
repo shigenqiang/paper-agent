@@ -3,12 +3,12 @@
 
 提供Paper Agent系统常用的内置工具
 """
-import logging
+
 from typing import Any, Dict, List, Optional
 from .tool_spec import ToolSpec, ParameterSpec, ParameterType
 from .registry import ToolRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 # ============== 搜索工具 ==============

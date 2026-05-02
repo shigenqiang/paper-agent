@@ -3,13 +3,15 @@ Plagiarism Checker - 查重检测器
 
 检测论文的原创性和重复率。
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 from collections import Counter
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 @dataclass

@@ -8,13 +8,15 @@ Chart Generator - 论文级图表生成工具
 - PDF/EPS矢量输出
 - 多面板组合图
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 import os
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ChartStyle:

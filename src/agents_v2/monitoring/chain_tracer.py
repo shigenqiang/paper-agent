@@ -9,10 +9,12 @@
 5. 全链路装饰器 (@chain_trace)
 6. 链路状态管理 (ChainState)
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import time
 import uuid
 import json
-import logging
+
 from typing import Any, Dict, List, Optional, Callable, TypeVar, Generic
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,7 +24,7 @@ from functools import wraps
 import threading
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class ChainPhase(str, Enum):

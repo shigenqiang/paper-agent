@@ -13,10 +13,11 @@ ResearchGapAnalyzer - 研究空白分析器
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-import json
-import logging
+from src.agents_v2.logging_config import get_logging_logger
 
-logger = logging.getLogger(__name__)
+import json
+
+logger = get_logging_logger(__name__)
 
 
 class GapType(Enum):

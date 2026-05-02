@@ -11,12 +11,14 @@ Translation Wrapper - 翻译封装
     translator = TranslationWrapper()
     result = await translator.process("中文输入", agent)
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 from typing import Any, Dict, Optional, Callable
-import logging
+
 import os
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class TranslationWrapper:

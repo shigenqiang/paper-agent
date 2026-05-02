@@ -4,11 +4,13 @@ CrossRef Searcher - CrossRef 学术搜索
 CrossRef 是出版商和学术组织的联盟，提供 DOI 解析和元数据搜索。
 免费 API，每小时 100 次请求。
 """
-import logging
+
+from src.agents_v2.logging_config import get_logging_logger
+
 from typing import List, Optional
 from .base_searcher import BaseSearcher, SearchResult, SearchResponse
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class CrossRefSearcher(BaseSearcher):

@@ -12,15 +12,16 @@
 - 完整的场景覆盖
 - 自动化的报告生成
 """
+from src.agents_v2.logging_config import get_logging_logger
+
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logging_logger(__name__)
 
 
 class TestType(str, Enum):
