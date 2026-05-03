@@ -4,6 +4,7 @@
 .PHONY: paper topic search docs
 .PHONY: docker-build docker-tag-latest docker-login docker-push
 .PHONY: ghcr-login ghcr-build ghcr-push ghcr hub
+.PHONY: paper-full paper-phase paper-test
 
 # ============ Config ============
 # Port config
@@ -132,44 +133,104 @@ topic:
 search:
 	python -c "import asyncio; from demos.run_demo import demo_paper_search; asyncio.run(demo_paper_search())"
 
+# ============ Paper Generation (模块化) ============
+
+# 全链路论文生成 (基于 UnifiedWorkflow)
+# 用法: make paper-full TOPIC="人工智能在教育领域"
+paper-full:
+	python demos/full_paper/runner.py "$(TOPIC)"
+
+# 全链路论文生成 + HITL 模式
+# 触发 HITL 时会暂停等待人工介入
+paper-full-hitl:
+	python demos/full_paper/runner.py "$(TOPIC)" --hitl
+
+# 测试单个阶段
+# 用法: make paper-phase PHASE=diagnostic
+paper-phase:
+	@python demos/full_paper/test_runner.py $(PHASE)
+
+# 测试完整流程（使用旧的 phases 模式）
+paper-test:
+	python demos/full_paper/test_runner.py --full
+
+# 测试 LangGraph Workflow（全链路单元测试）
+# 运行 test_e2e_workflow.py 验证工作流结构和节点
+paper-full-test:
+	cd . && python -m demos.full_paper.test_e2e_workflow
+
+# 测试 LangGraph Workflow 结构和边路由
+paper-langgraph-test:
+	cd . && python -m demos.full_paper.test_langgraph
+
+# ============ LangGraph Node 单元测试 ============
+# 测试各个节点的独立功能
+
+# 路由节点测试
+paper-test-router:
+	cd . && python -m demos.full_paper.test_langgraph --node router
+
+# 诊断节点测试
+paper-test-diagnostic:
+	cd . && python -m demos.full_paper.test_langgraph --node diagnostic
+
+# 选题节点测试
+paper-test-topic:
+	cd . && python -m demos.full_paper.test_langgraph --node topic
+
+# 文献节点测试
+paper-test-literature:
+	cd . && python -m demos.full_paper.test_langgraph --node literature
+
+# 方法论节点测试
+paper-test-methodology:
+	cd . && python -m demos.full_paper.test_langgraph --node methodology
+
+# 写作节点测试
+paper-test-writing:
+	cd . && python -m demos.full_paper.test_langgraph --node writing
+
+# 润色节点测试
+paper-test-polish:
+	cd . && python -m demos.full_paper.test_langgraph --node polish
+
+# 爬虫节点测试
+paper-test-crawler:
+	cd . && python -m demos.full_paper.test_langgraph --node crawler
+
+# 选择器节点测试
+paper-test-selector:
+	cd . && python -m demos.full_paper.test_langgraph --node selector
+
+# QA 节点测试
+paper-test-qa:
+	cd . && python -m demos.full_paper.test_langgraph --node qa
+
+# 运行所有 LangGraph Node 单元测试
+paper-test-all-nodes:
+	cd . && python -m demos.full_paper.test_langgraph --all
+
 docs:
 	@echo "API文档: http://localhost:8000/docs"
 	@start http://localhost:8000/docs 2>nul || open http://localhost:8000/docs 2>nul || echo "请手动打开: http://localhost:8000/docs"
 
 help:
-	@echo Available commands:
-	@echo(
-	@echo   Start:
-	@echo     make start           Start frontend and backend
-	@echo     make backend         Start backend API server (port 8000)
-	@echo     make frontend        Start frontend dev server (port 5173)
-	@echo(
-	@echo   Agent Commands:
-	@echo     make paper TOPIC='topic'  Full paper generation
-	@echo     make topic               Topic selection demo
-	@echo     make search              Paper search demo
-	@echo     make docs                Open API documentation
-	@echo(
-	@echo   Port management:
-	@echo     make kill-ports      Kill processes on ports
-	@echo     make kill-backend    Kill process on backend port
-	@echo     make kill-frontend   Kill process on frontend port
-	@echo(
-	@echo   Test:
-	@echo     make test            Run all tests
-	@echo     make test-api        Run API tests only
-	@echo     make test-e2e        Run e2e tests only
-	@echo(
-	@echo   Install:
-	@echo     make install         Install Python dependencies
-	@echo     make install-frontend Install frontend dependencies
-	@echo(
-	@echo   Docker:
-	@echo     make ghcr              Push to GitHub Container Registry (一键)
-	@echo     make hub              Push to Docker Hub (一键)
-	@echo     make docker-build     Build Docker image locally
-	@echo     make ghcr-build       Build for ghcr.io
-	@echo(
-	@echo   Tools:
-	@echo     make clean           Clean cache
-	@echo     make help            Show this help
+	@echo Available commands
+	@echo ---
+	@echo Start: make start / make backend / make frontend
+	@echo Paper: make paper TOPIC=... / make paper-full TOPIC=...
+	@echo Paper HITL: make paper-full-hitl TOPIC=...
+	@echo Paper phases: make paper-phase PHASE=diagnostic
+	@echo Test: make paper-test / make paper-full TOPIC=...
+	@echo LangGraph Test: make paper-full-test / make paper-langgraph-test
+	@echo Node Tests:
+	@echo   make paper-test-router / make paper-test-diagnostic
+	@echo   make paper-test-topic / make paper-test-literature
+	@echo   make paper-test-methodology / make paper-test-writing
+	@echo   make paper-test-polish / make paper-test-crawler
+	@echo   make paper-test-selector / make paper-test-qa
+	@echo   make paper-test-all-nodes
+	@echo Port mgmt: make kill-ports / make kill-backend / make kill-frontend
+	@echo Test cmds: make test / make test-api / make test-e2e
+	@echo Docker: make ghcr / make docker-build
+	@echo Tools: make clean

@@ -34,6 +34,24 @@ class RouteNode:
             fallback_keyword_matching=True
         )
 
+    def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """同步执行入口（兼容 LangGraph 节点调用）
+
+        Args:
+            state: 当前状态
+
+        Returns:
+            更新后的状态
+        """
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        return loop.run_until_complete(self.__call__(state))
+
     async def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """执行路由分类
 
@@ -44,6 +62,15 @@ class RouteNode:
             更新后的状态，添加 intent 和 route_path 字段
         """
         user_query = state.get("user_query", "")
+
+        # 如果外部已经设置了明确的 route_path，优先使用
+        if state.get("_route_path_set") and state.get("route_path"):
+            intent_str = state.get("intent", "unknown")
+            route_path = state["route_path"]
+            state["intent_confidence"] = 1.0
+            state["suggested_agents"] = []
+            logger.info(f"Using explicit route_path: {route_path} (intent: {intent_str})")
+            return state
 
         if not user_query:
             logger.warning("Empty user query, defaulting to UNKNOWN intent")
