@@ -519,14 +519,14 @@ class TopicRefinerAgent(ProblemAgentBase):
     def _calculate_quality_score(self, feasibility: Dict, novelty: Dict) -> float:
         """计算综合质量分数"""
         try:
-            fea_raw = feasibility.get("overall_score", 5.0)
-            nov_raw = novelty.get("novelty_score", 5.0)
-            # 处理可能的字符串类型或None值
-            fea_score = float(fea_raw) / 10.0 if fea_raw is not None else 0.5
-            nov_score = float(nov_raw) / 10.0 if nov_raw is not None else 0.5
+            fea_raw = feasibility.get("overall_score")
+            nov_raw = novelty.get("novelty_score")
+            # 处理可能的字符串类型或None值，None返回0
+            fea_score = float(fea_raw) / 10.0 if fea_raw is not None else 0.0
+            nov_score = float(nov_raw) / 10.0 if nov_raw is not None else 0.0
         except (TypeError, ValueError, AttributeError):
-            fea_score = 0.5
-            nov_score = 0.5
+            fea_score = 0.0
+            nov_score = 0.0
 
         # 综合评分：可行性60%，创新性40%
         return round(fea_score * 0.6 + nov_score * 0.4, 2)
