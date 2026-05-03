@@ -363,14 +363,13 @@ class LiteratureAgent(PaperAgentBase):
         # 合并结果（使用local_papers_map已去重）
         all_papers = list(local_papers_map.values())
 
-        # 如果没有找到论文，触发 fallback 多平台搜索
-        if not all_papers:
-            logger.warning("主搜索未找到论文，触发 fallback 多平台搜索")
-            fallback_tasks = [fallback_search(q.get("query", "")) for q in queries[:4]]
-            fallback_results = await asyncio.gather(*fallback_tasks, return_exceptions=True)
-            for papers in fallback_results:
-                if isinstance(papers, list):
-                    all_papers.extend(papers)
+        # 并行触发多平台搜索（与主搜索并行进行，补充结果）
+        logger.info("并行触发多平台 fallback 搜索...")
+        fallback_tasks = [fallback_search(q.get("query", "")) for q in queries[:4]]
+        fallback_results = await asyncio.gather(*fallback_tasks, return_exceptions=True)
+        for papers in fallback_results:
+            if isinstance(papers, list):
+                all_papers.extend(papers)
 
         # 如果本地已有相关论文，打印日志
         if all_papers:
