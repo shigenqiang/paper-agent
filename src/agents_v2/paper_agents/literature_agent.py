@@ -300,7 +300,7 @@ class LiteratureAgent(PaperAgentBase):
                 from ...search.base_searcher import SearchResponse
 
                 # 直接使用各平台搜索器（SearchFactory 会自动创建）
-                searcher_names = ["openalex", "arxiv", "semantic_scholar", "pubmed", "crossref", "base"]
+                searcher_names = ["openalex", "arxiv", "semantic_scholar", "pubmed", "crossref"]
                 fallback_papers = []
                 semaphore = asyncio.Semaphore(2)
 
