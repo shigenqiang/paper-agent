@@ -242,20 +242,30 @@ def test_diagnostic_node():
 
         result = node.execute(state)
         print(f"  ✓ execute() 完成")
-        print(f"     diagnostic_result: {bool(result.get('diagnostic_result'))}")
 
         diag_result = result.get("diagnostic_result", {})
         quality_score = diag_result.get("quality_score", 0)
         problems = diag_result.get("problems", [])
+        recommendations = diag_result.get("recommendations", [])
 
+        print(f"     diagnostic_result: {bool(diag_result)}")
         print(f"     quality_score: {quality_score:.3f}")
         print(f"     problems 数量: {len(problems)}")
 
+        if recommendations:
+            print(f"\n  === 诊断建议 ({len(recommendations)} 条) ===")
+            for i, rec in enumerate(recommendations[:5], 1):
+                if rec:
+                    rec_clean = rec.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                    print(f"    {i}. {rec_clean[:100]}...")
+        else:
+            print(f"\n  (无建议)")
+
         if quality_score > 0:
-            print("  ✓ LLM API 调用成功")
+            print("\n  ✓ LLM API 调用成功")
             return True
         else:
-            print("  ✗ LLM API 调用失败，质量分为 0")
+            print("\n  ✗ LLM API 调用失败，质量分为 0")
             return False
 
     except Exception as e:
@@ -308,6 +318,8 @@ def test_topic_node():
             if title and title != "N/A":
                 print(f"     topic 标题: {title[:50]}...")
             print(f"     quality_score: {quality:.3f}")
+            if topic_result:
+                print(f"     topic_result: {topic_result}")
             print("  ✓ LLM API 调用成功")
             return True
         else:
@@ -415,7 +427,25 @@ def test_methodology_node():
             print(f"     方法数量: {methods_count}")
             print(f"     quality_score: {quality:.3f}")
             if meth_result:
-                print(f"     methodology_result: {meth_result}")
+                rec_methods = meth_result.get("recommended_methods", [])
+                if rec_methods:
+                    print(f"\n     ===== 推荐方法详情 =====")
+                    for i, m in enumerate(rec_methods, 1):
+                        name = m.get('name', '未知')
+                        applicability = m.get('applicability', '')
+                        pros = m.get('pros', '')
+                        cons = m.get('cons', '')
+                        data_req = m.get('data_requirements', '')
+                        print(f"     {i}. {name}")
+                        if applicability:
+                            print(f"        适用场景: {applicability}")
+                        if pros:
+                            print(f"        优点: {pros}")
+                        if cons:
+                            print(f"        缺点: {cons}")
+                        if data_req:
+                            print(f"        数据要求: {data_req}")
+                        print()
             print("  ✓ LLM API 调用成功")
             return True
         else:
@@ -467,12 +497,13 @@ def test_writing_node():
 
         if success or outline or draft:
             print(f"     outline: {bool(outline)}")
-            print(f"     draft 长度: {len(draft)}")
+            draft_str = draft if isinstance(draft, str) else str(draft)
+            print(f"     draft 长度: {len(draft_str)}")
             print(f"     scores: outline={outline_score:.3f}, draft={draft_score:.3f}")
             if outline:
                 print(f"     outline 内容: {outline}")
-            if draft:
-                print(f"     draft 内容: {draft[:500]}...")
+            if draft_str:
+                print(f"     draft 内容: {draft_str[:500]}...")
             print("  ✓ LLM API 调用成功")
             return True
         else:
@@ -504,7 +535,11 @@ def test_polish_node():
 
         state = PaperAgentState()
         state.user_query = "人工智能在教育领域的应用"
-        state.draft = "这是草稿内容"
+        state.draft = """随着人工智能技术的快速发展，其在教育领域的应用日益广泛。本研究探讨了AI在个性化学习、智能辅导系统和教育评估中的应用效果。
+
+首先，AI技术可以通过分析学生的学习数据，实现个性化的学习路径推荐。其次，智能辅导系统能够为学生提供24小时的学习支持，帮助他们解决学习中的问题。最后，AI在教育评估中的应用可以更准确地评价学生的学习成果。
+
+研究表明，AI技术在教育领域具有巨大的潜力，但仍面临一些挑战，如数据隐私和算法公平性问题。"""
 
         print(f"  ✓ 测试状态创建成功")
 
@@ -524,6 +559,8 @@ def test_polish_node():
         if polish_success or polished:
             print(f"     polished 长度: {len(polished)}")
             print(f"     quality_score: {quality_score:.3f}")
+            if polished:
+                print(f"     polished 内容: {polished[:300]}...")
             print("  ✓ LLM API 调用成功")
             return True
         else:
