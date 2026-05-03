@@ -32,7 +32,7 @@ def _suppress_logs():
     for logger_name in [
         "literature_agent", "paper_search", "arxiv", "pubmed",
         "diagnostic", "topic", "literature", "methodology", "writing", "polish",
-        "writing_agent", "outline_agent", "draft_writer",
+        "writing_agent", "outline_agent", "draft_writer", "literature_mapper",
         "langgraph_workflow", "unified_workflow",
         "root"  # root logger
     ]:
