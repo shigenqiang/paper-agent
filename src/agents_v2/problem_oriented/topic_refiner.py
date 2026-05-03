@@ -39,39 +39,86 @@ def _clean_json_markdown(text: str) -> str:
     if not text:
         return ""
 
-    # 如果不是以 { 开头，尝试找到第一个 { 的位置
-    if not text.startswith('{'):
-        match = re.search(r'\{', text)
+    # 如果不是以 { 或 [ 开头，尝试找到第一个 { 或 [ 的位置
+    if not text.startswith('{') and not text.startswith('['):
+        match = re.search(r'[\[{]', text)
         if match:
             text = text[match.start():]
 
     # 尝试只提取第一个完整的JSON对象（处理JSON后有多余内容的情况）
-    if text.startswith('{'):
+    if text.startswith('{') or text.startswith('['):
         try:
             # 尝试标准 json.loads
             json.loads(text)
             return text
         except json.JSONDecodeError:
             # 如果失败，尝试找到匹配的闭合括号
-            start = text.index('{')
+            first_char = text[0] if text else None
+            start_char = '{' if first_char == '{' else '[' if first_char == '[' else None
+
+            if not start_char:
+                return text
+
+            opening_mark = start_char
+            closing_mark = '}' if start_char == '{' else ']'
+
+            start = 0
             depth = 0
             end_pos = -1
 
-            for i, c in enumerate(text[start:], start):
-                if c == '{':
+            for i, c in enumerate(text):
+                if c == opening_mark:
                     depth += 1
-                elif c == '}':
+                elif c == closing_mark:
                     depth -= 1
                     if depth == 0:
                         end_pos = i + 1
                         break
 
             if end_pos > 0:
-                extracted = text[start:end_pos]
+                extracted = text[:end_pos]
                 try:
                     json.loads(extracted)
                     return extracted
                 except json.JSONDecodeError:
+                    # 如果提取失败，尝试查找下一个JSON对象的开始
+                    next_start = end_pos
+                    while next_start < len(text):
+                        # 跳过空白字符
+                        while next_start < len(text) and text[next_start] in ' \t\n\r':
+                            next_start += 1
+                        if next_start >= len(text):
+                            break
+                        next_char = text[next_start]
+                        if next_char == '{' or next_char == '[':
+                            sub_text = text[next_start:]
+                            try:
+                                json.loads(sub_text)
+                                return sub_text
+                            except json.JSONDecodeError:
+                                inner_start = 0
+                                inner_depth = 0
+                                inner_opening = next_char
+                                inner_closing = '}' if next_char == '{' else ']'
+                                inner_end = -1
+                                for j, c2 in enumerate(sub_text):
+                                    if c2 == inner_opening:
+                                        inner_depth += 1
+                                    elif c2 == inner_closing:
+                                        inner_depth -= 1
+                                        if inner_depth == 0:
+                                            inner_end = j + 1
+                                            break
+                                if inner_end > 0:
+                                    extracted2 = sub_text[:inner_end]
+                                    try:
+                                        json.loads(extracted2)
+                                        return extracted2
+                                    except json.JSONDecodeError:
+                                        pass
+                                next_start += 1
+                        else:
+                            next_start += 1
                     pass
 
     return text
@@ -471,8 +518,15 @@ class TopicRefinerAgent(ProblemAgentBase):
 
     def _calculate_quality_score(self, feasibility: Dict, novelty: Dict) -> float:
         """计算综合质量分数"""
-        fea_score = feasibility.get("overall_score", 5.0) / 10.0
-        nov_score = novelty.get("novelty_score", 5.0) / 10.0
+        try:
+            fea_raw = feasibility.get("overall_score", 5.0)
+            nov_raw = novelty.get("novelty_score", 5.0)
+            # 处理可能的字符串类型或None值
+            fea_score = float(fea_raw) / 10.0 if fea_raw is not None else 0.5
+            nov_score = float(nov_raw) / 10.0 if nov_raw is not None else 0.5
+        except (TypeError, ValueError, AttributeError):
+            fea_score = 0.5
+            nov_score = 0.5
 
         # 综合评分：可行性60%，创新性40%
         return round(fea_score * 0.6 + nov_score * 0.4, 2)

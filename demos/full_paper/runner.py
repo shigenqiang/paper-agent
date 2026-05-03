@@ -28,32 +28,18 @@ logger = get_logging_logger(__name__)
 
 def _suppress_logs():
     """抑制所有日志输出"""
-    # 设置所有logger为CRITICAL级别，完全抑制所有输出
-    for logger_name in [
-        # 核心模块
-        "literature_agent", "paper_search", "arxiv", "pubmed",
-        "diagnostic", "topic", "literature", "methodology", "writing", "polish",
-        "writing_agent", "outline_agent", "draft_writer",
-        # problem_oriented 模块
-        "topic_refiner", "literature_mapper", "methodology_advisor",
-        "argument_builder", "discussion_deepener", "language_polisher",
-        # langgraph
-        "langgraph_workflow", "unified_workflow",
-        # unified
-        "master_supervisor", "phase_supervisor", "circuit_breaker",
-        # root
-        "root"
-    ]:
-        logging.getLogger(logger_name).setLevel(logging.CRITICAL + 1)
-    # 抑制httpx等第三方库的日志
-    logging.getLogger("httpx").setLevel(logging.CRITICAL + 1)
-    logging.getLogger("openai").setLevel(logging.CRITICAL + 1)
-    logging.getLogger("httpcore").setLevel(logging.CRITICAL + 1)
-    logging.getLogger("urllib3").setLevel(logging.CRITICAL + 1)
-    # 抑制所有以_开头的logger
+    # 使用 logging.disable 完全禁用所有日志输出
+    logging.disable(logging.CRITICAL)
+    # 禁用所有handler的输出
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        handler.setLevel(logging.CRITICAL + 1)
+    # 禁用所有logger
     for logger_name in logging.Logger.manager.loggerDict:
-        if logger_name.startswith("_"):
-            logging.getLogger(logger_name).setLevel(logging.CRITICAL + 1)
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.CRITICAL + 1)
+        for handler in logger.handlers[:]:
+            handler.setLevel(logging.CRITICAL + 1)
 
 
 class FullPaperRunner:
