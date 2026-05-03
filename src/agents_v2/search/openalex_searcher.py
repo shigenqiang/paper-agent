@@ -83,8 +83,8 @@ class OpenAlexSearcher(EnhancedBaseSearcher):
             if filters:
                 params["filter"] = ",".join(filters)
 
-            # 排序: 相关度优先
-            params["sort"] = "relevance_score"
+            # 排序: 相关度优先 (只支持 descending)
+            params["sort"] = "relevance_score:desc"
 
             headers = self._build_headers()
 

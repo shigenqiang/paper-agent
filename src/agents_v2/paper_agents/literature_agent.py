@@ -292,6 +292,65 @@ class LiteratureAgent(PaperAgentBase):
                 logger.error(f"Search failed for query '{query}': {e}")
                 return []
 
+        # Fallback 搜索：当主搜索失败时尝试其他平台
+        async def fallback_search(query: str) -> List[Dict[str, Any]]:
+            """通过 SearchFactory 多平台 fallback（直接使用各搜索器）"""
+            try:
+                from ...search.search_factory import SearchFactory
+                from ...search.base_searcher import SearchResponse
+
+                # 直接使用各平台搜索器（SearchFactory 会自动创建）
+                searcher_names = ["openalex", "arxiv", "semantic_scholar"]
+                fallback_papers = []
+                semaphore = asyncio.Semaphore(2)
+
+                async def search_one(name: str) -> List[Dict[str, Any]]:
+                    async with semaphore:
+                        try:
+                            searcher = SearchFactory.get(name)
+                            if not searcher:
+                                return []
+                            result = await asyncio.wait_for(
+                                searcher.search(query, 5),
+                                timeout=8.0
+                            )
+                            if isinstance(result, SearchResponse):
+                                papers = []
+                                for r in result.results:
+                                    paper_dict = {
+                                        "paper_id": r.paper_id,
+                                        "title": r.title,
+                                        "abstract": r.abstract,
+                                        "authors": r.authors or [],
+                                        "year": r.year,
+                                        "url": r.url,
+                                        "source": name,
+                                        "citations": r.citations,
+                                        "relevance_score": 0.8
+                                    }
+                                    title_lower = paper_dict.get("title", "").lower().strip()
+                                    if title_lower and title_lower not in local_papers_map:
+                                        local_papers_map[title_lower] = paper_dict
+                                        papers.append(paper_dict)
+                                return papers
+                            return []
+                        except Exception as e:
+                            logger.warning(f"Fallback {name} search failed for '{query}': {e}")
+                            return []
+
+                # 并行搜索多个平台
+                results = await asyncio.gather(*[search_one(n) for n in searcher_names], return_exceptions=True)
+                for papers in results:
+                    if isinstance(papers, list):
+                        fallback_papers.extend(papers)
+
+                if fallback_papers:
+                    logger.info(f"Fallback search found {len(fallback_papers)} papers for '{query}'")
+                return fallback_papers
+            except Exception as e:
+                logger.warning(f"Fallback search failed for '{query}': {e}")
+                return []
+
         # 并行搜索（限制并发数）
         semaphore = asyncio.Semaphore(3)
         async def bounded_search(q):
@@ -303,6 +362,15 @@ class LiteratureAgent(PaperAgentBase):
 
         # 合并结果（使用local_papers_map已去重）
         all_papers = list(local_papers_map.values())
+
+        # 如果没有找到论文，触发 fallback 多平台搜索
+        if not all_papers:
+            logger.warning("主搜索未找到论文，触发 fallback 多平台搜索")
+            fallback_tasks = [fallback_search(q.get("query", "")) for q in queries[:4]]
+            fallback_results = await asyncio.gather(*fallback_tasks, return_exceptions=True)
+            for papers in fallback_results:
+                if isinstance(papers, list):
+                    all_papers.extend(papers)
 
         # 如果本地已有相关论文，打印日志
         if all_papers:
