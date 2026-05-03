@@ -7,205 +7,198 @@
 ```
 paper_agents/
 ├── __init__.py              # 导出5个Agent
-├── base_paper_agent.py     # PaperAgent基类 (11KB)
-├── topic_agent.py          # 选题Agent (19KB)
-├── literature_agent.py    # 文献调研Agent (12KB)
-├── outline_agent.py        # 大纲制定Agent (11KB)
-├── draft_writer.py        # 初稿撰写Agent (12KB)
-├── digest_agent.py        # 论文摘要Agent (20KB)
-└── deprecated/            # 已废弃模块
-    ├── annotations.py
-    ├── editor_agent.py
-    ├── reviewer_agent.py
-    ├── thesis_agent.py
-    ├── versioning.py
-    └── writing_pipeline.py
+├── base_paper_agent.py     # PaperAgent基类
+├── topic_agent.py          # 选题Agent
+├── literature_agent.py     # 文献调研Agent
+├── outline_agent.py        # 大纲制定Agent
+├── draft_writer.py         # 初稿撰写Agent
+└── digest_agent.py         # 学术资讯快报Agent
 ```
 
-## 二、Agent清单
+## 二、Agent清单 (5个)
 
-| Agent | 大小 | 职责 | 输入 | 输出 |
-|-------|------|------|------|------|
-| `TopicAgent` | 19KB | 选题生成与精炼 | 用户研究领域 | 候选课题列表 |
-| `LiteratureAgent` | 12KB | 文献检索与综述 | 研究课题 | 参考文献列表 |
-| `OutlineAgent` | 11KB | 大纲制定 | 参考文献 + 课题 | 论文大纲 |
-| `DraftWriterAgent` | 12KB | 初稿撰写 | 大纲 + 参考文献 | 论文初稿 |
-| `DigestAgent` | 20KB | 摘要生成 | 论文全文 | 摘要 |
+| Agent | 职责 | 输入 | 输出 |
+|-------|------|------|------|
+| `TopicAgent` | 选题生成与精炼 | 用户研究领域描述 | 候选课题列表 |
+| `LiteratureAgent` | 文献检索与综述 | 研究课题 | 文献列表+综述报告 |
+| `OutlineAgent` | 大纲制定 | 参考文献 + 课题 | 论文大纲 |
+| `DraftWriterAgent` | 分节撰写 | 大纲 + 参考文献 | 论文初稿 |
+| `DigestReportAgent` | 学术资讯快报 | 关键词/日期范围 | 快报报告 |
 
 ## 三、BasePaperAgent 基类
 
 ```python
-class BasePaperAgent(BaseAgent):
-    """PaperAgent基类"""
+class PaperAgentBase(EnglishFirstMixin, BaseAgent):
+    """Paper Agent基类 - 继承BaseAgent"""
 
-    def __init__(self, llm_config: LLMConfig, agent_name: str):
-        super().__init__(llm_config, agent_name)
-        self.max_retries = 3
-        self.timeout = 120
+    def __init__(self, name: str, llm_config: Optional[LLMConfig], description: str, system_prompt: str):
+        super().__init__(name, llm_config, description, system_prompt)
 
-    async def _execute_core(self, user_input: str, context: dict = None) -> AgentOutput:
-        """核心执行逻辑"""
+    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
+        """执行Agent主逻辑"""
         ...
+
+    async def _process_text_english(self, text: str) -> str:
+        """EnglishFirstMixin实现：用LLM处理英文文本"""
+        return await self._llm_call(text)
 ```
+
+特性: `EnglishFirstMixin` - 研究主题和章节信息先翻译为英文再处理，提升LLM理解质量
 
 ## 四、TopicAgent 选题Agent
 
 ```python
-class TopicAgent(BasePaperAgent):
+class TopicAgent(PaperAgentBase):
     """选题Agent - 生成和精炼研究课题"""
 
-    PROMPT_TEMPLATE = """你是一个学术研究顾问。
-根据用户的研究领域和兴趣，帮助生成具有创新性的研究课题。
-
-要求:
-1. 课题应具有明确的研究问题
-2. 课题应具有可操作性
-3. 课题应具有学术价值
-
-请输出JSON格式:
-{
-    "topics": [
-        {"title": "课题标题", "description": "课题描述", "novelty": "创新点"},
-        ...
-    ]
-}"""
+    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
+        """
+        输入: { "task_description": "用户研究兴趣描述" }
+        输出: {
+            "selected_topic": {...},
+            "alternative_topics": [...],
+            "domain_analysis": {...},
+            "all_candidates": [...]
+        }
+        """
 ```
 
 ## 五、LiteratureAgent 文献调研Agent
 
 ```python
-class LiteratureAgent(BasePaperAgent):
+class LiteratureAgent(PaperAgentBase):
     """文献调研Agent - 检索和综述文献"""
 
-    async def search_and_review(
-        self,
-        topic: str,
-        max_papers: int = 20
-    ) -> LiteratureReviewResult:
+    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
         """
-        1. 多源检索相关文献
-        2. 筛选高质量论文
-        3. 生成综述报告
+        输入: { "topic": "研究主题", "research_question": "具体问题" }
+        输出: {
+            "papers": [...],
+            "paper_analyses": [...],
+            "research_gaps": [...],
+            "search_queries": [...],
+            "total_found": int,
+            "total_analyzed": int
+        }
         """
-        # 并行搜索
-        search_results = await self._parallel_search(topic, max_papers)
 
-        # LLM筛选
-        selected = await self._llm_filter(search_results, top_k=10)
+    async def _generate_search_queries(self, topic: str) -> List[str]:
+        """生成8-12个搜索查询"""
 
-        # 生成综述
-        review = await self._generate_review(selected)
+    async def _multi_engine_search(self, queries: List[str]) -> List[Paper]:
+        """多引擎并行搜索"""
 
-        return LiteratureReviewResult(
-            papers=selected,
-            review=review,
-            citation_graph=self._build_citation_graph(selected)
-        )
+    async def _rank_papers(self, papers: List[Paper]) -> List[Paper]:
+        """质量筛选与排序"""
+
+    async def _deep_read(self, papers: List[Paper], top_k: int = 20) -> List[dict]:
+        """深度阅读Top N论文"""
+
+    async def _identify_gaps(self, analyses: List[dict]) -> List[str]:
+        """识别研究空白"""
 ```
 
 ## 六、OutlineAgent 大纲制定Agent
 
 ```python
-class OutlineAgent(BasePaperAgent):
-    """大纲制定Agent - 基于文献生成论文大纲"""
+class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
+    """大纲制定Agent - 设计论文结构"""
 
-    def generate_outline(
+    async def _design_structure(self, thesis: str) -> Dict[str, Any]:
+        """设计章节结构（英文优先模式）"""
+
+    async def _plan_chapters(
         self,
-        topic: str,
-        references: List[dict]
-    ) -> Outline:
-        """
-        1. 分析参考文献的研究内容
-        2. 提取关键研究点和方法
-        3. 生成层级化大纲
-        """
-        outline = Outline(
-            title=topic,
-            chapters=[
-                Chapter(
-                    title="Introduction",
-                    sections=["背景", "研究问题", "贡献点"]
-                ),
-                Chapter(
-                    title="Related Work",
-                    sections=["文献分类", "现有方法", "局限性"]
-                ),
-                Chapter(
-                    title="Method",
-                    sections=["问题定义", "方法论", "技术细节"]
-                ),
-                Chapter(
-                    title="Experiment",
-                    sections=["实验设置", "结果分析", "对比实验"]
-                ),
-                Chapter(
-                    title="Conclusion",
-                    sections=["工作总结", "未来工作"]
-                )
-            ]
-        )
-        return outline
+        structure: Dict[str, Any],
+        literature: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """规划各章节内容"""
+
+    async def _identify_key_arguments(
+        self,
+        thesis: str,
+        literature: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """确定关键论点"""
 ```
+
+**EnglishFirst特性**:
+- 研究主题先翻译为英文，提升LLM理解质量
+- 章节信息也进行英文处理
+- 通过 `EnglishFirstMixin` 实现
 
 ## 七、DraftWriterAgent 初稿撰写Agent
 
 ```python
-class DraftWriterAgent(BasePaperAgent):
+class DraftWriterAgent(PaperAgentBase):
     """初稿撰写Agent - 逐章节撰写论文"""
 
-    async def write_draft(
-        self,
-        outline: Outline,
-        references: List[dict]
-    ) -> Draft:
-        """
-        1. 按章节顺序生成内容
-        2. 引用相关论文
-        3. 保持上下文连贯性
-        """
-        sections = []
-        for chapter in outline.chapters:
-            section_content = await self._write_chapter(
-                chapter=chapter,
-                context={"outline": outline, "references": references}
-            )
-            sections.append(section_content)
+    async def _write_introduction(self, chapter: dict, context: dict) -> str:
+        """撰写引言章节"""
 
-        return Draft(
-            title=outline.title,
-            sections=sections,
-            citations=self._extract_citations(sections)
-        )
+    async def _write_literature_review(self, chapter: dict, context: dict) -> str:
+        """撰写文献综述章节"""
+
+    async def _write_methodology(self, chapter: dict, context: dict) -> str:
+        """撰写方法论章节"""
+
+    async def _write_results(self, chapter: dict, context: dict) -> str:
+        """撰写结果章节"""
+
+    async def _write_discussion(self, chapter: dict, context: dict) -> str:
+        """撰写讨论章节"""
+
+    async def _write_conclusion(self, chapter: dict, context: dict) -> str:
+        """撰写结论章节"""
 ```
 
-## 八、流水线协作
+## 八、DigestReportAgent 学术资讯快报Agent
+
+```python
+class DigestReportAgent(PaperAgentBase):
+    """学术资讯快报Agent"""
+
+    # 报告类型
+    DIGEST_TYPES = {
+        "daily": (500, 800, "今日热点 + 代表性论文5篇"),
+        "weekly": (1000, 1500, "本周概览 + 主题聚类 + 趋势分析"),
+        "monthly": (2000, 3000, "月度概览 + 深度分析 + 前沿展望")
+    }
+
+    async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> AgentOutput:
+        """
+        输入: { "papers": [...], "keywords": [...], "digest_type": "daily|weekly|monthly" }
+        输出: { "report": str, "theme_groups": [...], "paper_count": int }
+        """
+```
+
+## 九、流水线协作
 
 ```
+用户请求
+    │
+    ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Paper Agent Pipeline                          │
+│                    Paper Agent Pipeline                         │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  TopicAgent ─────────────────────────────────────────────────┐   │
+│  TopicAgent ─────────────────────────────────────────────────┐ │
 │      │                                                      │   │
 │      ▼                                                      │   │
-│  LiteratureAgent ──────────────────────────────────────────┼───┤   │
-│      │                                                      │   │
-│      ▼                                                      │   │
-│  OutlineAgent ─────────────────────────────────────────────┼───┤   │
-│      │                                                      │   │
-│      ▼                                                      │   │
-│  DraftWriterAgent ─────────────────────────────────────────┼───┤   │
-│      │                                                      │   │
-│      ▼                                                      │   │
-│  ReviewerAgent (外部) ──────────────────────────────────────┼───┤   │
-│      │                                                      │   │
-│      ▼                                                      │   │
-│  PolisherAgent (外部)                                        │   │
-│                                                                  │
+│  LiteratureAgent ──────────────────────────────────────────┼──▼──┤
+│      │                                                      │     │
+│      ▼                                                      │     │
+│  OutlineAgent ─────────────────────────────────────────────┼─────┤
+│      │                                                      │     │
+│      ▼                                                      │     │
+│  DraftWriterAgent ─────────────────────────────────────────┼─────┤
+│      │                                                      │     │
+│      ▼                                                      │     │
+│  (传递给writing模块进行润色)                                │     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-**更新日期**: 2026-05-02
+**更新日期**: 2026-05-03
 **基于代码**: `src/agents_v2/paper_agents/`

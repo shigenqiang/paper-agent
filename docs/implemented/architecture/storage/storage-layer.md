@@ -7,8 +7,10 @@
 ```
 storage/
 ├── __init__.py
-└── paper_db.py     # SQLite + ChromaDB 双存储
+└── paper_db.py     # SQLite 单一存储（无向量存储）
 ```
+
+> **注意**: 存储层 (storage/) 使用 SQLite 存储元数据。向量存储功能已移除至 `knowledge_graph/` 模块（使用 ChromaDB）。
 
 ## 二、Paper 数据结构
 
@@ -42,45 +44,54 @@ class Paper:
 ┌────────────────────────────────────────────────────────────┐
 │                    Storage Layer                            │
 ├────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │   SQLite        │  │   ChromaDB      │                  │
-│  │   (元数据)       │  │   (向量)        │                  │
-│  │                 │  │                 │                  │
-│  │  Paper表        │  │  paper_embeddings│                 │
-│  │  Citations表    │  │                 │                  │
-│  └────────┬────────┘  └────────┬────────┘                  │
-│           │                    │                           │
-│           ▼                    ▼                           │
+│  ┌─────────────────┐                                        │
+│  │   SQLite        │                                        │
+│  │   (元数据+向量)  │                                        │
+│  │                 │                                        │
+│  │  Paper表        │                                        │
+│  │  Citations表    │                                        │
+│  └────────┬────────┘                                        │
+│           │                                                 │
+│           ▼                                                 │
 │  ┌─────────────────────────────────────────────┐          │
-│  │  Paper DB (data/papers.db)                   │          │
-│  └─────────────────────────────────────────────┘          │
-│                                                        │
-│  ┌─────────────────────────────────────────────┐          │
-│  │  ChromaDB (data/chroma_db/)                   │          │
+│  │  PaperDatabase (data/papers.db)              │          │
 │  └─────────────────────────────────────────────┘          │
 └────────────────────────────────────────────────────────────┘
 ```
+
+> **变更记录**:
+> - v2.0: 原storage层移除ChromaDB向量存储，统一使用SQLite
+> - 知识图谱模块(knowledge_graph/)保留ChromaDB向量存储功能
 
 ## 四、存储路径
 
 ```
 data/
-├── papers.db         # SQLite数据库
-│   └── Paper表: id, title, authors, year, abstract, ...
-└── chroma_db/       # ChromaDB向量存储
-    └── paper_embeddings/
+└── papers.db         # SQLite数据库
+    └── Paper表: id, title, authors, year, abstract, ...
 ```
 
-## 五、核心功能
-
-### 5.1 论文CRUD
+## 五、核心功能 (PaperDatabase)
 
 ```python
-class PaperDB:
-    """论文数据库"""
+class PaperDatabase:
+    """论文数据库 - SQLite 存储"""
 
-    def insert_paper(self, paper: Paper) -> str:
-        """插入论文，返回paper_id"""
+    def save_paper(self, paper: Paper) -> str:
+        """保存论文，返回paper_id"""
+        ...
+
+    def save_papers_batch(self, papers: List[Paper]) -> int:
+        """批量保存论文，返回成功数量"""
+        ...
+
+    def find_by_fingerprint(
+        self,
+        title: str,
+        authors: List[str],
+        year: int
+    ) -> Optional[Paper]:
+        """通过指纹查重（MD5(title+authors+year)）"""
         ...
 
     def get_paper(self, paper_id: str) -> Optional[Paper]:
@@ -102,67 +113,60 @@ class PaperDB:
         ...
 ```
 
-### 5.2 向量搜索
+## 六、查重机制 (指纹识别)
 
 ```python
-class ChromaStore:
-    """ChromaDB向量存储"""
+def _compute_fingerprint(title: str, authors: str, year: int) -> str:
+    """
+    计算论文指纹用于去重
 
-    def add_embeddings(
-        self,
-        texts: List[str],
-        ids: List[str],
-        metadata: List[dict] = None
-    ):
-        """添加向量嵌入"""
-        ...
+    使用 MD5(title + authors + year) 生成唯一指纹
+    """
+    content = f"{title.lower()}|{authors lower()}|{year}"
+    return hashlib.md5(content.encode()).hexdigest()
 
-    def similarity_search(
-        self,
-        query_text: str,
-        top_k: int = 5
-    ) -> List[dict]:
-        """语义相似度搜索"""
-        ...
-```
-
-### 5.3 查重机制
-
-```python
-def check_duplicate(self, paper: Paper) -> Optional[str]:
+def find_by_fingerprint(
+    self,
+    title: str,
+    authors: List[str],
+    year: int
+) -> Optional[Paper]:
     """查重检测，返回已存在论文的ID"""
-    # 1. DOI精确匹配
-    if paper.doi:
-        existing = self.db.query(
-            "SELECT paper_id FROM papers WHERE doi = ?",
-            (paper.doi,)
-        )
-        if existing:
-            return existing[0]
+    # 1. 计算指纹
+    authors_str = "|".join(authors)
+    fingerprint = self._compute_fingerprint(title, authors_str, year)
 
-    # 2. 标题+作者+年份 模糊匹配
-    title_hash = hashlib.md5(paper.title.lower().encode()).hexdigest()
-    ...
+    # 2. 查询指纹表
+    existing = self.db.query(
+        "SELECT * FROM papers WHERE fingerprint = ?",
+        (fingerprint,)
+    )
+
+    if existing:
+        return Paper(**existing[0])
+
+    return None
 ```
 
-## 六、在工作流中的集成
+## 七、在工作流中的集成
 
 ```python
 # workflow_api.py
-from ..storage.paper_db import PaperDB
+from ..storage.paper_db import PaperDatabase
 
 class WorkflowAPI:
     def __init__(self):
-        self.paper_db = PaperDB()
+        self.paper_db = PaperDatabase()
 
     async def save_papers(self, papers: List[dict]):
         """保存论文到存储"""
         for paper_data in papers:
             paper = Paper(**paper_data)
-            self.paper_db.insert_paper(paper)
+            self.paper_db.save_paper(paper)
 ```
 
 ---
 
-**更新日期**: 2026-05-02
-**基于代码**: `src/agents_v2/storage/`
+**更新日期**: 2026-05-03
+**基于代码**: `src/agents_v2/storage/paper_db.py`
+**变更**: v2.0 移除 ChromaDB 向量存储，统一使用 SQLite
