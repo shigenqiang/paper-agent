@@ -16,6 +16,7 @@ import sys
 import os
 import time
 import json
+import logging
 
 from typing import Optional
 
@@ -23,6 +24,15 @@ from src.agents_v2.logging_config import get_logging_logger
 from src.agents_v2.langgraph_workflow.unified_workflow import UnifiedWorkflow
 
 logger = get_logging_logger(__name__)
+
+
+def _suppress_logs():
+    """抑制所有日志输出，只保留 error 以上级别"""
+    logging.getLogger("literature_agent").setLevel(logging.ERROR)
+    logging.getLogger("paper_search").setLevel(logging.ERROR)
+    logging.getLogger("arxiv").setLevel(logging.ERROR)
+    logging.getLogger("pubmed").setLevel(logging.ERROR)
+    # 可以添加更多logger来抑制
 
 
 class FullPaperRunner:
@@ -70,7 +80,8 @@ class FullPaperRunner:
         self,
         topic: str,
         enable_hitl: bool = None,
-        thread_id: str = ""
+        thread_id: str = "",
+        paper_only: bool = False
     ) -> dict:
         """
         运行全链路论文生成
@@ -79,16 +90,18 @@ class FullPaperRunner:
             topic: 用户请求/研究主题
             enable_hitl: 是否启用 HITL（覆盖初始化设置）
             thread_id: LangGraph 线程 ID（用于恢复）
+            paper_only: 是否仅输出论文内容（抑制所有中间输出）
 
         Returns:
             执行结果字典
         """
-        print("=" * 60)
-        print("全链路论文生成 (UnifiedWorkflow)")
-        print("=" * 60)
-        print(f"主题: {topic}")
-        print(f"HITL: {enable_hitl if enable_hitl is not None else self.enable_hitl}")
-        print()
+        if not paper_only:
+            print("=" * 60)
+            print("全链路论文生成 (UnifiedWorkflow)")
+            print("=" * 60)
+            print(f"主题: {topic}")
+            print(f"HITL: {enable_hitl if enable_hitl is not None else self.enable_hitl}")
+            print()
 
         start_time = time.time()
 
@@ -134,22 +147,23 @@ class FullPaperRunner:
             },
         }
 
-        # 打印结果摘要
-        print("\n" + "=" * 60)
-        print("执行结果")
-        print("=" * 60)
-        print(f"成功: {output['success']}")
-        print(f"完成阶段: {', '.join(output['phases_completed']) if output['phases_completed'] else '无'}")
+        if not paper_only:
+            # 打印结果摘要
+            print("\n" + "=" * 60)
+            print("执行结果")
+            print("=" * 60)
+            print(f"成功: {output['success']}")
+            print(f"完成阶段: {', '.join(output['phases_completed']) if output['phases_completed'] else '无'}")
 
-        if interrupted:
-            print(f"中断节点: {interrupt_node}")
-            print(f"线程ID: {output['thread_id']}")
-            print("提示: 使用 /api/workflow/resume 恢复执行")
-        else:
-            print(f"最终质量: {output['quality_score']:.2f}")
-            print(f"论文长度: {len(output['final_paper'])} 字符")
+            if interrupted:
+                print(f"中断节点: {interrupt_node}")
+                print(f"线程ID: {output['thread_id']}")
+                print("提示: 使用 /api/workflow/resume 恢复执行")
+            else:
+                print(f"最终质量: {output['quality_score']:.2f}")
+                print(f"论文长度: {len(output['final_paper'])} 字符")
 
-        print(f"总耗时: {execution_time:.2f}s")
+            print(f"总耗时: {execution_time:.2f}s")
 
         return output
 
@@ -164,14 +178,14 @@ class FullPaperRunner:
         return loop.run_until_complete(self.run(topic, enable_hitl, thread_id))
 
 
-async def run_full_paper(topic: str, enable_hitl: bool = False):
+async def run_full_paper(topic: str, enable_hitl: bool = False, paper_only: bool = False):
     """运行全链路论文生成 - 便捷函数"""
     runner = FullPaperRunner(enable_hitl=enable_hitl)
-    return await runner.run(topic, enable_hitl=enable_hitl)
+    return await runner.run(topic, enable_hitl=enable_hitl, paper_only=paper_only)
 
 
 def main():
-    """主入口"""
+    """主入口 - 仅输出最终论文"""
     # 加载 .env 文件
     try:
         from dotenv import load_dotenv
@@ -190,26 +204,40 @@ def main():
 
     topic = sys.argv[1] if len(sys.argv) > 1 else "人工智能在教育领域的应用"
     enable_hitl = "--hitl" in sys.argv
+    paper_only = "--paper-only" in sys.argv
+
+    if paper_only:
+        # 抑制所有日志输出
+        _suppress_logs()
+        # 抑制stderr的logger输出
+        sys.stderr = open(os.devnull, 'w')
 
     if enable_hitl:
-        print("启用 HITL 模式")
+        print("启用 HITL 模式", file=sys.stderr)
 
     try:
-        result = asyncio.run(run_full_paper(topic, enable_hitl=enable_hitl))
+        result = asyncio.run(run_full_paper(topic, enable_hitl=enable_hitl, paper_only=paper_only))
 
-        # 如果被中断，输出恢复指令
+        # 仅输出最终论文
+        final_paper = result.get("final_paper", "")
+        if final_paper:
+            print(final_paper)
+        else:
+            print("未能生成论文，请检查错误信息。", file=sys.stderr)
+
+        # 如果被中断，输出恢复指令到stderr
         if result.get("interrupted"):
-            print(f"\n工作流已中断，请使用以下命令恢复：")
-            print(f"  curl -X POST http://localhost:8000/api/workflow/resume \\")
-            print(f"    -H 'Content-Type: application/json' \\")
-            print(f"    -d '{{\"thread_id\": \"{result.get('thread_id', '')}\", \"decision\": \"approve\"}}'")
+            print(f"\n工作流已中断，请使用以下命令恢复：", file=sys.stderr)
+            print(f"  curl -X POST http://localhost:8000/api/workflow/resume \\", file=sys.stderr)
+            print(f"    -H 'Content-Type: application/json' \\", file=sys.stderr)
+            print(f"    -d '{{\"thread_id\": \"{result.get('thread_id', '')}\", \"decision\": \"approve\"}}'", file=sys.stderr)
 
     except KeyboardInterrupt:
-        print("\n\n已取消执行")
+        print("\n\n已取消执行", file=sys.stderr)
         sys.exit(0)
     except Exception as e:
         logger.error(f"Full paper run failed: {e}")
-        print(f"执行失败: {e}")
+        print(f"执行失败: {e}", file=sys.stderr)
         sys.exit(1)
 
 

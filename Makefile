@@ -159,6 +159,11 @@ paper-test:
 paper-full-test:
 	cd . && python -m demos.full_paper.test_e2e_workflow
 
+# 运行全链路论文生成，仅输出最终论文（无日志）
+# 用法: make paper-gen TOPIC="你的主题"
+paper-gen:
+	cd . && python -m demos.full_paper.runner --paper-only "$(TOPIC)"
+
 # 测试 LangGraph Workflow 结构和边路由
 paper-langgraph-test:
 	cd . && python -m demos.full_paper.test_langgraph
