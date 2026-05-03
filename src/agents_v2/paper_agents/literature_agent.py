@@ -134,36 +134,85 @@ class LiteratureAgent(PaperAgentBase):
             )
 
         try:
-            # 1. 多角度搜索查询
-            search_queries = await self._generate_search_queries(topic, research_question)
+            # 1. 多角度搜索查询 (30秒超时)
+            search_queries = await asyncio.wait_for(
+                self._generate_search_queries(topic, research_question),
+                timeout=30.0
+            )
+            self.logger.info(f"[Literature] 生成 {len(search_queries)} 个搜索查询")
 
-            # 2. 多引擎并行搜索
-            all_papers = await self._multi_engine_search(search_queries)
+            # 2. 多引擎并行搜索 (90秒超时)
+            all_papers = await asyncio.wait_for(
+                self._multi_engine_search(search_queries),
+                timeout=90.0
+            )
+            self.logger.info(f"[Literature] 搜索到 {len(all_papers)} 篇论文")
 
-            # 3. 质量筛选与排序
-            ranked_papers = await self._rank_papers(topic, all_papers)
+            if not all_papers:
+                return AgentOutput(
+                    success=True,
+                    result={"papers": [], "paper_analyses": [], "research_gaps": [], "search_queries": search_queries, "total_found": 0, "total_analyzed": 0},
+                    agent_name=self.name,
+                    reasoning="No papers found",
+                    quality_score=0.0
+                )
 
-            # 4. 深度阅读（只处理Top论文）
-            paper_analyses = await self._deep_read(ranked_papers[:20])
+            # 3. 质量筛选与排序 (180秒超时，增加到180s因为LLM调用可能较慢)
+            try:
+                ranked_papers = await asyncio.wait_for(
+                    self._rank_papers(topic, all_papers),
+                    timeout=180.0
+                )
+            except asyncio.TimeoutError:
+                self.logger.warning("[Literature] _rank_papers 超时，尝试返回已排序的论文")
+                # 超时时返回原始论文列表（不做排序）
+                ranked_papers = all_papers[:30] if len(all_papers) > 30 else all_papers
+            self.logger.info(f"[Literature] 排序后 {len(ranked_papers)} 篇论文")
 
-            # 5. 识别研究空白
-            gaps = await self._identify_gaps(paper_analyses, topic, research_question)
+            # 4. 深度阅读 (180秒超时，增加到180s)
+            try:
+                paper_analyses = await asyncio.wait_for(
+                    self._deep_read(ranked_papers[:20]),
+                    timeout=180.0
+                )
+            except asyncio.TimeoutError:
+                self.logger.warning("[Literature] _deep_read 超时，返回空分析")
+                paper_analyses = []
+            self.logger.info(f"[Literature] 深度阅读完成，获得 {len(paper_analyses) if paper_analyses else 0} 个分析")
+
+            # 5. 识别研究空白 (60秒超时，增加到60s)
+            try:
+                gaps = await asyncio.wait_for(
+                    self._identify_gaps(paper_analyses, topic, research_question),
+                    timeout=60.0
+                )
+            except asyncio.TimeoutError:
+                self.logger.warning("[Literature] _identify_gaps 超时，返回空研究空白")
+                gaps = []
 
             return AgentOutput(
                 success=True,
                 result={
                     "papers": ranked_papers,
-                    "paper_analyses": paper_analyses,
-                    "research_gaps": gaps,
+                    "paper_analyses": paper_analyses or [],
+                    "research_gaps": gaps or [],
                     "search_queries": search_queries,
                     "total_found": len(all_papers),
-                    "total_analyzed": len(paper_analyses)
+                    "total_analyzed": len(paper_analyses) if paper_analyses else 0
                 },
                 agent_name=self.name,
-                reasoning=f"Collected {len(ranked_papers)} papers, analyzed {len(paper_analyses)}, identified {len(gaps)} gaps",
-                quality_score=min(1.0, len(paper_analyses) / 15)
+                reasoning=f"Collected {len(ranked_papers)} papers, analyzed {len(paper_analyses) if paper_analyses else 0}, identified {len(gaps) if gaps else 0} gaps",
+                quality_score=min(1.0, (len(paper_analyses) if paper_analyses else 0) / 15)
             )
 
+        except asyncio.TimeoutError as e:
+            self.logger.error(f"[Literature] 操作超时: {e}")
+            return AgentOutput(
+                success=False,
+                result=None,
+                agent_name=self.name,
+                error=f"Operation timeout: {str(e)}"
+            )
         except Exception as e:
             log_error_with_context(self.logger, e, "LiteratureAgent execution", recovered=True)
             return AgentOutput(
@@ -262,79 +311,94 @@ class LiteratureAgent(PaperAgentBase):
         return all_papers
 
     async def _rank_papers(self, topic: str, papers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """排序论文"""
+        """排序论文 - 并行批处理"""
         if not papers:
             return []
 
-        prompt = f"""
-对以下论文进行相关性排序：
+        # 限制排序数量，最多30篇，避免超时
+        papers_to_rank = papers[:30] if len(papers) > 30 else papers
 
-主题：{topic}
-论文列表：{json.dumps([{"title": p.get("title"), "abstract": p.get("abstract")} for p in papers[:30]], ensure_ascii=False)}
+        # 分批处理：每批5篇，减少token消耗和延迟
+        batch_size = 5
+        batches = [papers_to_rank[i:i+batch_size] for i in range(0, len(papers_to_rank), batch_size)]
+
+        async def rank_batch(batch: List[Dict[str, Any]], batch_idx: int) -> List[Dict[str, Any]]:
+            """对单批论文排序"""
+            prompt = f"""对以下论文进行相关性排序（相对于主题：{topic}）。
+
+论文列表：{json.dumps([{"idx": i, "title": p.get("title", ""), "abstract": p.get("abstract", "")[:200]} for i, p in enumerate(batch)], ensure_ascii=False)}
 
 请按相关性排序，输出JSON格式：
-{{
-    "ranked": [
-        {{"original_index": 0, "rank": 1, "reason": "原因"}},
-        ...
-    ]
-}}
-"""
-        try:
-            response = await self._llm_call(prompt)
-            data = parse_json(response)
-            if data is None:
-                return sorted(papers, key=lambda p: p.get("relevance_score", 0), reverse=True)
-            ranked_info = data.get("ranked", [])
+{{"ranked": [{{"original_index": 0, "rank": 1, "reason": "原因"}}]}}
+只输出JSON，不要其他内容。"""
+            try:
+                response = await self._llm_call(prompt)
+                data = parse_json(response)
+                if data is None:
+                    return [{"original_index": i, "rank": i+1} for i in range(len(batch))]
+                return data.get("ranked", [{"original_index": i, "rank": i+1} for i in range(len(batch))])
+            except Exception as e:
+                log_error_with_context(self.logger, e, f"Batch ranking", recovered=True)
+                return [{"original_index": i, "rank": i+1} for i in range(len(batch))]
 
-            # 创建排序映射
-            rank_map = {r["original_index"]: r["rank"] for r in ranked_info}
+        # 并行处理所有批次
+        results = await asyncio.gather(*[rank_batch(b, i) for i, b in enumerate(batches)])
 
-            # 重新排序
-            indexed_papers = list(enumerate(papers))
-            sorted_papers = sorted(indexed_papers, key=lambda x: rank_map.get(x[0], 999))
-            return [p for _, p in sorted_papers]
+        # 合并结果
+        all_ranked = []
+        for batch_result in results:
+            all_ranked.extend(batch_result)
 
-        except Exception as e:
-            log_error_with_context(self.logger, e, "Ranking", recovered=True)
-            return sorted(papers, key=lambda p: p.get("relevance_score", 0), reverse=True)
+        # 创建排序映射
+        rank_map = {r["original_index"]: r["rank"] for r in all_ranked}
+
+        # 重新排序
+        indexed_papers = list(enumerate(papers_to_rank))
+        sorted_papers = sorted(indexed_papers, key=lambda x: rank_map.get(x[0], 999))
+
+        # 如果原论文列表被截断，需要映射回原始位置
+        if len(papers) > len(papers_to_rank):
+            # 排序后的论文需要插入到原始列表的正确位置
+            sorted_titles = {p.get("title", "").lower() for _, p in sorted_papers}
+            remaining = [p for p in papers[len(papers_to_rank):] if p.get("title", "").lower() not in sorted_titles]
+            # 按原始顺序拼接（排序的 + 未排序的）
+            return [p for _, p in sorted_papers] + remaining
+
+        return [p for _, p in sorted_papers]
 
     async def _deep_read(self, papers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """深度阅读论文"""
-        analyses = []
+        """深度阅读论文 - 并行处理"""
+        semaphore = asyncio.Semaphore(3)  # 限制并发数为3
 
-        for paper in papers:
-            try:
-                analysis = await self._extract_paper_info(paper)
-                analyses.append(analysis)
-            except Exception as e:
-                log_error_with_context(self.logger, e, "Paper analysis", recovered=True)
-                continue
+        async def process_one(paper: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+            async with semaphore:
+                try:
+                    return await self._extract_paper_info(paper)
+                except Exception as e:
+                    log_error_with_context(self.logger, e, "Paper analysis", recovered=True)
+                    return None
 
-        return analyses
+        results = await asyncio.gather(*[process_one(p) for p in papers])
+        return [r for r in results if r is not None]
 
     async def _extract_paper_info(self, paper: Dict[str, Any]) -> Dict[str, Any]:
         """提取论文关键信息"""
-        prompt = f"""
-分析以下论文，提取关键信息：
+        prompt = f"""分析以下论文，提取关键信息：
 
 论文标题：{paper.get('title', '')}
-摘要：{paper.get('abstract', '')}
+摘要：{paper.get('abstract', '')[:800]}
 
 请提取以下信息，输出JSON格式：
 {{
-    "paper_id": "论文ID",
+    "paper_id": "论文ID或简短标识",
     "title": "标题",
     "core_problem": "核心研究问题",
     "key_methodology": "主要方法",
     "key_findings": "主要发现",
-    "limitations": "局限性",
-    "datasets": ["数据集1", "数据集2"],
-    "evaluation_metrics": ["指标1", "指标2"],
-    "related_work": ["相关工作1", "相关工作2"],
-    "potential_gaps": "可能的gap"
+    "limitations": "局限性"
 }}
-"""
+
+严格只输出JSON。"""
         try:
             response = await self._llm_call(prompt)
             data = parse_json(response)
@@ -369,31 +433,33 @@ class LiteratureAgent(PaperAgentBase):
         if not paper_analyses:
             return [{"description": "需要更多文献分析", "evidence": "", "potential_direction": "扩大搜索范围"}]
 
-        prompt = f"""
-基于以下论文分析，识别研究空白：
+        # 简化论文分析内容，减少token消耗
+        simplified = []
+        for pa in paper_analyses[:10]:  # 最多10篇
+            simplified.append({
+                "title": pa.get("title", "")[:100],
+                "core_problem": pa.get("core_problem", "")[:200],
+                "key_findings": pa.get("key_findings", "")[:200] if isinstance(pa.get("key_findings"), str) else ", ".join(pa.get("key_findings", []))[:200],
+                "limitations": pa.get("limitations", "")[:150]
+            })
+
+        prompt = f"""基于以下论文分析，识别3-5个研究空白。
 
 主题：{topic}
 研究问题：{research_question}
 
-论文分析：{json.dumps(paper_analyses[:15], ensure_ascii=False)}
+论文分析：
+{json.dumps(simplified, ensure_ascii=False, indent=2)}
 
 请识别3-5个研究空白，输出JSON格式：
 {{
     "gaps": [
         {{
             "description": "gap描述",
-            "evidence": "证据（哪些论文支持这个gap）",
-            "potential_directions": ["潜在研究方向1", "潜在研究方向2"]
+            "evidence": "支持gap的论文列表",
+            "potential_directions": ["方向1", "方向2"]
         }}
     ]
 }}
-"""
-        try:
-            response = await self._llm_call(prompt)
-            data = parse_json(response)
-            if data is None:
-                raise ValueError("Failed to parse JSON response")
-            return data.get("gaps", [])
-        except Exception as e:
-            log_error_with_context(self.logger, e, "Gap identification", recovered=True)
-            return [{"description": "Further research needed", "evidence": "", "potential_direction": "Explore new methods"}]
+
+严格只输出JSON，不要其他内容。"""
