@@ -16,7 +16,7 @@ from src.agents_v2.logging_config import get_logging_logger
 
 import re
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 import json
 
@@ -57,6 +57,27 @@ class CoherenceReport:
         major = len(self.get_issues_by_severity("major"))
         minor = len(self.get_issues_by_severity("minor"))
         return f"Issues found: {critical} critical, {major} major, {minor} minor. Score: {self.overall_score:.2f}"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "passed": self.passed,
+            "overall_score": self.overall_score,
+            "issues": [
+                {
+                    "severity": i.severity,
+                    "issue_type": i.issue_type,
+                    "description": i.description,
+                    "location": i.location,
+                    "recommended_fix": i.recommended_fix,
+                }
+                for i in self.issues
+            ],
+            "citation_map": self.citation_map,
+            "terminology_map": self.terminology_map,
+            "logical_flow_score": self.logical_flow_score,
+            "structural_score": self.structural_score,
+        }
 
 
 class LogicCoherenceChecker:
