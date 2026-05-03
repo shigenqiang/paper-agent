@@ -197,14 +197,20 @@ def main():
     import io
 
     # 解析参数（在导入之前）
+    # 命令格式: runner.py [--paper-only] [--hitl] [topic]
     known_flags = {"--hitl", "--paper-only"}
-    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
-    topic = args[0] if args else "人工智能在教育领域的应用"
-    enable_hitl = "--hitl" in sys.argv
-    paper_only = "--paper-only" in sys.argv
+    argv = sys.argv[1:]
 
-    # 如果 topic 是 flag，设置为默认值
-    if topic.startswith("--"):
+    # 提取flags
+    enable_hitl = "--hitl" in argv
+    paper_only = "--paper-only" in argv
+
+    # 提取topic（所有不是flag的参数）
+    non_flag_args = [arg for arg in argv if not arg.startswith("--")]
+    topic = non_flag_args[0] if non_flag_args else "人工智能在教育领域的应用"
+
+    # 如果 topic 是空的或者是flag，设置为默认值
+    if not topic or topic.startswith("--"):
         topic = "人工智能在教育领域的应用"
 
     # 尽快抑制日志（在导入模块之前）
