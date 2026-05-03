@@ -91,6 +91,12 @@ architecture/
 ├── problem_oriented/             # 问题导向Agent (新增)
 │   └── problem-oriented-module.md # 11个专业Agent
 │
+├── academic_qa/                 # 学术问答系统 (新增)
+│   └── academic-qa-system.md   # 15个核心组件
+│
+├── intent/                     # 意图路由 (新增)
+│   └── intent-router.md       # 意图识别与路由
+│
 ├── security/                     # 安全模块 (新增)
 │   └── security-module.md       # RBAC + 输入验证
 │
@@ -300,6 +306,22 @@ GraphRAG 知识图谱增强。
 | 文档 | 位置 | 说明 |
 |------|------|------|
 | problem-oriented-module.md | problem_oriented/problem-oriented-module.md | 11个专业Agent |
+
+### academic_qa/ — 学术问答系统 (新增)
+
+基于论文的智能问答系统，支持多跳推理、混合检索、RAGAS 评估等。
+
+| 文档 | 位置 | 说明 |
+|------|------|------|
+| academic-qa-system.md | academic_qa/academic-qa-system.md | 15个核心组件 |
+
+### intent/ — 意图路由 (新增)
+
+用户意图识别与路由模块。
+
+| 文档 | 位置 | 说明 |
+|------|------|------|
+| intent-router.md | intent/intent-router.md | 意图识别与路由 |
 
 ## 核心概念
 
