@@ -166,8 +166,8 @@ BaseAgent (core/base_agent.py)
 **主要方法**:
 - `_generate_search_queries()` - 生成多角度搜索查询
 - `_multi_engine_search()` - 多引擎并行搜索（使用真实 API）
-- `_rank_papers()` - 排序论文
-- `_deep_read()` - 深度阅读论文
+- `_compute_paper_relevance()` - 嵌入向量计算相关性
+- `_deep_read()` - 深度阅读论文（过滤 > 0.85）
 - `_extract_paper_info()` - 提取论文关键信息
 - `_identify_gaps()` - 识别研究空白
 

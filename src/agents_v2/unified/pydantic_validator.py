@@ -2,6 +2,8 @@
 Pydantic 校验工具 - 统一处理 LLM 返回的 JSON
 
 提供健壮的 JSON 解析和 Pydantic 模型校验功能。
+
+设计原则：多种策略并行尝试，智能降级
 """
 
 from typing import Any, Dict, List, Optional, Type, TypeVar
@@ -17,12 +19,23 @@ T = TypeVar('T', bound=BaseModel)
 
 
 def _clean_json_markdown(text: str) -> str:
-    """清理JSON markdown格式"""
+    """清理JSON markdown格式，处理各种截断和格式问题
+
+    策略（按优先级）：
+    1. 直接解析（如果JSON完整）
+    2. 移除尾随逗号后重试
+    3. 逐步截断寻找有效JSON
+    4. 正则提取完整对象
+    5. 智能截断处理字符串内截断
+    """
     if not text:
         return ""
 
+    # 移除各种思考块格式
+    text = _remove_thinking_blocks(text)
+
+    # 移除 markdown 代码块
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
     text = re.sub(r'^```\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
     text = text.strip()
@@ -30,48 +43,175 @@ def _clean_json_markdown(text: str) -> str:
     if not text:
         return ""
 
-    if not text.startswith('{'):
-        match = re.search(r'\{', text)
-        if match:
-            text = text[match.start():]
+    # 找到 JSON 开始位置
+    if '{' in text:
+        text = text[text.index('{'):]
 
-    if text.startswith('{'):
+    # 策略1：直接解析
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    # 策略2：移除尾随逗号
+    cleaned = re.sub(r',\s*([}\]])$', r'\1', text)
+    try:
+        json.loads(cleaned)
+        return cleaned
+    except json.JSONDecodeError:
+        pass
+
+    # 策略3：移除尾随逗号（包括多个）
+    cleaned = re.sub(r',\s*$', '', text)
+    try:
+        json.loads(cleaned)
+        return cleaned
+    except json.JSONDecodeError:
+        pass
+
+    # 策略4：尝试逐步截断从后向前
+    truncated = _try_truncate_from_end(text)
+    if truncated:
+        return truncated
+
+    # 策略5：处理字符串内截断的情况（最复杂）
+    truncated = _handle_string_truncation(text)
+    if truncated:
+        return truncated
+
+    # 策略6：正则提取任何完整对象
+    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+    if match:
         try:
-            json.loads(text)
-            return text
+            json.loads(match.group())
+            return match.group()
         except json.JSONDecodeError:
-            start = text.index('{')
-            depth = 0
-            end_pos = -1
-            for i, c in enumerate(text[start:], start):
-                if c == '{':
-                    depth += 1
-                elif c == '}':
-                    depth -= 1
-                    if depth == 0:
-                        end_pos = i + 1
-                        break
-            if end_pos > 0:
-                return text[start:end_pos]
+            pass
 
+    # 最终尝试：返回原文本让调用方处理
     return text
+
+
+def _remove_thinking_blocks(text: str) -> str:
+    """移除各种格式的思考块"""
+    patterns = [
+        r'<start_thinking>.*?<end_thinking>',
+        r'<think>.*?\加成',
+        r'<think>.*?',
+    ]
+    for p in patterns:
+        text = re.sub(p, '', text, flags=re.DOTALL)
+    return text
+
+
+def _try_truncate_from_end(text: str) -> str:
+    """从后向前逐步截断，找到最长的有效JSON"""
+    # 从后向前找到所有可能的结束位置
+    candidates = []
+    for i, c in enumerate(text):
+        if c in '}],':
+            candidates.append(i)
+
+    # 按位置从后向前排序，优先尝试更长的截断
+    candidates.sort(reverse=True)
+
+    for cutoff in candidates:
+        # 跳过结尾的逗号
+        if text[cutoff] == ',':
+            truncated = text[:cutoff]
+        else:
+            truncated = text[:cutoff + 1]
+
+        if not truncated.strip():
+            continue
+
+        try:
+            json.loads(truncated)
+            return truncated
+        except json.JSONDecodeError:
+            continue
+
+    return ""
+
+
+def _handle_string_truncation(text: str) -> str:
+    """
+    处理JSON在字符串中间被截断的情况
+
+    例如：{"key": "value that gets cut off here",
+    会在字符串中间截断。
+
+    方法：找到最后一个完整的条目，截断到该位置
+    """
+    # 找到JSON开始
+    start = text.index('{')
+
+    # 分析文本，追踪字符串状态
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    last_valid_pos = start  # 至少从开始
+    valid_closes = []  # 记录所有有效的 } 位置
+
+    for i in range(start, len(text)):
+        c = text[i]
+
+        if escape_next:
+            escape_next = False
+            continue
+
+        if c == '\\':
+            escape_next = True
+            continue
+
+        if c == '"':
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                # 这是一个有效的结束位置
+                last_valid_pos = i + 1
+                valid_closes.append(i + 1)
+
+    # 尝试从最后一个有效的 } 位置截断
+    for close_pos in reversed(valid_closes):
+        truncated = text[:close_pos]
+        try:
+            json.loads(truncated)
+            return truncated
+        except json.JSONDecodeError:
+            continue
+
+    # 如果还是不行，尝试移除最后一个不完整的字符串
+    if last_valid_pos > start:
+        truncated = text[:last_valid_pos]
+        try:
+            json.loads(truncated)
+            return truncated
+        except json.JSONDecodeError:
+            pass
+
+    return ""
 
 
 def parse_json(text: str) -> Optional[Dict[str, Any]]:
     """解析 JSON 文本，返回字典或 None"""
     try:
         cleaned = _clean_json_markdown(text)
+        if not cleaned:
+            return None
         return json.loads(cleaned)
     except (json.JSONDecodeError, ValueError) as e:
-        logger.warning(f"JSON parse failed in parse_json: {e}, raw_input={text[:500] if text else 'empty'}")
-        # 尝试正则提取
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError as e2:
-                logger.warning(f"Regex extraction also failed in parse_json: {e2}")
-                pass
+        logger.warning(f"JSON parse failed: {e}, raw_length={len(text) if text else 0}")
         return None
 
 
@@ -94,32 +234,22 @@ def parse_with_pydantic(
     """
     try:
         cleaned = _clean_json_markdown(text)
+        if not cleaned:
+            raise ValueError("Empty text after cleaning")
         data = json.loads(cleaned)
         return model_class.model_validate(data)
-    except (json.JSONDecodeError, ValidationError) as e:
-        logger.warning(f"Pydantic parse failed: {e}, raw_input={text[:500] if text else 'empty'}, trying regex extraction")
-
-        # 尝试正则提取
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            try:
-                data = json.loads(match.group())
-                return model_class.model_validate(data)
-            except (json.JSONDecodeError, ValidationError) as e2:
-                logger.warning(f"Regex extraction also failed: {e2}, raw_input={text[:500] if text else 'empty'}")
+    except (json.JSONDecodeError, ValidationError, ValueError) as e:
+        logger.warning(f"Pydantic parse failed: {e}")
 
         if strict:
             raise
 
-        # 返回默认值
         if default_value is not None:
             return default_value
 
-        # 如果没有提供默认值，尝试用模型类的默认值
         try:
             return model_class()
         except Exception:
-            # 最后兜底：返回从字典构造的实例
             return model_class.model_validate({})
 
 
@@ -129,17 +259,7 @@ def parse_list_with_pydantic(
     list_key: Optional[str] = None,
     default_count: int = 0
 ) -> List[BaseModel]:
-    """解析 JSON 数组文本，返回 Pydantic 模型列表
-
-    Args:
-        text: LLM 返回的文本
-        item_class: 数组元素的 Pydantic 模型类
-        list_key: 如果 JSON 是对象，指定包含数组的键名
-        default_count: 如果解析失败，返回多少个默认实例
-
-    Returns:
-        Pydantic 模型实例列表
-    """
+    """解析 JSON 数组文本，返回 Pydantic 模型列表"""
     data = parse_json(text)
     if data is None:
         return [item_class() for _ in range(default_count)]
@@ -158,8 +278,7 @@ def parse_list_with_pydantic(
                 items.append(item_class.model_validate(item_data))
             else:
                 items.append(item_class())
-        except ValidationError as e:
-            logger.debug(f"Item validation failed: {e}")
+        except ValidationError:
             items.append(item_class())
 
     return items if items else [item_class() for _ in range(default_count)]

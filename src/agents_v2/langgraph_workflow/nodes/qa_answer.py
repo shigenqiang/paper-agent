@@ -5,13 +5,15 @@
 1. 根据综合分析生成回答
 2. 支持引用论文
 3. 生成结构化的回答内容
+4. 集成 AcademicQASystem 实现严格模式
 
 设计原则：
 - 基于综合数据生成回答
 - 包含论文引用
 - 可读性强的回答格式
+- 可选的严格模式（幻觉检测、置信度校准）
 """
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Callable
 from src.agents_v2.logging_config import get_logging_logger
 
 logger = get_logging_logger(__name__)
@@ -20,13 +22,36 @@ logger = get_logging_logger(__name__)
 class QAAnswerNode:
     """问答回答节点 - 生成最终回答"""
 
-    def __init__(self, llm_provider=None):
+    def __init__(self, llm_provider=None, use_academic_qa: bool = True):
         """初始化问答回答节点
 
         Args:
             llm_provider: LLM 提供者（可选），用于生成回答
+            use_academic_qa: 是否使用 AcademicQASystem（严格模式）
         """
         self.llm_provider = llm_provider
+        self.use_academic_qa = use_academic_qa
+        self._academic_qa_system = None
+
+    def _get_academic_qa_system(self):
+        """获取或初始化 AcademicQASystem"""
+        if self._academic_qa_system is None and self.use_academic_qa:
+            try:
+                from ...academic_qa import AcademicQASystem, AcademicQAConfig
+                config = AcademicQAConfig(
+                    llm=self.llm_provider,
+                    enable_crag=True,
+                    enable_self_rag=True,
+                    enable_hallucination_detection=True,
+                    enable_confidence_calibration=True,
+                    enable_multi_hop=True,
+                )
+                self._academic_qa_system = AcademicQASystem(config=config)
+                logger.info("AcademicQASystem initialized for QA answer")
+            except Exception as e:
+                logger.warning(f"Failed to initialize AcademicQASystem: {e}")
+                self._academic_qa_system = None
+        return self._academic_qa_system
 
     async def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """执行问答回答生成
@@ -47,9 +72,26 @@ class QAAnswerNode:
             return state
 
         try:
-            # 生成回答
-            answer = self._generate_answer(user_query, synthesis, papers)
-            state["answer"] = answer
+            # 尝试使用 AcademicQASystem（严格模式）
+            academic_qa = self._get_academic_qa_system()
+
+            if academic_qa:
+                # 使用 AcademicQASystem 生成答案
+                contexts = self._build_contexts(synthesis, papers)
+                qa_result = await academic_qa.ask(
+                    query=user_query,
+                    contexts=contexts,
+                    mode="strict"
+                )
+                answer = academic_qa.format_answer_with_citations(qa_result)
+                state["answer"] = answer
+                state["qa_confidence"] = qa_result.confidence
+                state["qa_hallucination_score"] = qa_result.hallucination_score
+                logger.info(f"AcademicQA answer generated: confidence={qa_result.confidence:.2f}")
+            else:
+                # 降级到基础模式
+                answer = self._generate_answer(user_query, synthesis, papers)
+                state["answer"] = answer
 
             logger.info("QA answer generation completed")
 
@@ -59,6 +101,28 @@ class QAAnswerNode:
             state.setdefault("errors", []).append(f"QA answer error: {str(e)}")
 
         return state
+
+    def _build_contexts(self, synthesis: Dict[str, Any], papers: list) -> list:
+        """从 synthesis 和 papers 构建上下文列表"""
+        contexts = []
+
+        # 添加综合分析摘要
+        if synthesis.get("answer"):
+            contexts.append(synthesis["answer"])
+
+        # 添加关键洞察
+        key_insights = synthesis.get("key_insights", [])
+        for insight in key_insights[:3]:
+            contexts.append(f"关键洞察: {insight}")
+
+        # 添加论文内容
+        for paper in papers[:10]:
+            title = paper.get("title", "")
+            abstract = paper.get("abstract", "")
+            if abstract:
+                contexts.append(f"论文: {title}\n摘要: {abstract[:300]}")
+
+        return contexts
 
     def _generate_answer(
         self,

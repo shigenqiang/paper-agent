@@ -238,12 +238,18 @@ class LanguagePolisherAgent(ProblemAgentBase):
 直接输出润色后的文本："""
         try:
             polished = await self._llm_call(prompt)
+            import re
+            cleaned = re.sub(r'<think>.*?</think>', '', polished, flags=re.DOTALL)
+            cleaned = re.sub(r'```json\s*', '', cleaned)
+            cleaned = re.sub(r'```\s*', '', cleaned)
+            cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+            cleaned = cleaned.strip()
             return AgentOutput(
                 success=True,
                 result={
                     "diagnosis": {"grammar_issues": [], "style_issues": [], "terminology_issues": []},
                     "overall_quality": 0.7,
-                    "polished_text": polished.strip(),
+                    "polished_text": cleaned,
                     "summary": "简化润色（原始诊断失败）"
                 },
                 agent_name=self.name,

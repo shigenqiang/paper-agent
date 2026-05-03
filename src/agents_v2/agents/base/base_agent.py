@@ -268,7 +268,7 @@ class BaseAgent(ABC):
         """清理思考块 (MiniMax等模型会输出)"""
         import re
         # 移除 <think>... 块
-        cleaned = re.sub(r'<think>.*?', '', text, flags=re.DOTALL)
+        cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
         # 清理多余的空白
         cleaned = cleaned.strip()
         return cleaned

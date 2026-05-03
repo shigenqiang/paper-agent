@@ -1190,7 +1190,7 @@ async def handle_topic(request: web.Request) -> web.Response:
 
         llm_config = LLMConfig(
             provider="openai",
-            model_name="minimax",
+            model_name="minimax-m2.7",
             temperature=0.7
         )
 
@@ -1389,7 +1389,11 @@ async def handle_proposal(request: web.Request) -> web.Response:
 
 
 async def handle_full_paper(request: web.Request) -> web.Response:
-    """处理完整论文请求"""
+    """处理完整论文请求
+
+    使用 UnifiedWorkflow（LangGraph）处理完整论文写作流程，
+    包含诊断阶段和 HITL 人工介入支持。
+    """
     start_time = time.time()
     try:
         data = await request.json()
@@ -1403,17 +1407,44 @@ async def handle_full_paper(request: web.Request) -> web.Response:
                 "timestamp": datetime.now().isoformat()
             }, status=400)
 
-        from src.agents_v2.unified import MasterSupervisor
+        enable_hitl = data.get("enable_hitl", False)
 
-        supervisor = MasterSupervisor()
-        supervisor.register_pipeline_agents()
-        supervisor.register_writing_agents()
+        # 使用 UnifiedWorkflow（LangGraph）处理写作流程
+        from src.agents_v2.langgraph_workflow.unified_workflow import UnifiedWorkflow
 
-        result = await supervisor.run("full_paper", {"topic": topic})
+        workflow = UnifiedWorkflow(
+            enable_memory=True,
+            enable_multimodal=True,
+            enable_kg=True,
+            enable_evaluation=True,
+            enable_hitl=enable_hitl,
+        )
+        workflow.compile()
+
+        # 设置路由意图为 writing，触发 diagnostic → outline → write → review → evaluation 流程
+        result = await workflow.run(
+            query=topic,
+            route_path="writing",  # 触发写作工作流（包含诊断）
+            enable_hitl=enable_hitl,
+        )
+
+        # 检查是否被 HITL 中断
+        interrupted = result.get("interrupted", False)
+        if interrupted:
+            execution_time = time.time() - start_time
+            return web.json_response({
+                "success": True,
+                "interrupted": True,
+                "interrupt_stage": result.get("interrupt_stage", ""),
+                "interrupt_reason": result.get("interrupt_reason", ""),
+                "thread_id": result.get("thread_id", ""),
+                "execution_time": execution_time,
+                "timestamp": datetime.now().isoformat()
+            }, status=202)  # 202 Accepted 表示请求已接受但尚未完成
 
         execution_time = time.time() - start_time
         return web.json_response({
-            "success": result.get("success", False),
+            "success": True,
             "result": result,
             "quality_score": result.get("final_quality", 0),
             "execution_time": execution_time,

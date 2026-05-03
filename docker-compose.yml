@@ -1,30 +1,20 @@
 # ============================================
-# Paper Agent Docker Compose - 生产级配置
+# Paper Agent Docker Compose - 精简版 (2026-05-03)
+# ============================================
+# 基于 docs/implemented/architecture 分析:
+# - Storage: SQLite + ChromaDB (本地文件)
+# - Knowledge Graph: deprecated (代码在 src/agents_v2/knowledge_graph/deprecated/)
+# - Monitoring: 内置模块，无外部依赖
 # ============================================
 
 version: '3.8'
 
 services:
-  # ---- 前端服务 ----
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: paper-agent-frontend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - paper-agent
-    restart: unless-stopped
-    networks:
-      - paper-network
-
   # ---- 主服务 ----
   paper-agent:
     build:
       context: .
       dockerfile: Dockerfile
-      target: runtime  # 可选: runtime, runtime-gpu, runtime-light
     container_name: paper-agent
     environment:
       # API配置
@@ -35,28 +25,17 @@ services:
       - HTTP_PROXY=${HTTP_PROXY:-}
       - HTTPS_PROXY=${HTTPS_PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
-      # 数据库配置
-      - POSTGRES_URI=${POSTGRES_URI:-postgresql://paper:paper@postgres:5432/paperagent}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-paperagent}
-      # 应用配置
+      # 日志配置
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - WORKERS=${WORKERS:-4}
       - PYTHONUNBUFFERED=1
     volumes:
-      # 数据持久化
+      # 数据持久化 (SQLite + ChromaDB)
       - paper-data:/app/data
       - paper-output:/app/output
       # 插件目录（可选挂载）
       - ./plugins:/app/plugins:ro
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -73,83 +52,11 @@ services:
     networks:
       - paper-network
 
-  # ---- 数据库服务 ----
-  postgres:
-    image: postgres:15-alpine
-    container_name: paper-agent-postgres
-    environment:
-      - POSTGRES_USER=paper
-      - POSTGRES_PASSWORD=paper
-      - POSTGRES_DB=paperagent
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U paper -d paperagent"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    networks:
-      - paper-network
+  # ============================================
+  # 可选监控栈 (需要时启用)
+  # 使用: docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+  # ============================================
 
-  # ---- 缓存服务 ----
-  redis:
-    image: redis:7-alpine
-    container_name: paper-agent-redis
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis-data:/data
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    networks:
-      - paper-network
-
-  # ---- 图数据库服务 (可选) ----
-  neo4j:
-    image: neo4j:5-community
-    container_name: paper-agent-neo4j
-    environment:
-      - NEO4J_AUTH=neo4j/paperagent
-      - NEO4J_PLUGINS=["apoc"]
-      - NEO4J_dbms_memory_heap_initial__size=512m
-      - NEO4J_dbms_memory_heap_max__size=2G
-    volumes:
-      - neo4j-data:/data
-      - neo4j-logs:/logs
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7474"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-    networks:
-      - paper-network
-
-  # ---- 监控服务 (可选) ----
   prometheus:
     image: prom/prometheus:latest
     container_name: paper-agent-prometheus
@@ -185,27 +92,11 @@ services:
       - monitoring
 
 # ============================================
-# 独立GPU版本
+# 已移除的服务 (2026-05-03 更新)
 # ============================================
-# 使用: docker-compose -f docker-compose.yml -f docker-compose.gpu.yml up
-# ============================================
-# docker-compose.gpu.yml
-# services:
-#   paper-agent:
-#     build:
-#       target: runtime-gpu
-#     deploy:
-#       resources:
-#         reservations:
-#           devices:
-#             - driver: nvidia
-#               count: 1
-#               capabilities: [gpu]
-
-# ============================================
-# 独立监控栈
-# ============================================
-# 使用: docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+# postgres: 代码无引用 (storage 使用 SQLite)
+# redis: 代码无引用 (monitoring 模块无实际连接)
+# neo4j: 代码在 deprecated/ 目录，已不使用
 # ============================================
 
 # ============================================
@@ -215,14 +106,6 @@ volumes:
   paper-data:
     driver: local
   paper-output:
-    driver: local
-  postgres-data:
-    driver: local
-  redis-data:
-    driver: local
-  neo4j-data:
-    driver: local
-  neo4j-logs:
     driver: local
   prometheus-data:
     driver: local

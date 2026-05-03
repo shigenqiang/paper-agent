@@ -167,7 +167,7 @@ class WritingAgentBase(ABC):
             marker = '<think>'
             if marker not in text:
                 return text.strip()
-            cleaned = re.sub(r'<think>.*?', '', text, flags=re.DOTALL)
+            cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
             return cleaned.strip()
         except Exception as e:
             logger.warning(f"清理思考块失败: {e}")

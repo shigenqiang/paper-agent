@@ -34,6 +34,7 @@ from .state_model import (
 from .phase_supervisor import PhaseSupervisor
 from .circuit_breaker import MultiCircuitBreaker, CircuitBreakerOpen
 from .error_handler import FallbackHandler, ErrorAccumulator, ErrorContext, ErrorSeverity
+from .hitl_manager import HITLManager, InterventionType, InterventionPriority
 
 # 导入预定义的阶段模型
 from .phase_models import (
@@ -101,6 +102,10 @@ class MasterSupervisor:
         # 配置
         self.max_iterations = 3
         self.enable_diagnostic = True
+
+        # HITL 人机协作管理器（使用全局单例）
+        from .hitl_manager import get_hitl_manager
+        self.hitl_manager = get_hitl_manager()
 
         logger.debug("MasterSupervisor initialized")
 
@@ -289,6 +294,41 @@ class MasterSupervisor:
             # 更新状态
             self.state.update_phase(phase, result)
 
+            # ===== 选题质量问题 HITL 人工介入 =====
+            if phase == "diagnostic" and result.diagnostic:
+                topic_problems = [p for p in result.diagnostic.problems_found
+                                  if p in (ProblemType.TOPIC_VAGUE, ProblemType.TOPIC_TOO_BROAD,
+                                           ProblemType.TOPIC_LACK_NOVELTY)]
+                if topic_problems:
+                    severity = result.diagnostic.severity
+                    logger.info(f"选题质量问题 detected: {[p.value for p in topic_problems]}")
+                    intervention = await self.hitl_manager.request_intervention(
+                        intervention_type=InterventionType.APPROVAL,
+                        agent_id="diagnostic_phase",
+                        description=f"选题质量问题需要人工审核: {[p.value for p in topic_problems]}",
+                        options=["批准继续", "修改选题方向", "终止流程"],
+                        context={
+                            "problems": [p.value for p in topic_problems],
+                            "severity": {p.value: severity.get(p, 0) for p in topic_problems},
+                            "recommendations": result.diagnostic.recommendations
+                        },
+                        priority=InterventionPriority.HIGH
+                    )
+
+                    if not intervention.approved:
+                        if intervention.selected_option == "终止流程":
+                            logger.warning("人工终止流程")
+                            return {
+                                "success": False,
+                                "reason": "人工终止",
+                                "feedback": intervention.feedback,
+                                "state": self.state.to_dict()
+                            }
+                    # 将人工反馈注入上下文，供后续阶段参考
+                    self.state.context["topic_feedback"] = intervention.feedback
+                    self.state.context["hitl_approved"] = intervention.approved
+            # ===== HITL 结束 =====
+
             # 阶段耗时计算
             phase_elapsed = time.time() - phase_start
             logger.info(f"Phase '{phase}' completed in {phase_elapsed:.2f}s")
@@ -426,7 +466,6 @@ class MasterSupervisor:
             ]
         elif phase == "writing":
             agents = [
-                self.agents.get("thesis"),
                 self.agents.get("outline"),
                 self.agents.get("draft")
             ]
@@ -461,43 +500,64 @@ class MasterSupervisor:
         return filtered
 
     def _prepare_phase_input(self, phase: str, original_input: Dict[str, Any]) -> Dict[str, Any]:
-        """准备阶段的输入数据"""
+        """准备阶段的输入数据，使用 Pydantic 模型进行验证和转换"""
         if phase == "diagnostic":
-            # 诊断阶段：直接传递 user_request，让各 Agent 自己提取需要的字段
-            return {"user_request": original_input.get("user_request", original_input.get("topic", ""))}
+            # 诊断阶段：使用 DiagnosticInput 模型验证
+            validated = DiagnosticInput(
+                user_request=original_input.get("user_request", original_input.get("topic", "")),
+                user_level=original_input.get("user_level", "硕士"),
+                available_time=original_input.get("available_time", "6个月"),
+                available_resources=original_input.get("available_resources", "一般")
+            )
+            return validated.model_dump()
         elif phase == "topic":
-            return {"user_request": original_input.get("user_request", original_input.get("topic", ""))}
+            validated = TopicInput(
+                user_request=original_input.get("user_request", original_input.get("topic", ""))
+            )
+            return validated.model_dump()
         elif phase == "literature":
-            # 文献阶段需要 topic 信息
             topic_info = self.state.context.get("topic", {})
             if not topic_info:
-                # 尝试从 original_input 获取
                 topic_info = original_input.get("user_request", original_input.get("topic", ""))
-            return {"topic": topic_info}
+            if isinstance(topic_info, dict):
+                topic_info = topic_info.get("refined_topic", str(topic_info))
+            validated = LiteratureInput(topic=topic_info)
+            return validated.model_dump()
         elif phase == "methodology":
-            return {
-                "topic": self.state.context.get("topic", {}),
-                "literature_result": self.state.context.get("literature_result", {})
-            }
+            topic_info = self.state.context.get("topic", {})
+            if not topic_info:
+                topic_info = original_input.get("user_request", original_input.get("topic", ""))
+            if isinstance(topic_info, dict):
+                topic_info = topic_info.get("refined_topic", str(topic_info))
+            validated = MethodologyInput(
+                topic=topic_info,
+                literature_result=self.state.context.get("literature_result", {})
+            )
+            return validated.model_dump()
         elif phase == "writing":
-            return {
-                "topic": self.state.context.get("topic", {}),
-                "literature_result": self.state.context.get("literature_result", {}),
-                "thesis_statement": self.state.context.get("thesis_statement", "")
-            }
+            topic_info = self.state.context.get("topic", {})
+            if not topic_info:
+                topic_info = original_input.get("user_request", original_input.get("topic", ""))
+            if isinstance(topic_info, dict):
+                topic_info = topic_info.get("refined_topic", str(topic_info))
+            validated = WritingInput(
+                topic=topic_info,
+                literature_result=self.state.context.get("literature_result", {}),
+                thesis_statement=self.state.context.get("thesis_statement", ""),
+                outline=self.state.context.get("outline")
+            )
+            return validated.model_dump()
         elif phase == "polish":
-            # 从writing阶段的输出中获取待润色的文本
             writing_output = self.state.context.get("writing_output", {})
-            if not writing_output:
-                # 尝试从phase_results获取
-                if "writing" in self.state.phase_results:
-                    writing_output = self.state.phase_results["writing"].output or {}
+            if not writing_output and "writing" in self.state.phase_results:
+                writing_output = self.state.phase_results["writing"].output or {}
             draft_text = writing_output.get("full_draft", writing_output.get("report", writing_output.get("draft", "")))
-            return {
-                "text": draft_text,  # LanguagePolisherAgent 使用 'text'
-                "language": "zh",
-                "polish_level": "medium"
-            }
+            validated = PolishInput(
+                text=draft_text,
+                language="zh",
+                polish_level="medium"
+            )
+            return validated.model_dump()
         else:
             return self.state.context
 
@@ -506,7 +566,7 @@ class MasterSupervisor:
         # 问题导向Agent接受的输入格式
         return content
 
-    def _should_iterate(self, result: PhaseResult, phase: str) -> bool:
+    def _should_iterate(self, result: StatePhaseResult, phase: str) -> bool:
         """判断是否需要迭代"""
         if result.status == PhaseStatus.FAILED:
             return True
@@ -516,7 +576,7 @@ class MasterSupervisor:
 
         return False
 
-    async def _iterate_phase(self, phase: str, result: PhaseResult, original_input: Dict[str, Any]):
+    async def _iterate_phase(self, phase: str, result: StatePhaseResult, original_input: Dict[str, Any]):
         """迭代阶段执行"""
         logger.info(f"Iterating phase {phase}, iteration {self.state.iteration + 1}")
 
@@ -537,6 +597,24 @@ class MasterSupervisor:
 
         self.state.update_phase(f"{phase}_iter_{self.state.iteration}", new_result)
 
+    def _clean_final_paper(self, text: str) -> str:
+        """清理论文文本，移除诊断标记、思考过程等干扰信息"""
+        import re
+        if not text:
+            return text
+
+        # 移除【...】格式的诊断标记块
+        text = re.sub(r'【[^】]*】', '', text)
+        # 移除```json ... ```格式的JSON块
+        text = re.sub(r'```json\s*.*?\s*```', '', text, flags=re.DOTALL)
+        # 移除独立存在的JSON对象
+        text = re.sub(r'\{[^{}]*"[^{}]*":[^{}]*\}', '', text)
+        # 移除行内诊断标记 [...]
+        text = re.sub(r'\[[A-Z_]+(?:\|[^\]]+)?\]', '', text)
+        # 移除多余空行
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
+
     def _compile_final_result(self) -> Dict[str, Any]:
         """编译最终结果"""
         phases_completed = list(self.state.phase_results.keys())
@@ -550,16 +628,18 @@ class MasterSupervisor:
         if "polish" in self.state.phase_results:
             output = self.state.phase_results["polish"].output
             if isinstance(output, dict):
-                final_paper = output.get("polished_text", output.get("text", ""))
+                raw_text = output.get("polished_text", output.get("text", ""))
+                final_paper = self._clean_final_paper(raw_text)
             elif isinstance(output, str) and output:
-                final_paper = output
+                final_paper = self._clean_final_paper(output)
 
         if not final_paper and "writing" in self.state.phase_results:
             output = self.state.phase_results["writing"].output
             if isinstance(output, dict):
-                final_paper = output.get("full_draft", output.get("report", output.get("draft", "")))
+                raw_text = output.get("full_draft", output.get("report", output.get("draft", "")))
+                final_paper = self._clean_final_paper(raw_text)
             elif isinstance(output, str) and output:
-                final_paper = output
+                final_paper = self._clean_final_paper(output)
 
         # 检查是否有polish阶段的降级处理
         polish_fallback = False
@@ -576,10 +656,8 @@ class MasterSupervisor:
             "quality_history": quality_history,
             "final_quality": self.state.quality_history[-1].score if self.state.quality_history else 0.0,
             "quality_level": self.state.get_quality_level().value,
-            "problems_identified": [p.value for p in self.state.problems],
             "iterations": self.state.iteration,
             "polish_fallback": polish_fallback,
-            "state": self.state.to_dict()
         }
 
     async def _run_custom_flow(self, task_type: str, input_data: Dict[str, Any]) -> Dict[str, Any]:

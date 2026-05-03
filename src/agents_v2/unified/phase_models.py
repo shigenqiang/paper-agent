@@ -145,8 +145,8 @@ class PolishOutput(BaseModel):
 
 # ============ 阶段结果包装 ============
 
-class PhaseResult(BaseModel):
-    """阶段执行结果"""
+class PhaseExecutionResult(BaseModel):
+    """阶段执行结果（用于跨阶段数据传递）"""
     phase_name: str
     status: PhaseStatus
     input_data: Optional[Dict[str, Any]] = None

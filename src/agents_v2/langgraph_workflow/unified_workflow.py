@@ -26,8 +26,12 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from .state import PaperAgentState, create_initial_state
-from .edges import should_continue, route_by_intent
+from .edges import should_continue, route_by_intent, diagnostic_quality_gate, is_hitl_interrupted
 from .nodes.router import RouteNode
+from .nodes.diagnostic import DiagnosticNode, get_diagnostic_node
+from .nodes.topic import TopicNode, get_topic_node
+from .nodes.literature import LiteratureNode, get_literature_node
+from .nodes.methodology import MethodologyNode, get_methodology_node
 from .nodes.crawler import CrawlerAgent
 from .nodes.selector import SelectorAgent
 from .nodes.outline import OutlineAgent
@@ -46,6 +50,16 @@ from .nodes.qa_answer import QAAnswerNode
 from .nodes.revise import ReviseNode
 from .nodes.refine import RefineNode
 from .nodes.polish import PolishNode
+from .nodes.writing import get_writing_node
+from .observability.tracer import create_tracer
+from ..writing.diff_manager import DiffManager
+from .nodes.report_gen import ReportGenNode
+from .nodes.qa_search import QASearchNode
+from .nodes.qa_synthesize import QASynthesizeNode
+from .nodes.qa_answer import QAAnswerNode
+from .nodes.revise import ReviseNode
+from .nodes.refine import RefineNode
+from .nodes.polish import PolishNode
 from .observability.tracer import create_tracer
 from ..writing.diff_manager import DiffManager
 
@@ -53,6 +67,7 @@ logger = get_logging_logger(__name__)
 
 # HITL 中断点定义：在哪些节点前暂停等待人工审核
 HITL_INTERRUPT_POINTS = {
+    "after_diagnostic_topic": "diagnostic",  # 诊断发现选题问题后
     "after_outline": "outline",        # 大纲生成后、写作前
     "after_review": "review",          # 审查后、评估前
     "after_polish": "polish",          # 润色后（修改工作流终点前）
@@ -106,6 +121,15 @@ class UnifiedWorkflow:
         # 路由节点
         self.router = RouteNode(llm_provider=self.llm)
 
+        # 诊断节点
+        self.diagnostic = get_diagnostic_node(llm=self.llm)
+
+        # paper 流程节点（diagnostic 后）
+        self.topic = get_topic_node(llm=self.llm)
+        self.literature = get_literature_node(llm=self.llm)
+        self.methodology = get_methodology_node(llm=self.llm)
+        self.writing_node = get_writing_node(llm=self.llm)
+
         # 搜索/写作工作流节点
         self.crawler = CrawlerAgent(llm=self.llm)
         self.selector = SelectorAgent()
@@ -144,6 +168,14 @@ class UnifiedWorkflow:
 
         # 添加路由节点
         workflow.add_node("router", self._router_node)
+
+        # 添加诊断节点
+        workflow.add_node("diagnostic", self._diagnostic_node)
+
+        # 添加 paper 流程节点（diagnostic 后的 6 个步骤）
+        workflow.add_node("topic", self._topic_node)
+        workflow.add_node("literature", self._literature_node)
+        workflow.add_node("methodology", self._methodology_node)
 
         # 添加搜索/写作工作流节点
         workflow.add_node("crawler", self._crawler_node)
@@ -187,31 +219,52 @@ class UnifiedWorkflow:
             route_by_intent,
             {
                 "search": "crawler",
-                "writing": "memory_recall" if self.enable_memory else "crawler",
+                "writing": "diagnostic",  # 写作流程从诊断开始
                 "report": "report_crawl",
                 "qa": "qa_search",
                 "revision": "revise",
             },
         )
 
+        # 诊断节点后的质量门禁
+        workflow.add_conditional_edges(
+            "diagnostic",
+            diagnostic_quality_gate,
+            {
+                "outline": "topic",  # 质量达标，进入选题阶段
+                "hitl_intervene": "hitl_intervene",  # 需要人工介入
+                "diagnostic_retry": "diagnostic",  # 迭代重试（循环回自身）
+            },
+        )
+
+        # diagnostic_retry 时迭代重试，需要加一条显式边让循环成立
+        # （LangGraph 的 conditional_edges 返回目标节点，但需要显式边连接）
+        workflow.add_edge("diagnostic", "diagnostic")  # self-loop for retry
+
+        # HITL 中断节点（暂停等待人工响应）
+        workflow.add_node("hitl_intervene", self._hitl_intervene_node)
+
+        # HITL 恢复后根据决策分流
+        workflow.add_conditional_edges(
+            "hitl_intervene",
+            self._hitl_decision_router,
+            {
+                "continue": "topic",  # 批准继续，进入选题阶段
+                "revise": "diagnostic",  # 需要修改，退回诊断
+                "terminate": END,  # 终止流程
+            },
+        )
+
+        # Paper 流程: topic → literature → methodology → outline → writing → review → polish
+        workflow.add_edge("topic", "literature")
+        workflow.add_edge("literature", "methodology")
+        workflow.add_edge("methodology", "outline")
+        workflow.add_edge("outline", "writing")
+        workflow.add_edge("writing", "review")
+
         # 搜索工作流路径
         workflow.add_edge("crawler", "selector")
         workflow.add_edge("selector", END)
-
-        # 写作工作流路径
-        if self.enable_memory:
-            workflow.add_edge("memory_recall", "crawler")
-            workflow.add_edge("selector", "multimodal" if self.enable_multimodal else "outline")
-        else:
-            workflow.add_edge("selector", "outline")
-
-        if self.enable_multimodal:
-            workflow.add_edge("multimodal", "kg" if self.enable_kg else "outline")
-        if self.enable_kg:
-            workflow.add_edge("kg", "outline")
-
-        workflow.add_edge("outline", "writing")
-        workflow.add_edge("writing", "review")
 
         if self.enable_evaluation:
             workflow.add_edge("review", "evaluator")
@@ -287,6 +340,99 @@ class UnifiedWorkflow:
         result = self.reviewer.execute(agent_state)
         return dict(result)
 
+    def _diagnostic_node(self, state: dict) -> dict:
+        """诊断节点入口"""
+        agent_state = PaperAgentState()
+        agent_state.update(state)
+        result = self.diagnostic.execute(agent_state)
+        return dict(result)
+
+    def _topic_node(self, state: dict) -> dict:
+        """选题节点入口"""
+        agent_state = PaperAgentState()
+        agent_state.update(state)
+        result = self.topic.execute(agent_state)
+        return dict(result)
+
+    def _literature_node(self, state: dict) -> dict:
+        """文献节点入口"""
+        agent_state = PaperAgentState()
+        agent_state.update(state)
+        result = self.literature.execute(agent_state)
+        return dict(result)
+
+    def _methodology_node(self, state: dict) -> dict:
+        """方法论节点入口"""
+        agent_state = PaperAgentState()
+        agent_state.update(state)
+        result = self.methodology.execute(agent_state)
+        return dict(result)
+
+    async def _hitl_intervene_node(self, state: dict) -> dict:
+        """
+        HITL 中断处理节点
+
+        当触发 HITL 中断时，此节点会：
+        1. 标记中断状态
+        2. 等待外部响应（通过 HITLManager）
+        3. 将响应结果注入状态
+        """
+        from src.agents_v2.unified.hitl_manager import get_hitl_manager
+
+        hitl_manager = get_hitl_manager()
+
+        # 获取诊断问题信息
+        diagnostic = state.get("diagnostic_result", {})
+        problems = diagnostic.get("problems", [])
+        severity = diagnostic.get("severity", {})
+
+        # 请求人工介入
+        intervention = await hitl_manager.request_intervention(
+            intervention_type="approval",
+            agent_id="diagnostic_phase",
+            description=f"选题问题需要人工审核: {problems}",
+            options=["批准继续", "修改选题方向", "终止流程"],
+            context={
+                "problems": problems,
+                "severity": severity,
+                "recommendations": diagnostic.get("recommendations", [])
+            },
+            priority="high"
+        )
+
+        # 将干预结果注入状态
+        state["hitl_response"] = {
+            "approved": intervention.approved,
+            "selected_option": intervention.selected_option,
+            "feedback": intervention.feedback,
+            "responder": intervention.responder
+        }
+
+        # 根据决策设置后续流转标记
+        state["hitl_decision"] = intervention.selected_option or ("approve" if intervention.approved else "reject")
+
+        return state
+
+    def _hitl_decision_router(self, state: dict) -> str:
+        """
+        根据 HITL 决策路由到下一步
+
+        Args:
+            state: 包含 hitl_decision 的状态
+
+        Returns:
+            "continue" - 批准继续
+            "revise" - 需要修改
+            "terminate" - 终止
+        """
+        decision = state.get("hitl_decision", "approve")
+        if decision in ("批准继续", "approve", "continue"):
+            return "continue"
+        elif decision in ("修改选题方向", "revise"):
+            return "revise"
+        else:
+            return "terminate"
+
     def _evaluator_node(self, state: dict) -> dict:
         agent_state = PaperAgentState()
         agent_state.update(state)
@@ -359,6 +505,8 @@ class UnifiedWorkflow:
         report_type: str = "daily",
         keywords: list = None,
         thread_id: str = "",
+        route_path: str = "search",  # 工作流路径: search/writing/report/qa/revision
+        enable_hitl: bool = None,   # 是否启用 HITL，覆盖默认值
     ):
         """运行统一工作流
 
@@ -369,6 +517,8 @@ class UnifiedWorkflow:
             report_type: 报告类型（daily/weekly/monthly）
             keywords: 关键词列表（用于报告）
             thread_id: LangGraph 线程 ID（用于 HITL checkpoint 恢复）
+            route_path: 工作流路径，默认 search
+            enable_hitl: 是否启用 HITL，覆盖实例初始化时的设置
 
         Returns:
             dict: {
@@ -392,20 +542,27 @@ class UnifiedWorkflow:
         if not thread_id:
             thread_id = str(uuid.uuid4())
 
+        # 启用 HITL 覆盖
+        hitl_enabled = enable_hitl if enable_hitl is not None else self.enable_hitl
+
         initial_state = {
             "user_query": query,
             "user_id": user_id,
             "session_id": session_id,
             "report_type": report_type,
             "keywords": keywords or [],
+            "route_path": route_path,  # 设置工作流路径
+            "_route_path_set": True,   # 标记 route_path 是外部传入的，router 应尊重
             "papers": [],
             "selected_papers": [],
             "outline": {},
             "draft": "",
             "feedback": [],
             "errors": [],
-            "hitl_enabled": self.enable_hitl,
+            "hitl_enabled": hitl_enabled,
             "thread_id": thread_id,
+            "iteration": 0,
+            "max_iterations": 3,
         }
 
         # 如果明确指定了报告类型或关键词，跳过路由直接走报告路径

@@ -85,9 +85,12 @@ class WritingNode:
                 "outline": outline
             }, context)
 
+            # Debug: log the result
+            logger.info(f"[Writing] draft_result success={result.success}, result={result.result}")
+
             return {
                 "success": result.success,
-                "draft": result.result if result.result else "",
+                "draft": result.result.get("full_draft", "") if result.result else "",
                 "quality_score": result.quality_score / 10.0 if result.quality_score else 0,
                 "error": result.error
             }
@@ -139,6 +142,10 @@ class WritingNode:
 
         # 2. 撰写初稿
         if outline_result.get("success") and outline_result.get("outline"):
+            # 将新生成的 outline 和 thesis 注入 context
+            context["outline"] = outline_result["outline"]
+            context["thesis_statement"] = outline_result.get("thesis_statement", "")
+
             draft_result = loop.run_until_complete(
                 self._run_draft_agent(topic, outline_result["outline"], context)
             )

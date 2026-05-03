@@ -109,8 +109,16 @@ class LiteratureNode:
 
         # 更新论文列表
         if result.get("papers"):
-            existing_ids = {p.id for p in state.get("papers", [])}
-            new_papers = [p for p in result["papers"] if p.id not in existing_ids]
+            # 注意：papers 可能是 dict（paper_id）或对象（id）
+            existing_ids = set()
+            for p in state.get("papers", []):
+                existing_ids.add(p.get("id") or p.get("paper_id") or "")
+            new_papers = []
+            for p in result["papers"]:
+                pid = p.get("id") or p.get("paper_id") or ""
+                if pid and pid not in existing_ids:
+                    existing_ids.add(pid)
+                    new_papers.append(p)
             state["papers"] = state.get("papers", []) + new_papers
 
         # 存储结果

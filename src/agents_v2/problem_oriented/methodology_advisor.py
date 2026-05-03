@@ -25,6 +25,9 @@ def _clean_json_markdown(text: str) -> str:
     if not text:
         return ""
 
+    # 移除思考块
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+
     # 去除 ```json ... ``` 包裹
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
@@ -69,15 +72,9 @@ def _clean_json_markdown(text: str) -> str:
                     json.loads(extracted)
                     return extracted
                 except json.JSONDecodeError:
-                    # Try removing trailing content after the closing brace
-                    for trim_end in range(end_pos - 1, start, -1):
-                        trimmed = text[start:trim_end]
-                        try:
-                            json.loads(trimmed)
-                            return trimmed
-                        except json.JSONDecodeError:
-                            continue
+                    pass  # 继续尝试其他方法
 
+    # 最终回退：返回原始清理后的文本（可能包含非标准JSON）
     return text
 
 
@@ -238,17 +235,25 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
             try:
                 data = json.loads(content)
             except json.JSONDecodeError as e:
-                # Try regex extraction on original response
-                import re
-                match = re.search(r'\{.*\}', response, re.DOTALL)
-                if match:
+                self.logger.warning(f"[{cls_name}:242] JSON parse failed: {e}, trying bracket matching")
+                # 尝试括号匹配提取
+                if content.startswith('{'):
                     try:
-                        data = json.loads(match.group())
-                    except Exception as e2:
-                        self.logger.warning(f"[{cls_name}:244] Regex extraction failed: {e2}, raw_input={response[:500] if response else 'empty'}")
-                        return []
+                        data = json.loads(content)
+                    except json.JSONDecodeError:
+                        # 用正则找 JSON 对象
+                        import re
+                        match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response, re.DOTALL)
+                        if match:
+                            try:
+                                data = json.loads(match.group())
+                            except Exception as e2:
+                                self.logger.warning(f"[{cls_name}:250] Bracket match failed: {e2}")
+                                return []
+                        else:
+                            self.logger.warning(f"[{cls_name}:253] No JSON found in response")
+                            return []
                 else:
-                    self.logger.warning(f"[{cls_name}:247] No JSON found in response, raw_input={response[:500] if response else 'empty'}")
                     return []
             return data.get("methods", [])
         except ValueError as e:
@@ -265,6 +270,10 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
         research_type: str
     ) -> Dict[str, Any]:
         """评估提议方法"""
+        # 如果 proposed_method 为空，提供默认评估
+        if not proposed_method or not proposed_method.strip():
+            proposed_method = topic  # 使用主题作为后备
+
         prompt = f"""
 评估以下研究方法是否适合：
 
@@ -287,36 +296,62 @@ class MethodologyAdvisorAgent(ProblemAgentBase):
     "pros": ["优点1", "优点2"],
     "cons": ["缺点1", "缺点2"],
     "risks": ["风险1", "风险2"],
-    "suitable": true/false
+    "suitable": true
 }}
 """
         cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
             if not response or not response.strip():
-                self.logger.error(f"[{cls_name}:215] LLM返回空响应")
-                return {"suitability": 5.0, "suitable": False}
+                self.logger.error(f"[{cls_name}:300] LLM返回空响应")
+                return {"suitability": 5.0, "feasibility": 5.0, "novelty": 5.0, "suitable": False, "pros": [], "cons": [], "risks": []}
+
+            # 尝试直接解析
             content = _clean_json_markdown(response)
-            try:
-                data = json.loads(content)
-            except json.JSONDecodeError as e:
-                self.logger.warning(f"[{cls_name}:302] JSON parse failed in _evaluate_method: {e}, raw_input={response[:500] if response else 'empty'}")
-                import re
-                match = re.search(r'\{.*\}', response, re.DOTALL)
-                if match:
-                    try:
-                        data = json.loads(match.group())
-                    except Exception:
-                        return {"suitability": 5.0, "suitable": False}
-                else:
-                    return {"suitability": 5.0, "suitable": False}
-            return data
+            if content.startswith('{'):
+                try:
+                    data = json.loads(content)
+                    return data
+                except json.JSONDecodeError:
+                    pass
+
+            # JSON解析失败，尝试从响应中提取JSON
+            import re
+            match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group())
+                    return data
+                except Exception:
+                    pass
+
+            # 再次尝试：查找所有可能的JSON对象
+            json_matches = re.findall(r'\{[^{}]*\}', response)
+            for json_str in json_matches:
+                try:
+                    data = json.loads(json_str)
+                    # 验证是否包含必要的key
+                    if "suitability" in data:
+                        return data
+                except Exception:
+                    continue
+
+            # 如果还是失败，尝试基于响应文本生成结构化评估
+            self.logger.warning(f"[{cls_name}:335] JSON解析失败，尝试文本解析, raw_input={response[:300] if response else 'empty'}")
+
+            # 检查是否是文本回复（而非JSON）
+            if response.strip().startswith('#') or '请提供' in response or '补充' in response:
+                # LLM要求补充信息，返回默认评估
+                return {"suitability": 5.0, "feasibility": 5.0, "novelty": 5.0, "suitable": False,
+                        "pros": ["未提供具体研究方法"], "cons": ["方法不明确"], "risks": ["无法评估"]}
+
+            return {"suitability": 5.0, "feasibility": 5.0, "novelty": 5.0, "suitable": False, "pros": [], "cons": [], "risks": []}
         except ValueError as e:
-            self.logger.error(f"[{cls_name}:221] Method evaluation failed: {e}")
-            return {"suitability": 5.0, "suitable": False}
+            self.logger.error(f"[{cls_name}:321] Method evaluation failed: {e}")
+            return {"suitability": 5.0, "feasibility": 5.0, "novelty": 5.0, "suitable": False, "pros": [], "cons": [], "risks": []}
         except Exception as e:
-            self.logger.error(f"[{cls_name}:223] Method evaluation failed: {e}")
-            return {"suitability": 5.0, "suitable": False}
+            self.logger.error(f"[{cls_name}:323] Method evaluation failed: {e}")
+            return {"suitability": 5.0, "feasibility": 5.0, "novelty": 5.0, "suitable": False, "pros": [], "cons": [], "risks": []}
 
     async def _check_rigor(self, method_evaluation: Any) -> List[str]:
         """检查方法严谨性"""

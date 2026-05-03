@@ -63,6 +63,21 @@ from .hitl_manager import (
     InterventionResponse,
     get_hitl_manager,
 )
+from .phase_models import (
+    # Input models
+    DiagnosticInput,
+    TopicInput,
+    LiteratureInput,
+    MethodologyInput,
+    WritingInput,
+    PolishInput,
+    # Output models
+    PaperInfo,
+    LiteratureOutput,
+    WritingOutput,
+    PolishOutput,
+    PhaseExecutionResult,
+)
 
 __all__ = [
     # State models
@@ -118,4 +133,16 @@ __all__ = [
     "InterventionRequest",
     "InterventionResponse",
     "get_hitl_manager",
+    # Phase models
+    "DiagnosticInput",
+    "TopicInput",
+    "LiteratureInput",
+    "MethodologyInput",
+    "WritingInput",
+    "PolishInput",
+    "PaperInfo",
+    "LiteratureOutput",
+    "WritingOutput",
+    "PolishOutput",
+    "PhaseExecutionResult",
 ]

@@ -25,6 +25,9 @@ def _clean_json_markdown(text: str) -> str:
     if not text:
         return ""
 
+    # 移除思考块
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+
     # 去除 ```json ... ``` 包裹
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)

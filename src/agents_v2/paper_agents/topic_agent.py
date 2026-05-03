@@ -12,7 +12,7 @@ from src.agents_v2.logging_config import get_logging_logger
 
 import json
 import re
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..unified.error_handler import log_error_with_context
@@ -36,8 +36,26 @@ class TopicCandidate(BaseModel):
     title: str = Field(default="", description="主题标题")
     description: str = Field(default="", description="主题描述")
     scope: str = Field(default="", description="研究范围")
+    innovation: str = Field(default="", description="主要创新点")
+    feasibility: float = Field(default=0.7, description="可行性评分")
+    literature_support: str = Field(default="", description="文献支持情况")
+    key_references: List[str] = Field(default_factory=list, description="关键参考文献")
     potential_methods: List[str] = Field(default_factory=list, description="可能使用的方法")
     expected_contribution: str = Field(default="", description="预期贡献")
+
+    @field_validator('feasibility', mode='before')
+    @classmethod
+    def clamp_feasibility(cls, v):
+        """修正超出范围的feasibility值（LLM可能输出7而非0.7）"""
+        if isinstance(v, (int, float)):
+            if v > 1:
+                # 假设LLM输出的是10分制分数，转换为小数
+                if v > 10:
+                    v = 1.0  # 超出范围则设为默认值
+                else:
+                    v = v / 10.0
+            return v
+        return 0.7
 
 
 class TopicScores(BaseModel):
@@ -68,9 +86,12 @@ class EvaluatedResponse(BaseModel):
 
 
 def _clean_json_markdown(text: str) -> str:
-    """清理JSON markdown格式"""
+    """清理JSON markdown格式，移除思考块"""
     if not text:
         return ""
+
+    # 移除思考块
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
 
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
@@ -399,6 +420,9 @@ class TopicAgent(PaperAgentBase):
             "title": "基于深度学习的图像超分辨率重建方法",
             "description": "研究利用深度卷积神经网络提升图像分辨率的技术",
             "scope": "聚焦于自然图像的2倍超分辨率",
+            "innovation": "提出一种新的特征融合策略，提升重建质量",
+            "feasibility": 0.8,
+            "literature_support": "深度学习超分辨率相关文献充足",
             "potential_methods": ["卷积神经网络", "生成对抗网络"],
             "expected_contribution": "提出一种新的特征融合策略"
         }}
@@ -423,18 +447,24 @@ class TopicAgent(PaperAgentBase):
 
 主题列表：{json.dumps(candidates, ensure_ascii=False)}
 
-评估维度（每个维度1-10分）：
-1. literature_adequacy - 文献充足性
-2. method_feasibility - 方法可行性
-3. novelty - 创新性
-4. time_reasonableness - 时间合理性
-5. resource_accessibility - 资源可获取性
+**重要：仔细阅读各字段的评分要求**
+评估维度（每个维度1-10分，整数）：
+1. literature_adequacy - 文献充足性（1-10分）
+2. method_feasibility - 方法可行性（1-10分）
+3. novelty - 创新性（1-10分）
+4. time_reasonableness - 时间合理性（1-10分）
+5. resource_accessibility - 资源可获取性（1-10分）
+
+**feasibility字段说明（重要！）**
+- feasibility：必须是0到1之间的小数（如0.8），不是10分制！
+- 10分制分数只用于上述5个评估维度
+- overall_score：综合评分，使用10分制
 
 示例输出格式：
 {{
     "evaluated": [
         {{
-            "original": {{"title": "示例主题", "description": "主题描述"}},
+            "original": {{"title": "示例主题", "description": "主题描述", "scope": "研究范围", "innovation": "创新点", "feasibility": 0.8, "literature_support": "文献支持"}},
             "scores": {{
                 "literature_adequacy": 8,
                 "method_feasibility": 7,
@@ -476,12 +506,16 @@ class TopicAgent(PaperAgentBase):
             return {"title": "Default Topic", "description": "Default research topic"}
 
         best = evaluated[0]
+        original = best.get("original", {})
         return {
-            "title": best.get("original", {}).get("title", ""),
-            "description": best.get("original", {}).get("description", ""),
-            "scope": best.get("original", {}).get("scope", ""),
-            "potential_methods": best.get("original", {}).get("potential_methods", []),
-            "expected_contribution": best.get("original", {}).get("expected_contribution", ""),
+            "title": original.get("title", ""),
+            "description": original.get("description", ""),
+            "scope": original.get("scope", ""),
+            "innovation": original.get("innovation", ""),
+            "feasibility": original.get("feasibility", 0.7),
+            "literature_support": original.get("literature_support", ""),
+            "potential_methods": original.get("potential_methods", []),
+            "expected_contribution": original.get("expected_contribution", ""),
             "scores": best.get("scores", {}),
             "overall_score": best.get("overall_score", 0.5),
             "risk_factors": best.get("risk_factors", [])

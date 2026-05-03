@@ -704,16 +704,62 @@ frontend/src/components/
 | Agent | 文件 | 职责 | 优先级 |
 |-------|------|------|--------|
 | TopicAgent | `paper_agents/thesis_agent.py` | 选题与研究问题凝练 | P0 |
-| OutlineGeneratorAgent | `writing/outline_generator.py` | 大纲生成 | P0 |
-| DraftGeneratorAgent | `writing/draft_generator.py` | 初稿撰写 | P0 |
-| LiteratureReviewAgent | `writing/literature_review.py` | 文献综述 | P1 |
-| ProposalGeneratorAgent | `writing/proposal_generator.py` | 开题报告 | P1 |
+| LiteratureAgent | `paper_agents/literature_agent.py` | 文献检索与深度分析 | P0 |
+| OutlineAgent | `paper_agents/outline_agent.py` | 大纲生成（EnglishFirst） | P0 |
+| DraftWriterAgent | `paper_agents/draft_writer.py` | 初稿撰写（并行） | P0 |
 | SmartReviserAgent | `writing/smart_reviser.py` | 智能改稿 | P0 |
 | ReportRefinerAgent | `writing/report_refiner.py` | 多轮精炼 | P0 |
-| LanguagePolisherAgent | `writing/smart_reviser.py` | 语言润色 | P1 |
+| LanguagePolisherAgent | `problem_oriented/language_polisher.py` | 语言润色 | P1 |
 | ReviewerAgent | `writing/report_refiner.py` | 质量评审 | P1 |
+| DigestReportAgent | `paper_agents/digest_agent.py` | 学术快报 | P1 |
 
-### 9.2 问题导向 Agent（借鉴 PaperDebugger + SciSage）
+### 9.2 LiteratureAgent 核心流程（更新）
+
+#### 9.2.1 相关性计算（嵌入向量）
+
+```python
+# 使用 ModelScope Qwen3-Embedding-0.6B 计算相关性
+async def _compute_paper_relevance(papers: List[Dict], topic: str) -> List[Dict]:
+    """使用嵌入计算论文与主题的相关性"""
+    topic_embedding = await self._get_embedding(topic)
+    # 并行计算每篇论文的嵌入（并发数=5）
+    # 组合标题+摘要计算嵌入
+    similarity = self._cosine_similarity(topic_embedding, embedding)
+    paper["embedding_relevance"] = round(similarity, 3)
+    # 按相关性排序
+    scored_papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
+```
+
+#### 9.2.2 深度阅读过滤条件
+
+| 条件 | 值 | 说明 |
+|------|---|------|
+| 相关性阈值 | `> 0.85` | 仅深度阅读高相关性论文 |
+| 最大数量 | `20` 篇 | 防止处理过多论文 |
+
+#### 9.2.3 输送给 Writing 的数据
+
+```python
+# DraftWriterAgent 使用 paper_analyses 撰写各章节
+paper_analyses = literature.get("paper_analyses", [])
+```
+
+| 字段 | 来源 | 用于 |
+|------|------|------|
+| `core_problem` | LLM从摘要推断 | 引言/文献综述 |
+| `key_methodology` | LLM从摘要推断 | 方法论章节 |
+| `key_findings` | LLM从摘要推断 | 引言/讨论 |
+| `limitations` | LLM从摘要推断 | 文献综述研究空白 |
+
+#### 9.2.4 并发数环境变量
+
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| `LITERATURE_MAIN_SEARCH_CONCURRENCY` | 4 | 主搜索并发数 |
+| `LITERATURE_FALLBACK_SEARCH_CONCURRENCY` | 4 | fallback搜索并发数 |
+| `LITERATURE_DEEP_READ_CONCURRENCY` | 4 | 深度阅读并发数 |
+
+### 9.3 问题导向 Agent（借鉴 PaperDebugger + SciSage）
 
 | Agent | 文件 | 说明 |
 |-------|------|------|

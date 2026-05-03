@@ -63,7 +63,7 @@ class PolishNode:
 
             return {
                 "success": result.success,
-                "polished_text": result.result,
+                "polished_text": result.result.get("polished_text", text) if isinstance(result.result, dict) else (result.result if isinstance(result.result, str) else text),
                 "quality_score": result.quality_score / 10.0 if result.quality_score else 0,
                 "diagnosed_issues": result.diagnosed_issues,
                 "recommendations": result.recommendations,
@@ -99,7 +99,7 @@ class PolishNode:
 
             return {
                 "success": result.success,
-                "revised_text": result.result,
+                "revised_text": result.result.get("revised_text", text) if isinstance(result.result, dict) else (result.result if isinstance(result.result, str) else text),
                 "quality_score": result.quality_score / 10.0 if result.quality_score else 0,
                 "error": result.error
             }
@@ -181,8 +181,8 @@ class PolishNode:
 
         elapsed = time.time() - start
         logger.info(
-            f"[Polish] 润色完成: language_score={language_score:.3f}, "
-            f"revision_score={revision_score:.3f}, total={state['polish_quality_score']:.3f}, "
+            f"[Polish] 润色完成: polished_text type={type(polished_text)}, length={len(polished_text) if isinstance(polished_text, str) else 'N/A'}, "
+            f"language_score={language_score:.3f}, revision_score={revision_score:.3f}, total={state['polish_quality_score']:.3f}, "
             f"耗时 {elapsed:.2f}s"
         )
 

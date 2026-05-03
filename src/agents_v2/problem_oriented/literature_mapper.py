@@ -23,6 +23,8 @@ logger = get_logging_logger(__name__)
 def _clean_json_markdown(text: str) -> str:
     """清理JSON markdown格式（去除```json...```包裹），并提取纯JSON"""
     import re
+    # 移除思考块
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
     # 去除 ```json ... ``` 包裹
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s*```$', '', text, flags=re.IGNORECASE)
@@ -287,7 +289,7 @@ class LiteratureMapperAgent(ProblemAgentBase):
         return unique_papers
 
     async def _categorize_papers(self, papers: List[Dict[str, Any]]) -> Dict[str, List]:
-        """分类整理文献"""
+        """分类整理文献 - 并行版本（分批处理后合并）"""
         if not papers:
             return {
                 "methods": [],
@@ -297,10 +299,22 @@ class LiteratureMapperAgent(ProblemAgentBase):
                 "related": []
             }
 
-        prompt = f"""
-将以下文献分类整理：
+        # 限制处理数量，截断 abstract 长度
+        papers_to_process = papers[:30]
+        paper_list = [
+            {"title": p.get("title", ""), "abstract": (p.get("abstract") or "")[:200]}
+            for p in papers_to_process
+        ]
 
-文献列表：{json.dumps([{"title": p.get("title"), "abstract": p.get("abstract")} for p in papers[:30]], ensure_ascii=False)}
+        # 分批处理 - 每批10篇，并行分类后合并
+        batch_size = 10
+        batches = [paper_list[i:i+batch_size] for i in range(0, len(paper_list), batch_size)]
+
+        async def _categorize_batch(batch: List[Dict]) -> Dict[str, List]:
+            """对一批文献进行分类"""
+            prompt = f"""将以下文献分类整理：
+
+文献列表：{json.dumps(batch, ensure_ascii=False)}
 
 分类类别：
 1. methods: 方法论研究
@@ -318,25 +332,47 @@ class LiteratureMapperAgent(ProblemAgentBase):
     "related": [...]
 }}
 """
-        cls_name = self.__class__.__name__
-        try:
-            response = await self._llm_call(prompt)
-            if not response or not response.strip():
-                logger.error(f"[{cls_name}:282] LLM返回空响应")
-                return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
-            content = _clean_json_markdown(response)
+            cls_name = self.__class__.__name__
             try:
-                data = json.loads(content)
-            except json.JSONDecodeError as e:
-                logger.warning(f"[{cls_name}:327] Categorization JSON parse failed: {e}, raw_response={response[:500] if response else 'empty'}")
+                response = await self._llm_call(prompt)
+                if not response or not response.strip():
+                    logger.error(f"[{cls_name}:325] LLM返回空响应")
+                    return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
+                content = _clean_json_markdown(response)
+                try:
+                    data = json.loads(content)
+                    return data
+                except json.JSONDecodeError as e:
+                    logger.warning(f"[{cls_name}:338] Batch JSON parse failed: {e}")
+                    return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
+            except Exception as e:
+                logger.error(f"[{cls_name}:342] Batch categorization failed: {e}")
                 return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
-            return data
-        except ValueError as e:
-            logger.error(f"[{cls_name}:288] Categorization failed: {e}")
-            return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
-        except Exception as e:
-            logger.error(f"[{cls_name}:290] Categorization failed: {e}", exc_info=True)
-            return {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
+
+        # 并行执行所有批次
+        import asyncio
+        batch_results = await asyncio.gather(*[_categorize_batch(b) for b in batches])
+
+        # 合并结果
+        merged = {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
+        for batch_result in batch_results:
+            for cat in merged:
+                items = batch_result.get(cat, [])
+                if isinstance(items, list):
+                    merged[cat].extend(items)
+
+        # 去重（按 title）
+        seen_titles = set()
+        final_result = {cat: [] for cat in ["methods", "applications", "surveys", "critiques", "related"]}
+        for cat in merged:
+            for item in merged[cat]:
+                title = item.get("title", "")
+                if title and title not in seen_titles:
+                    seen_titles.add(title)
+                    final_result[cat].append(item)
+
+        logger.info(f"[{self.__class__.__name__}] 分类完成: methods={len(final_result['methods'])}, applications={len(final_result['applications'])}, surveys={len(final_result['surveys'])}")
+        return final_result
 
     async def _identify_gaps(self, topic: str, categorized: Dict) -> List[Dict[str, str]]:
         """识别研究空白"""

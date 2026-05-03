@@ -191,8 +191,8 @@ class PaperSearchAgent(BaseQAAgent):
                                 paper_id, title, authors, year, abstract, url, source,
                                 paper_external_id, doi, venue, citations, keywords,
                                 methodology, key_contributions, results, raw_data,
-                                fingerprint, created_at, updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                fingerprint, embedding, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
                             paper_id,
                             p.title,
@@ -211,6 +211,7 @@ class PaperSearchAgent(BaseQAAgent):
                             p.results,
                             json.dumps(p.to_dict(), ensure_ascii=False),  # raw_data
                             fingerprint,
+                            json.dumps(p.embedding) if hasattr(p, 'embedding') and p.embedding else "[]",
                             now,
                             now,
                         ))

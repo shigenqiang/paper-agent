@@ -217,8 +217,8 @@ class PaperAgentBase(ABC):
         if not text or text.strip().startswith('<!') or text.strip().startswith('<html'):
             return ""
 
-        # 1. 移除<think>...块（如果实际内容在块之后，会保留）
-        text = re.sub(r'<think>.*?', '', text, flags=re.DOTALL)
+        # 1. 移除<think>...</think>块
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
 
         # 2. 移除参考文献部分（从 "参考文献" 或 "## 参考文献" 到结尾）
         refs_pattern = r'(?:\n|^)##?\s*参考文献.*$'

@@ -49,7 +49,7 @@ class TranslationWrapper:
             if self.llm_config:
                 api_key = getattr(self.llm_config, 'api_key', None) or os.getenv("OPENAI_API_KEY")
                 base_url = getattr(self.llm_config, 'base_url', None) or os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
-                model = getattr(self.llm_config, 'model_name', 'minimax')
+                model = getattr(self.llm_config, 'model_name', 'minimax-m2.7')
                 self._translator_llm = ChatOpenAI(
                     model=model,
                     temperature=0.3,
@@ -61,7 +61,7 @@ class TranslationWrapper:
                 api_key = os.getenv("OPENAI_API_KEY")
                 base_url = os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
                 self._translator_llm = ChatOpenAI(
-                    model="minimax",
+                    model="minimax-m2.7",
                     temperature=0.3,
                     max_tokens=4096,
                     api_key=api_key,
@@ -83,23 +83,26 @@ class TranslationWrapper:
         if not text or not self._translator_llm:
             return text
 
-        prompt = f"""Translate the following Chinese text to English. Only output the English translation, nothing else.
+        # 如果文本已经是纯英文，直接返回
+        if all(ord(c) < 128 for c in text):
+            return text
 
-Chinese: {text}
+        prompt = f"""Translate the following to English. Output ONLY the translation.
 
-English:"""
+Input: {text}
+
+Output:"""
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
             messages = [
-                SystemMessage(content="You are a translator. Translate Chinese to English accurately."),
+                SystemMessage(content="You are a translator. Output ONLY the translated text, no quotes or explanation."),
                 HumanMessage(content=prompt)
             ]
             response = await self._translator_llm.ainvoke(messages)
             result = response.content if hasattr(response, 'content') else str(response)
-            # 清理thinking标签和其他非翻译内容
-            result = result.strip()
-            result = result.replace("<think>", "").replace("</think>", "").strip()
+            result = result.strip().replace("<think>", "").replace("", "").strip()
+            result = result.strip('"').strip("'")
             return result
         except Exception as e:
             logger.error(f"Translation to English failed: {e}")

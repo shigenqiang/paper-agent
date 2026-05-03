@@ -46,6 +46,7 @@ class Paper:
     key_contributions: List[str] = field(default_factory=list)
     results: str = ""
     raw_data: str = ""  # 原始JSON数据
+    embedding: List[float] = field(default_factory=list)  # 192维嵌入向量
     created_at: str = ""
     updated_at: str = ""
 
@@ -66,6 +67,7 @@ class Paper:
             "methodology": self.methodology,
             "key_contributions": self.key_contributions,
             "results": self.results,
+            "embedding": self.embedding,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -88,6 +90,7 @@ class Paper:
             json.dumps(self.key_contributions, ensure_ascii=False),
             self.results,
             self.raw_data,
+            json.dumps(self.embedding, ensure_ascii=False) if self.embedding else "[]",
             self.created_at,
             self.updated_at,
         )
@@ -112,6 +115,7 @@ class Paper:
             key_contributions=json.loads(data["key_contributions"]) if data["key_contributions"] else [],
             results=data["results"] or "",
             raw_data=data["raw_data"] or "",
+            embedding=json.loads(data["embedding"]) if data.get("embedding") else [],
             created_at=data["created_at"] or "",
             updated_at=data["updated_at"] or "",
         )
@@ -193,6 +197,7 @@ class PaperDatabase:
                 results TEXT,
                 raw_data TEXT,
                 fingerprint TEXT UNIQUE,
+                embedding TEXT,
                 created_at TEXT,
                 updated_at TEXT
             )

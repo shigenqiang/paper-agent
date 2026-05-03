@@ -11,8 +11,9 @@ from typing import Any, Dict, List, Optional
 from src.agents_v2.logging_config import get_logging_logger
 
 import json
-
+import os
 import asyncio
+import math
 
 from .base_paper_agent import PaperAgentBase, AgentOutput, LLMConfig
 from ..paper_search.paper_search import PaperSearchAgent
@@ -21,6 +22,14 @@ from ..unified.error_handler import log_error_with_context
 from ..unified.pydantic_validator import parse_json
 
 logger = get_logging_logger(__name__)
+
+
+def _get_concurrency(env_key: str, default: int) -> int:
+    """从环境变量获取并发数配置"""
+    try:
+        return int(os.getenv(env_key, str(default)))
+    except (ValueError, TypeError):
+        return default
 
 
 class LiteratureAgent(PaperAgentBase):
@@ -33,6 +42,10 @@ class LiteratureAgent(PaperAgentBase):
     - PDF阅读与信息提取
     - 识别研究空白
     """
+    # 并发数环境变量配置
+    ENV_FALLBACK_SEARCH_CONCURRENCY = "LITERATURE_FALLBACK_SEARCH_CONCURRENCY"
+    ENV_MAIN_SEARCH_CONCURRENCY = "LITERATURE_MAIN_SEARCH_CONCURRENCY"
+    ENV_DEEP_READ_CONCURRENCY = "LITERATURE_DEEP_READ_CONCURRENCY"
 
     # Few-shot示例 - 文献工作的期望输出格式
     FEW_SHOT_EXAMPLES = """
@@ -104,6 +117,91 @@ class LiteratureAgent(PaperAgentBase):
         # 使用真实的论文搜索Agent
         self.search_agent = PaperSearchAgent()
 
+        # Embedding 配置（ModelScope）
+        self._embedding_client = None
+        self._embedding_model = "Qwen/Qwen3-Embedding-0.6B"
+        self._embedding_base_url = "https://api-inference.modelscope.cn/v1"
+        self._embedding_api_key = os.getenv("EMBEDDING_API_KEY", "ms-4bd332d6-c7cb-47a2-99c9-c1df1f6be1c3")
+
+    def _get_embedding_client(self):
+        """获取 Embedding 客户端"""
+        if self._embedding_client is None:
+            try:
+                from openai import OpenAI
+                self._embedding_client = OpenAI(
+                    base_url=self._embedding_base_url,
+                    api_key=self._embedding_api_key
+                )
+            except Exception as e:
+                logger.warning(f"Embedding client init failed: {e}")
+        return self._embedding_client
+
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """计算余弦相似度"""
+        dot = sum(a * b for a, b in zip(vec1, vec2))
+        norm1 = math.sqrt(sum(a * a for a in vec1))
+        norm2 = math.sqrt(sum(b * b for b in vec2))
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        return dot / (norm1 * norm2)
+
+    async def _get_embedding(self, text: str) -> Optional[List[float]]:
+        """获取文本嵌入向量"""
+        client = self._get_embedding_client()
+        if not client:
+            return None
+        try:
+            response = client.embeddings.create(
+                model=self._embedding_model,
+                input=text[:2000]
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.warning(f"Embedding failed: {e}")
+            return None
+
+    async def _compute_paper_relevance(
+        self,
+        papers: List[Dict[str, Any]],
+        topic: str
+    ) -> List[Dict[str, Any]]:
+        """使用嵌入计算论文与主题的相关性"""
+        if not papers:
+            return papers
+
+        # 获取主题嵌入
+        topic_embedding = await self._get_embedding(topic)
+        if not topic_embedding:
+            logger.warning("Failed to get topic embedding, using default relevance")
+            return papers
+
+        # 并行计算每篇论文的嵌入和相关性
+        semaphore = asyncio.Semaphore(5)
+
+        async def process_paper(paper: Dict[str, Any]) -> tuple:
+            async with semaphore:
+                try:
+                    # 组合标题和摘要计算嵌入
+                    text_to_embed = f"{paper.get('title', '')} {paper.get('abstract', '')}"
+                    embedding = await self._get_embedding(text_to_embed)
+                    if embedding:
+                        similarity = self._cosine_similarity(topic_embedding, embedding)
+                        return paper, similarity
+                    return paper, 0.5  # 默认相关性
+                except Exception as e:
+                    logger.debug(f"Paper embedding failed: {e}")
+                    return paper, 0.5
+
+        results = await asyncio.gather(*[process_paper(p) for p in papers])
+        scored_papers = []
+        for paper, score in results:
+            paper["embedding_relevance"] = round(score, 3)
+            scored_papers.append(paper)
+
+        # 按相关性排序
+        scored_papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
+        return scored_papers
+
     async def execute(
         self,
         input_data: Dict[str, Any],
@@ -143,7 +241,7 @@ class LiteratureAgent(PaperAgentBase):
 
             # 2. 多引擎并行搜索 (180秒超时，因为arXiv API可能限流)
             all_papers = await asyncio.wait_for(
-                self._multi_engine_search(search_queries),
+                self._multi_engine_search(search_queries, topic),  # 传递原始 topic 用于本地查找
                 timeout=180.0
             )
             self.logger.info(f"[Literature] 搜索到 {len(all_papers)} 篇论文")
@@ -157,22 +255,27 @@ class LiteratureAgent(PaperAgentBase):
                     quality_score=0.0
                 )
 
-            # 3. 质量筛选与排序 (180秒超时，增加到180s因为LLM调用可能较慢)
+            # 3. 质量筛选与排序：使用嵌入计算相关性
             try:
                 ranked_papers = await asyncio.wait_for(
-                    self._rank_papers(topic, all_papers),
+                    self._compute_paper_relevance(all_papers, topic),
                     timeout=180.0
                 )
             except asyncio.TimeoutError:
-                self.logger.warning("[Literature] _rank_papers 超时，尝试返回已排序的论文")
-                # 超时时返回原始论文列表（不做排序）
+                self.logger.warning("[Literature] _compute_paper_relevance 超时，尝试返回已排序的论文")
                 ranked_papers = all_papers[:30] if len(all_papers) > 30 else all_papers
             self.logger.info(f"[Literature] 排序后 {len(ranked_papers)} 篇论文")
 
-            # 4. 深度阅读 (300秒超时，处理20篇论文需要更长时间)
+            # 4. 深度阅读：过滤相关度>0.85，最多20篇
+            high_relevance_papers = [
+                p for p in ranked_papers
+                if p.get("embedding_relevance", 0) > 0.85
+            ][:20]
+            self.logger.info(f"[Literature] 高相关性论文（>0.85）数量: {len(high_relevance_papers)}")
+
             try:
                 paper_analyses = await asyncio.wait_for(
-                    self._deep_read(ranked_papers[:15]),  # 减少到15篇加快速度
+                    self._deep_read(high_relevance_papers),
                     timeout=300.0
                 )
             except asyncio.TimeoutError:
@@ -201,7 +304,7 @@ class LiteratureAgent(PaperAgentBase):
                     "total_analyzed": len(paper_analyses) if paper_analyses else 0
                 },
                 agent_name=self.name,
-                reasoning=f"Collected {len(ranked_papers)} papers, analyzed {len(paper_analyses) if paper_analyses else 0}, identified {len(gaps) if gaps else 0} gaps",
+                reasoning=f"Collected {len(ranked_papers)} papers from multiple sources, analyzed {len(paper_analyses) if paper_analyses else 0}, identified {len(gaps) if gaps else 0} research gaps",
                 quality_score=min(1.0, (len(paper_analyses) if paper_analyses else 0) / 15)
             )
 
@@ -257,11 +360,30 @@ class LiteratureAgent(PaperAgentBase):
             log_error_with_context(self.logger, e, "Query generation", recovered=True)
             return [{"query": topic, "strategy": "基础", "aspect": "综合"}]
 
-    async def _multi_engine_search(self, queries: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    async def _multi_engine_search(self, queries: List[Dict[str, str]], original_topic: str = "") -> List[Dict[str, Any]]:
         """多引擎并行搜索 - 使用真实API + 本地缓存"""
         # 优先从本地数据库查找已存在的论文
         db = get_db()
         local_papers_map = {}  # title -> paper 用于快速去重
+
+        # 先用原始查询（可能是中文）在本地数据库查找
+        if original_topic:
+            try:
+                existing = db.find_by_title(original_topic)
+                if existing:
+                    logger.info(f"本地数据库找到论文: {existing.title[:50]}...")
+                    local_papers_map[existing.title.lower().strip()] = existing.to_dict() if hasattr(existing, 'to_dict') else {
+                        "paper_id": existing.paper_id,
+                        "title": existing.title,
+                        "authors": existing.authors,
+                        "year": existing.year,
+                        "abstract": existing.abstract or "",
+                        "url": existing.url or "",
+                        "source": existing.source or "",
+                        "relevance_score": 0.95  # 本地已有的论文高相关性
+                    }
+            except Exception as e:
+                logger.debug(f"本地查询跳过: {e}")
 
         async def search_single(query_obj: Dict[str, str]) -> List[Dict[str, Any]]:
             query = query_obj.get("query", "")
@@ -274,9 +396,10 @@ class LiteratureAgent(PaperAgentBase):
                 source = "pubmed"  # 验证搜索优先PubMed
 
             try:
+                # 扩大时间范围到5年，提高找到论文的概率
                 result = await self.search_agent.execute(
                     query,
-                    {"source": source, "time_range": 365, "max_results": 10}
+                    {"source": source, "time_range": 1825, "max_results": 10}
                 )
                 papers = result.get("papers", [])
                 # 过滤掉本地已存在的论文（通过title去重）
@@ -296,13 +419,14 @@ class LiteratureAgent(PaperAgentBase):
         async def fallback_search(query: str) -> List[Dict[str, Any]]:
             """通过 SearchFactory 多平台 fallback（直接使用各搜索器）"""
             try:
-                from ...search.search_factory import SearchFactory
-                from ...search.base_searcher import SearchResponse
+                from src.agents_v2.search.search_factory import SearchFactory
+                from src.agents_v2.search.base_searcher import SearchResponse
 
                 # 直接使用各平台搜索器（SearchFactory 会自动创建）
                 searcher_names = ["openalex", "arxiv", "semantic_scholar", "pubmed", "crossref"]
                 fallback_papers = []
-                semaphore = asyncio.Semaphore(2)
+                fallback_concurrency = _get_concurrency(self.ENV_FALLBACK_SEARCH_CONCURRENCY, 4)
+                semaphore = asyncio.Semaphore(fallback_concurrency)
 
                 async def search_one(name: str) -> List[Dict[str, Any]]:
                     async with semaphore:
@@ -352,7 +476,8 @@ class LiteratureAgent(PaperAgentBase):
                 return []
 
         # 并行搜索（限制并发数）
-        semaphore = asyncio.Semaphore(3)
+        main_concurrency = _get_concurrency(self.ENV_MAIN_SEARCH_CONCURRENCY, 4)
+        semaphore = asyncio.Semaphore(main_concurrency)
         async def bounded_search(q):
             async with semaphore:
                 return await search_single(q)
@@ -435,7 +560,8 @@ class LiteratureAgent(PaperAgentBase):
 
     async def _deep_read(self, papers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """深度阅读论文 - 并行处理"""
-        semaphore = asyncio.Semaphore(3)  # 限制并发数为3
+        deep_read_concurrency = _get_concurrency(self.ENV_DEEP_READ_CONCURRENCY, 4)
+        semaphore = asyncio.Semaphore(deep_read_concurrency)
 
         async def process_one(paper: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             async with semaphore:
