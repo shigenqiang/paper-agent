@@ -27,12 +27,20 @@ logger = get_logging_logger(__name__)
 
 
 def _suppress_logs():
-    """抑制所有日志输出，只保留 error 以上级别"""
-    logging.getLogger("literature_agent").setLevel(logging.ERROR)
-    logging.getLogger("paper_search").setLevel(logging.ERROR)
-    logging.getLogger("arxiv").setLevel(logging.ERROR)
-    logging.getLogger("pubmed").setLevel(logging.ERROR)
-    # 可以添加更多logger来抑制
+    """抑制所有日志输出"""
+    # 设置所有logger为ERROR级别以上
+    for logger_name in [
+        "literature_agent", "paper_search", "arxiv", "pubmed",
+        "diagnostic", "topic", "literature", "methodology", "writing", "polish",
+        "writing_agent", "outline_agent", "draft_writer",
+        "langgraph_workflow", "unified_workflow",
+        "root"  # root logger
+    ]:
+        logging.getLogger(logger_name).setLevel(logging.ERROR)
+    # 抑制httpx等第三方库的日志
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 class FullPaperRunner:
@@ -186,6 +194,8 @@ async def run_full_paper(topic: str, enable_hitl: bool = False, paper_only: bool
 
 def main():
     """主入口 - 仅输出最终论文"""
+    import io
+
     # 加载 .env 文件
     try:
         from dotenv import load_dotenv
@@ -209,8 +219,6 @@ def main():
     if paper_only:
         # 抑制所有日志输出
         _suppress_logs()
-        # 抑制stderr的logger输出
-        sys.stderr = open(os.devnull, 'w')
 
     if enable_hitl:
         print("启用 HITL 模式", file=sys.stderr)
@@ -218,14 +226,17 @@ def main():
     try:
         result = asyncio.run(run_full_paper(topic, enable_hitl=enable_hitl, paper_only=paper_only))
 
-        # 仅输出最终论文
+        # 仅输出最终论文（paper_only模式下不打印任何中间结果）
         final_paper = result.get("final_paper", "")
         if final_paper:
+            # stdout 只输出论文内容
             print(final_paper)
         else:
-            print("未能生成论文，请检查错误信息。", file=sys.stderr)
+            # 如果没有论文，输出错误信息到 stderr
+            print("未能生成论文，请检查错误日志。", file=sys.stderr)
+            sys.exit(1)
 
-        # 如果被中断，输出恢复指令到stderr
+        # 如果被中断，输出恢复指令到stderr（不是stdout）
         if result.get("interrupted"):
             print(f"\n工作流已中断，请使用以下命令恢复：", file=sys.stderr)
             print(f"  curl -X POST http://localhost:8000/api/workflow/resume \\", file=sys.stderr)
