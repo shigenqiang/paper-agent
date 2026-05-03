@@ -169,11 +169,11 @@ class LiteratureAgent(PaperAgentBase):
                 ranked_papers = all_papers[:30] if len(all_papers) > 30 else all_papers
             self.logger.info(f"[Literature] 排序后 {len(ranked_papers)} 篇论文")
 
-            # 4. 深度阅读 (180秒超时，增加到180s)
+            # 4. 深度阅读 (300秒超时，处理20篇论文需要更长时间)
             try:
                 paper_analyses = await asyncio.wait_for(
-                    self._deep_read(ranked_papers[:20]),
-                    timeout=180.0
+                    self._deep_read(ranked_papers[:15]),  # 减少到15篇加快速度
+                    timeout=300.0
                 )
             except asyncio.TimeoutError:
                 self.logger.warning("[Literature] _deep_read 超时，返回空分析")
@@ -536,3 +536,13 @@ class LiteratureAgent(PaperAgentBase):
 }}
 
 严格只输出JSON，不要其他内容。"""
+        try:
+            response = await self._llm_call(prompt)
+            data = parse_json(response)
+            if data is None:
+                return [{"description": "研究空白识别失败", "evidence": "", "potential_direction": "请检查输入数据"}]
+            gaps = data.get("gaps", [])
+            return gaps if gaps else [{"description": "未识别到研究空白", "evidence": "", "potential_direction": "扩大文献搜索范围"}]
+        except Exception as e:
+            log_error_with_context(self.logger, e, "Research gap identification", recovered=True)
+            return [{"description": "研究空白识别出错", "evidence": "", "potential_direction": str(e)}]
