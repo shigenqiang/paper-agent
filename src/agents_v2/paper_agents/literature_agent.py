@@ -300,7 +300,7 @@ class LiteratureAgent(PaperAgentBase):
                 from ...search.base_searcher import SearchResponse
 
                 # 直接使用各平台搜索器（SearchFactory 会自动创建）
-                searcher_names = ["openalex", "arxiv", "semantic_scholar"]
+                searcher_names = ["openalex", "arxiv", "semantic_scholar", "pubmed", "crossref", "base"]
                 fallback_papers = []
                 semaphore = asyncio.Semaphore(2)
 
@@ -501,14 +501,19 @@ class LiteratureAgent(PaperAgentBase):
         if not paper_analyses:
             return [{"description": "需要更多文献分析", "evidence": "", "potential_direction": "扩大搜索范围"}]
 
+        # 过滤掉 None 值
+        valid_analyses = [pa for pa in paper_analyses if pa is not None]
+        if not valid_analyses:
+            return [{"description": "需要更多文献分析", "evidence": "", "potential_direction": "扩大搜索范围"}]
+
         # 简化论文分析内容，减少token消耗
         simplified = []
-        for pa in paper_analyses[:10]:  # 最多10篇
+        for pa in valid_analyses[:10]:  # 最多10篇
             simplified.append({
-                "title": pa.get("title", "")[:100],
-                "core_problem": pa.get("core_problem", "")[:200],
-                "key_findings": pa.get("key_findings", "")[:200] if isinstance(pa.get("key_findings"), str) else ", ".join(pa.get("key_findings", []))[:200],
-                "limitations": pa.get("limitations", "")[:150]
+                "title": (pa.get("title") or "Unknown")[:100],
+                "core_problem": (pa.get("core_problem") or "Unknown")[:200],
+                "key_findings": (pa.get("key_findings") or "")[:200] if isinstance(pa.get("key_findings"), str) else ", ".join(pa.get("key_findings") or [])[:200],
+                "limitations": (pa.get("limitations") or "Unknown")[:150]
             })
 
         prompt = f"""基于以下论文分析，识别3-5个研究空白。
