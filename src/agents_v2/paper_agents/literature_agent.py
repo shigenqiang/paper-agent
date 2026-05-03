@@ -136,6 +136,44 @@ class LiteratureAgent(PaperAgentBase):
                 logger.warning(f"Embedding client init failed: {e}")
         return self._embedding_client
 
+    async def _close_embedding_client(self):
+        """关闭 Embedding 客户端，清理 aiohttp session"""
+        if self._embedding_client is not None:
+            try:
+                client = self._embedding_client
+                self._embedding_client = None
+
+                # 尝试多种方式关闭 aiohttp session
+                # 方式1: 通过 _sync_client 访问
+                sync_client = getattr(client, "_sync_client", None)
+                if sync_client is not None:
+                    session = getattr(sync_client, "_session", None)
+                    if session is not None and not session.closed:
+                        await session.aclose()
+
+                # 方式2: 通过 _client 访问
+                base_client = getattr(client, "_client", None)
+                if base_client is not None:
+                    session = getattr(base_client, "_session", None)
+                    if session is not None and not session.closed:
+                        await session.aclose()
+
+                # 方式3: 直接尝试关闭 client 本身
+                try:
+                    await client.close()
+                except Exception:
+                    pass
+
+                # 方式4: 尝试获取底层 connector 并关闭
+                try:
+                    connector = getattr(client, "_connector", None)
+                    if connector is not None:
+                        await connector.close()
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.debug(f"Embedding client close: {e}")
+
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """计算余弦相似度"""
         dot = sum(a * b for a, b in zip(vec1, vec2))
@@ -146,19 +184,34 @@ class LiteratureAgent(PaperAgentBase):
         return dot / (norm1 * norm2)
 
     async def _get_embedding(self, text: str) -> Optional[List[float]]:
-        """获取文本嵌入向量"""
+        """获取文本嵌入向量（带重试和限流处理）"""
         client = self._get_embedding_client()
         if not client:
             return None
-        try:
-            response = client.embeddings.create(
-                model=self._embedding_model,
-                input=text[:2000]
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            logger.warning(f"Embedding failed: {e}")
-            return None
+
+        max_retries = 3
+        base_delay = 1.0
+
+        for attempt in range(max_retries):
+            try:
+                response = await asyncio.to_thread(
+                    client.embeddings.create,
+                    model=self._embedding_model,
+                    input=text[:2000]
+                )
+                return response.data[0].embedding
+            except Exception as e:
+                error_str = str(e)
+                is_rate_limit = "429" in error_str or "rate limit" in error_str.lower()
+
+                if is_rate_limit and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Embedding rate limited, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(delay)
+                    continue
+
+                logger.warning(f"Embedding failed: {e}")
+                return None
 
     async def _compute_paper_relevance(
         self,
@@ -266,12 +319,12 @@ class LiteratureAgent(PaperAgentBase):
                 ranked_papers = all_papers[:30] if len(all_papers) > 30 else all_papers
             self.logger.info(f"[Literature] 排序后 {len(ranked_papers)} 篇论文")
 
-            # 4. 深度阅读：过滤相关度>0.85，最多20篇
+            # 4. 深度阅读：过滤相关度>0.75，最多20篇
             high_relevance_papers = [
                 p for p in ranked_papers
-                if p.get("embedding_relevance", 0) > 0.85
+                if p.get("embedding_relevance", 0) > 0.75
             ][:20]
-            self.logger.info(f"[Literature] 高相关性论文（>0.85）数量: {len(high_relevance_papers)}")
+            self.logger.info(f"[Literature] 高相关性论文（>0.75）数量: {len(high_relevance_papers)}")
 
             try:
                 paper_analyses = await asyncio.wait_for(
@@ -324,6 +377,9 @@ class LiteratureAgent(PaperAgentBase):
                 agent_name=self.name,
                 error=str(e)
             )
+        finally:
+            # 确保清理 Embedding 客户端资源
+            await self._close_embedding_client()
 
     async def _generate_search_queries(
         self,
