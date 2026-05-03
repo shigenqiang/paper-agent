@@ -212,9 +212,16 @@ def main():
         if sys.stdin.encoding != 'utf-8':
             sys.stdin.reconfigure(encoding='utf-8')
 
-    topic = sys.argv[1] if len(sys.argv) > 1 else "人工智能在教育领域的应用"
+    # 解析参数，过滤掉flags
+    known_flags = {"--hitl", "--paper-only"}
+    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+    topic = args[0] if args else "人工智能在教育领域的应用"
     enable_hitl = "--hitl" in sys.argv
     paper_only = "--paper-only" in sys.argv
+
+    # 如果 topic 是 flag，设置为默认值
+    if topic.startswith("--"):
+        topic = "人工智能在教育领域的应用"
 
     if paper_only:
         # 抑制所有日志输出
