@@ -62,6 +62,16 @@ def _clean_json_markdown(text: str) -> str:
     except json.JSONDecodeError:
         pass
 
+    # 策略2.5：修复常见的缺少逗号问题
+    # 例如: "}{" 或 "}{" 应该是 "},{"
+    cleaned = re.sub(r'}\s*\{', '},{', text)
+    cleaned = re.sub(r']\s*\[', '],[', cleaned)
+    try:
+        json.loads(cleaned)
+        return cleaned
+    except json.JSONDecodeError:
+        pass
+
     # 策略3：移除尾随逗号（包括多个）
     cleaned = re.sub(r',\s*$', '', text)
     try:
