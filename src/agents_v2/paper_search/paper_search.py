@@ -331,8 +331,8 @@ class PaperSearchAgent(BaseQAAgent):
                         break
                     except urllib.error.HTTPError as e:
                         if e.code == 429:
-                            # Rate limiting，等待后重试
-                            wait_time = (retry + 1) * 5
+                            # Rate limiting，等待后重试（减少等待时间）
+                            wait_time = (retry + 1) * 2  # 原来是 * 5，现在改为 * 2
                             self.logger.warning(f"arXiv API限流，等待{wait_time}秒后重试...")
                             time.sleep(wait_time)
                             continue

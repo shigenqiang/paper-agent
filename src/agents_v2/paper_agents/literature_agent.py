@@ -141,10 +141,10 @@ class LiteratureAgent(PaperAgentBase):
             )
             self.logger.info(f"[Literature] 生成 {len(search_queries)} 个搜索查询")
 
-            # 2. 多引擎并行搜索 (90秒超时)
+            # 2. 多引擎并行搜索 (180秒超时，因为arXiv API可能限流)
             all_papers = await asyncio.wait_for(
                 self._multi_engine_search(search_queries),
-                timeout=90.0
+                timeout=180.0
             )
             self.logger.info(f"[Literature] 搜索到 {len(all_papers)} 篇论文")
 
