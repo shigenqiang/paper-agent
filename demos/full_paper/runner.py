@@ -196,6 +196,21 @@ def main():
     """主入口 - 仅输出最终论文"""
     import io
 
+    # 解析参数（在导入之前）
+    known_flags = {"--hitl", "--paper-only"}
+    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+    topic = args[0] if args else "人工智能在教育领域的应用"
+    enable_hitl = "--hitl" in sys.argv
+    paper_only = "--paper-only" in sys.argv
+
+    # 如果 topic 是 flag，设置为默认值
+    if topic.startswith("--"):
+        topic = "人工智能在教育领域的应用"
+
+    # 尽快抑制日志（在导入模块之前）
+    if paper_only:
+        _suppress_logs()
+
     # 加载 .env 文件
     try:
         from dotenv import load_dotenv
@@ -211,21 +226,6 @@ def main():
             sys.stderr.reconfigure(encoding='utf-8')
         if sys.stdin.encoding != 'utf-8':
             sys.stdin.reconfigure(encoding='utf-8')
-
-    # 解析参数，过滤掉flags
-    known_flags = {"--hitl", "--paper-only"}
-    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
-    topic = args[0] if args else "人工智能在教育领域的应用"
-    enable_hitl = "--hitl" in sys.argv
-    paper_only = "--paper-only" in sys.argv
-
-    # 如果 topic 是 flag，设置为默认值
-    if topic.startswith("--"):
-        topic = "人工智能在教育领域的应用"
-
-    if paper_only:
-        # 抑制所有日志输出
-        _suppress_logs()
 
     if enable_hitl:
         print("启用 HITL 模式", file=sys.stderr)
