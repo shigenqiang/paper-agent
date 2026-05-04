@@ -494,6 +494,9 @@ class ConfidenceCalibrator:
 
     async def _call_llm(self, prompt: str) -> str:
         """调用 LLM"""
+        if not self.llm:
+            raise ValueError("LLM not available")
+
         try:
             if hasattr(self.llm, 'agenerate'):
                 result = await self.llm.agenerate([prompt])

@@ -20,7 +20,16 @@ Agent列表:
 - CitationGenerator: 引用生成
 - CitationVerifier: 引用验证
 - DiffManager: 文本对比与补丁
+
+推荐使用统一模块:
+- src.agents_v2.citation: 统一引用管理
+- src.agents_v2.reports: 统一报告生成
 """
+
+# 统一模块导入（推荐）
+# from src.agents_v2.citation import CitationFormatter, DOIVerifier
+# from src.agents_v2.reports import DailyReportGenerator, WeeklyReportGenerator
+
 from .literature_review import LiteratureReviewAgent
 from .outline_generator import OutlineGeneratorAgent
 from .draft_generator import DraftGeneratorAgent
@@ -68,12 +77,12 @@ from .generation_optimizer import (
 )
 from .citation_generator import (
     CitationGenerator,
-    CitationStyle,
-    Citation,
+    CitationStyle as LegacyCitationStyle,
+    Citation as LegacyCitation,
     InTextCitation,
     CitationResult,
     CitationStyleAdapter,
-    format_citation,
+    format_citation as legacy_format_citation,
     generate_references,
     # Citation verification
     CitationVerifier,
@@ -90,6 +99,25 @@ from .diff_manager import (
     ChangeSummary,
     get_diff_manager,
 )
+
+# 引用模块 - 使用统一模块（推荐）
+# 旧的引用生成器保留用于向后兼容
+try:
+    from ..citation import (
+        CitationFormatter,
+        CitationStyle,
+        SUPPORTED_STYLES as CITATION_STYLES,
+        format_citation,
+        DOIVerifier,
+        verify_doi,
+        CitationExtractor,
+        extract_citations,
+        CitationTracker,
+        track_citations,
+    )
+    _citation_module_available = True
+except ImportError:
+    _citation_module_available = False
 
 __all__ = [
     # Agents
@@ -133,15 +161,15 @@ __all__ = [
     "PromptCache",
     "BatchGenerationOptimizer",
     "optimize_generation",
+    # Citation (legacy - use src.agents_v2.citation instead)
     "CitationGenerator",
-    "CitationStyle",
-    "Citation",
+    "LegacyCitationStyle",
+    "LegacyCitation",
     "InTextCitation",
     "CitationResult",
     "CitationStyleAdapter",
-    "format_citation",
+    "legacy_format_citation",
     "generate_references",
-    # Citation verification
     "CitationVerifier",
     "VerificationResult",
     "verify_citation",
@@ -155,3 +183,18 @@ __all__ = [
     "ChangeSummary",
     "get_diff_manager",
 ]
+
+# Unified citation exports (if available)
+if _citation_module_available:
+    __all__.extend([
+        "CitationFormatter",
+        "CitationStyle",
+        "CITATION_STYLES",
+        "format_citation",
+        "DOIVerifier",
+        "verify_doi",
+        "CitationExtractor",
+        "extract_citations",
+        "CitationTracker",
+        "track_citations",
+    ])

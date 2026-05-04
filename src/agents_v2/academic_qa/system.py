@@ -353,6 +353,13 @@ class AcademicQASystem:
                     docs_for_answer = [{"content": ctx} for ctx in rag_result.context]
                 else:
                     docs_for_answer = rag_result.context
+
+            # 如果 Self-RAG 返回空答案，fallback 到 AnswerGenerator
+            if not answer:
+                gen_result = await self.answer_generator.generate(
+                    query, docs_for_answer, include_citations=True
+                )
+                answer = gen_result.answer
         else:
             # 直接生成
             gen_result = await self.answer_generator.generate(
@@ -375,9 +382,16 @@ class AcademicQASystem:
                         "quoted_text": tc.source_citation.quoted_text,
                     })
 
+        # 获取置信度
+        try:
+            confidence = gen_result.confidence if hasattr(gen_result, 'confidence') and gen_result else 0.5
+        except NameError:
+            confidence = 0.5
+
         return AcademicQAResult(
             answer=answer,
             citations=citations,
+            confidence=confidence,
             reasoning_chain=reasoning_chain,
         )
 

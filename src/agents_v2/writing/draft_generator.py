@@ -7,7 +7,7 @@ DraftGeneratorAgent - 全文初稿生成Agent
 - 引用融入
 - 保持风格一致性
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from src.agents_v2.logging_config import get_logging_logger
 
 import json
@@ -30,6 +30,115 @@ class DraftGeneratorAgent(WritingAgentBase):
     - 保持学术写作风格
     - 确保逻辑连贯
     """
+
+    def _extract_json(self, text: str) -> Dict[str, Any]:
+        """从LLM输出中提取JSON - 增强版，处理截断的JSON"""
+        if not text:
+            return {}
+        try:
+            import re
+
+            # 预处理：清理可能的问题字符
+            text = text.strip()
+
+            # 尝试直接解析（如果文本本身是完整的JSON）
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+
+            # 尝试提取 ```json ... ``` 块
+            json_str = None
+
+            # 特殊情况：文本以 ```json 开头但可能没有关闭的 ```
+            if text.startswith('```json'):
+                # 手动去掉 ```json 前缀
+                json_str = text[7:].strip()  # 去掉 ```json 和换行
+                # 查找是否有关闭的 ```
+                closing_idx = json_str.rfind('```')
+                if closing_idx > 0:
+                    json_str = json_str[:closing_idx].strip()
+                # json_str 现在是可能的JSON内容（可能截断）
+            else:
+                # 尝试用正则表达式提取 ```...``` 块
+                m = re.search(r'```json\s*(.*?)```', text, re.DOTALL)
+                if m:
+                    json_str = m.group(1).strip()
+                else:
+                    m = re.search(r'```\s*(.*?)```', text, re.DOTALL)
+                    if m:
+                        json_str = m.group(1).strip()
+
+            if json_str:
+                # 尝试直接解析
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    pass
+
+                # 尝试修复不完整的JSON
+                fixed = self._try_fix_incomplete_json(json_str)
+                if fixed:
+                    return fixed
+
+            # 如果没有找到 ```...``` 块，但文本看起来像JSON（以 { 开头）
+            # 尝试直接修复
+            if text.startswith('{'):
+                fixed = self._try_fix_incomplete_json(text)
+                if fixed:
+                    return fixed
+
+            return {}
+        except Exception:
+            return {}
+
+    def _try_fix_incomplete_json(self, json_str: str) -> Optional[Dict[str, Any]]:
+        """尝试修复不完整的JSON"""
+        try:
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                pass
+
+            open_braces = json_str.count('{')
+            close_braces = json_str.count('}')
+            open_brackets = json_str.count('[')
+            close_brackets = json_str.count(']')
+
+            last_valid_json_end = -1
+            for pattern in ['},\n        {\n            "level"', '}\n    ]\n}', '},\n        {\n            "title"']:
+                idx = json_str.rfind(pattern)
+                if idx != -1:
+                    try:
+                        test_json = json_str[:idx + len(pattern)] + '\n    ]\n}'
+                        json.loads(test_json)
+                        last_valid_json_end = idx + len(pattern)
+                        break
+                    except:
+                        pass
+
+            if last_valid_json_end > 0:
+                fixed = json_str[:last_valid_json_end]
+                if open_brackets > close_brackets:
+                    fixed += '\n    ]' * (open_brackets - close_brackets)
+                if open_braces > close_braces:
+                    fixed += '\n    }' * (open_braces - close_braces)
+                else:
+                    fixed += '\n    ]\n}'
+
+                try:
+                    return json.loads(fixed)
+                except:
+                    pass
+
+            if open_brackets > close_brackets:
+                json_str += '\n' + '    ]' * (open_brackets - close_brackets)
+            if open_braces > close_braces:
+                json_str += '\n' + '    }' * (open_braces - close_braces)
+
+            return json.loads(json_str)
+        except Exception:
+            return None
 
     def __init__(self, llm_config: Optional[LLMConfig] = None):
         system_prompt = """你是一个专业的学术论文写作专家。
@@ -160,35 +269,63 @@ class DraftGeneratorAgent(WritingAgentBase):
         literature_review: Dict[str, Any],
         references: List[str]
     ) -> List[Dict[str, Any]]:
-        """生成各章节内容"""
-        generated = []
+        """生成各章节内容 - 并行优化版本"""
+        if not chapters:
+            return []
+
         ref_text = "\n".join(references[:10]) if references else "No references provided"
 
-        for i, chapter in enumerate(chapters):
-            try:
-                content = await self._write_chapter(
-                    chapter_num=i + 1,
-                    chapter=chapter,
-                    topic=topic,
-                    thesis_statement=thesis_statement,
-                    previous_chapters=generated,
-                    literature_review=literature_review,
-                    references=ref_text
-                )
+        # 并行生成章节，使用信号量限制并发数
+        max_concurrent = 3
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def write_chapter_with_semaphore(i: int, chapter: Dict[str, Any]) -> Dict[str, Any]:
+            async with semaphore:
+                try:
+                    content = await self._write_chapter(
+                        chapter_num=i + 1,
+                        chapter=chapter,
+                        topic=topic,
+                        thesis_statement=thesis_statement,
+                        previous_chapters=[],  # 并行模式下不传递前序章节
+                        literature_review=literature_review,
+                        references=ref_text
+                    )
+                    return {
+                        "title": chapter.get("title", f"Chapter {i+1}"),
+                        "level": chapter.get("level", 1),
+                        "content": content,
+                        "word_count": len(content.split())
+                    }
+                except Exception as e:
+                    logger.error(f"Chapter {i+1} generation failed: {e}")
+                    return {
+                        "title": chapter.get("title", f"Chapter {i+1}"),
+                        "level": chapter.get("level", 1),
+                        "content": f"[Content for {chapter.get('title')} pending]",
+                        "word_count": 0
+                    }
+
+        # 使用 asyncio.gather 并行执行所有章节生成
+        tasks = [
+            write_chapter_with_semaphore(i, chapter)
+            for i, chapter in enumerate(chapters)
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 处理异常结果
+        generated = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Chapter {i+1} task failed: {result}")
                 generated.append({
-                    "title": chapter.get("title", f"Chapter {i+1}"),
-                    "level": chapter.get("level", 1),
-                    "content": content,
-                    "word_count": len(content.split())
-                })
-            except Exception as e:
-                logger.error(f"Chapter {i+1} generation failed: {e}")
-                generated.append({
-                    "title": chapter.get("title", f"Chapter {i+1}"),
-                    "level": chapter.get("level", 1),
-                    "content": f"[Content for {chapter.get('title')} pending]",
+                    "title": chapters[i].get("title", f"Chapter {i+1}"),
+                    "level": chapters[i].get("level", 1),
+                    "content": f"[Content for {chapters[i].get('title')} pending]",
                     "word_count": 0
                 })
+            else:
+                generated.append(result)
 
         return generated
 
@@ -352,7 +489,7 @@ class DraftGeneratorAgent(WritingAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = self._extract_json(response)
             return data.get("overall_score", 0.7)
         except Exception as e:
             logger.error(f"Draft evaluation failed: {e}")

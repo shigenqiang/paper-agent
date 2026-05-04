@@ -177,11 +177,21 @@ const AIAssistantPage = () => {
           break
 
         case 'literature':
+          if (!topic.trim()) {
+            messageApi.warning('请输入研究主题')
+            setAgentLoading(false)
+            return
+          }
           prompt = `请搜索并分析以下主题的文献：${topic}\n关键词：${keywords}`
           break
 
         case 'draft':
-          prompt = `请根据以下大纲生成内容：\n${topic}`
+          if (!topic.trim()) {
+            messageApi.warning('请输入论文大纲')
+            setAgentLoading(false)
+            return
+          }
+          prompt = `请根据以下大纲生成内容：\n${topic}\n\n相关方向：${sectionContent}`
           break
 
         case 'revise':
@@ -358,6 +368,80 @@ const AIAssistantPage = () => {
                 style={{ backgroundColor: AGENT_COLORS.revise }}
               >
                 执行修改
+              </Button>
+            </div>
+          </div>
+        )
+
+      case 'literature':
+        return (
+          <div className="space-y-4">
+            <div>
+              <Text strong>研究主题 *</Text>
+              <TextArea
+                placeholder="请输入要搜索文献的主题"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                rows={3}
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Text strong>关键词（可选）</Text>
+              <TextArea
+                placeholder="输入关键词，用逗号分隔"
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                rows={2}
+                className="mt-2"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="primary"
+                icon={<BookOutlined />}
+                onClick={executeAgent}
+                loading={agentLoading}
+                style={{ backgroundColor: AGENT_COLORS.literature }}
+              >
+                搜索文献
+              </Button>
+            </div>
+          </div>
+        )
+
+      case 'draft':
+        return (
+          <div className="space-y-4">
+            <div>
+              <Text strong>论文大纲 *</Text>
+              <TextArea
+                placeholder="请输入论文大纲结构"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                rows={4}
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Text strong>章节内容（可选）</Text>
+              <TextArea
+                placeholder="输入章节内容或研究方向"
+                value={sectionContent}
+                onChange={(e) => setSectionContent(e.target.value)}
+                rows={3}
+                className="mt-2"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="primary"
+                icon={<EditOutlined />}
+                onClick={executeAgent}
+                loading={agentLoading}
+                style={{ backgroundColor: AGENT_COLORS.draft }}
+              >
+                生成内容
               </Button>
             </div>
           </div>

@@ -311,8 +311,8 @@ class TopicRefinerAgent(ProblemAgentBase):
 
     async def _analyze_topic_issues(self, topic: str, user_level: str) -> List[str]:
         """分析选题问题"""
-        prompt = f"""
-分析以下研究选题的问题：
+        prompt = """
+严格任务：你必须输出一行符合以下JSON格式的文本，不要包含任何其他内容。
 
 选题：{topic}
 研究者水平：{user_level}
@@ -324,16 +324,12 @@ class TopicRefinerAgent(ProblemAgentBase):
 4. 选题是否符合学术规范？
 5. 选题是否适合研究者水平？
 
-输出JSON格式：
-{{
-    "issues": ["问题1", "问题2", ...],
-    "scope_assessment": {{
-        "too_broad": true/false,
-        "too_narrow": true/false,
-        "main_issue": "主要问题描述"
-    }}
-}}
-"""
+【严格输出要求】
+- 必须输出完整JSON对象，不能输出任何解释性文字
+- 不能输出空数组，必须至少包含一个issue
+- JSON格式：
+{{"issues":["问题1","问题2",...],"scope_assessment":{{"too_broad":true/false,"too_narrow":true/false,"main_issue":"描述"}}}}
+""".format(topic=topic, user_level=user_level)
         try:
             response = await self._llm_call(prompt)
             if not response or not response.strip():
@@ -362,8 +358,8 @@ class TopicRefinerAgent(ProblemAgentBase):
         available_resources: str
     ) -> Dict[str, Any]:
         """评估可行性"""
-        prompt = f"""
-评估以下研究选题的可行性：
+        prompt = """
+严格任务：你必须输出一行符合以下JSON格式的文本，不要包含任何其他内容。
 
 选题：{topic}
 研究者水平：{user_level}
@@ -376,16 +372,12 @@ class TopicRefinerAgent(ProblemAgentBase):
 3. 能力匹配度
 4. 总体可行性评分(1-10)
 
-输出JSON格式：
-{{
-    "feasible": true/false,
-    "time_feasibility": "评估",
-    "resource_feasibility": "评估",
-    "skill_match": "评估",
-    "overall_score": 7.5,
-    "concerns": ["担忧1", "担忧2"]
-}}
-"""
+【严格输出要求】
+- 必须输出完整JSON对象，不能输出任何解释性文字
+- overall_score必须是1-10的数值，不能为空
+- JSON格式：
+{{"feasible":true/false,"time_feasibility":"评估","resource_feasibility":"评估","skill_match":"评估","overall_score":7.5,"concerns":["担忧1","担忧2"]}}
+""".format(topic=topic, user_level=user_level, available_time=available_time, available_resources=available_resources)
         cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)
@@ -408,8 +400,8 @@ class TopicRefinerAgent(ProblemAgentBase):
 
     async def _evaluate_novelty(self, topic: str) -> Dict[str, Any]:
         """评估创新性"""
-        prompt = f"""
-评估以下研究选题的创新性：
+        prompt = """
+严格任务：你必须输出一行符合以下JSON格式的文本，不要包含任何其他内容。
 
 选题：{topic}
 
@@ -419,14 +411,12 @@ class TopicRefinerAgent(ProblemAgentBase):
 3. 是否有独特贡献？
 4. 创新性评分(1-10)
 
-输出JSON格式：
-{{
-    "novel": true/false,
-    "novelty_aspects": ["创新点1", "创新点2"],
-    "potential_gaps": ["gap1", "gap2"],
-    "novelty_score": 6.5
-}}
-"""
+【严格输出要求】
+- 必须输出完整JSON对象，不能输出任何解释性文字
+- novelty_score必须是1-10的数值，不能为空
+- JSON格式：
+{{"novel":true/false,"novelty_aspects":["创新点1","创新点2"],"potential_gaps":["gap1","gap2"],"novelty_score":6.5}}
+""".format(topic=topic)
         cls_name = self.__class__.__name__
         try:
             response = await self._llm_call(prompt)

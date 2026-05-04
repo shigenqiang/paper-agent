@@ -148,9 +148,15 @@ class MemoryNode:
 
         将本次筛选的高质量论文添加到记忆中，作为未来的知识积累。
         """
-        user_id = state.user_id or "anonymous"
-        query = state.user_query
-        papers = state.selected_papers or state.papers
+        # 处理 dict 和 PaperAgentState 两种类型
+        if isinstance(state, dict):
+            user_id = state.get("user_id") or "anonymous"
+            query = state.get("user_query", "")
+            papers = state.get("selected_papers") or state.get("papers") or []
+        else:
+            user_id = state.user_id or "anonymous"
+            query = state.user_query
+            papers = state.selected_papers or state.papers
 
         if not user_id or not papers:
             return state
@@ -160,22 +166,34 @@ class MemoryNode:
         # 记住 Top 5 论文
         remember_count = 0
         for paper in papers[:5]:
-            paper_content = f"Title: {paper.title}. Abstract: {paper.abstract[:200] if paper.abstract else ''}"
-            importance = min(getattr(paper, 'relevance_score', 0.5) * 2, 1.0)
+            # 处理 dict 和对象两种格式
+            if isinstance(paper, dict):
+                paper_title = paper.get("title", "")
+                paper_abstract = paper.get("abstract", "")[:200] if paper.get("abstract") else ""
+                paper_id = paper.get("id", f"paper_{remember_count}")
+                paper_relevance = paper.get("relevance_score", 0.5)
+            else:
+                paper_title = getattr(paper, 'title', "")
+                paper_abstract = getattr(paper, 'abstract', "")[:200] if getattr(paper, 'abstract', None) else ""
+                paper_id = getattr(paper, 'id', f"paper_{remember_count}")
+                paper_relevance = getattr(paper, 'relevance_score', 0.5)
+
+            paper_content = f"Title: {paper_title}. Abstract: {paper_abstract}"
+            importance = min(paper_relevance * 2, 1.0)
 
             try:
                 loop.run_until_complete(
                     self.memory_manager.remember(
-                        key=f"paper_{paper.id}" if hasattr(paper, 'id') else f"paper_{remember_count}",
+                        key=f"paper_{paper_id}" if paper_id else f"paper_{remember_count}",
                         value=paper_content,
                         memory_type=MemoryType.LONG_TERM,
                         persist=True,
                         importance=importance,
-                        tags=["paper", "research", query[:50]],
+                        tags=["paper", "research", query[:50] if query else "unknown"],
                         metadata={
                             "user_id": user_id,
                             "query": query,
-                            "title": getattr(paper, 'title', 'unknown'),
+                            "title": paper_title or "unknown",
                         }
                     )
                 )

@@ -212,6 +212,10 @@ class BaseAgent(ABC):
             api_key = self.llm_config.api_key or os.getenv("OPENAI_API_KEY")
             base_url = self.llm_config.base_url or os.getenv("OPENAI_BASE_URL")
 
+            # 如果使用MiniMax模型但未设置base_url，使用MiniMax默认地址
+            if not base_url and "minimax" in self.llm_config.model_name.lower():
+                base_url = "https://api.minimax.chat/v1"
+
             if provider == "openai":
                 from langchain_openai import ChatOpenAI
                 self.llm = ChatOpenAI(
@@ -237,32 +241,37 @@ class BaseAgent(ABC):
             logger.error(f"LLM初始化失败: {e}")
             self.llm = None
 
-    async def _llm_call(self, prompt: str) -> str:
-        """LLM调用封装"""
+    async def _llm_call(self, prompt: str, max_retries: int = 3) -> str:
+        """LLM调用封装，带重试机制"""
         if not self.llm:
             logger.warning("LLM未初始化，尝试重新初始化...")
             self._init_llm()
             if not self.llm:
                 raise RuntimeError("LLM未初始化")
 
-        try:
-            from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_core.messages import HumanMessage, SystemMessage
+        messages = [
+            SystemMessage(content=self.system_prompt or "你是一个AI助手。"),
+            HumanMessage(content=prompt)
+        ]
 
-            messages = [
-                SystemMessage(content=self.system_prompt or "你是一个AI助手。"),
-                HumanMessage(content=prompt)
-            ]
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = await self.llm.ainvoke(messages)
+                content = response.content if hasattr(response, 'content') else str(response)
+                content = self._clean_thinking_blocks(content)
+                return content
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"LLM调用失败 (尝试 {attempt+1}/{max_retries}): {e}, {wait_time}s后重试")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"LLM调用最终失败: {e}")
 
-            response = await self.llm.ainvoke(messages)
-            content = response.content if hasattr(response, 'content') else str(response)
-
-            # 清理MiniMax模型的思考块
-            content = self._clean_thinking_blocks(content)
-
-            return content
-        except Exception as e:
-            logger.error(f"LLM调用失败: {e}")
-            return ""  # 返回空字符串而不是抛出异常
+        return ""
 
     def _clean_thinking_blocks(self, text: str) -> str:
         """清理思考块 (MiniMax等模型会输出)"""

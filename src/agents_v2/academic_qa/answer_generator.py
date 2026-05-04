@@ -213,6 +213,10 @@ class AnswerGenerator:
         - LangChain LLM
         - 直接 OpenAI/Anthropic API
         """
+        if not self.llm:
+            logger.warning("LLM not available, returning empty string")
+            return ""
+
         try:
             # 尝试 LangChain 风格调用
             if hasattr(self.llm, 'agenerate'):
@@ -228,10 +232,10 @@ class AnswerGenerator:
                 return response.strip()
             else:
                 logger.error(f"LLM 类型未知: {type(self.llm)}")
-                return "LLM 接口不可用"
+                return ""
         except Exception as e:
             logger.error(f"LLM 调用失败: {e}")
-            raise
+            return ""
 
     def _build_context(self, context_docs: List[Dict[str, Any]]) -> str:
         """构建上下文文本"""

@@ -12,6 +12,7 @@ from src.agents_v2.logging_config import get_logging_logger
 
 import json
 import os
+import asyncio
 
 logger = get_logging_logger(__name__)
 
@@ -103,6 +104,10 @@ class WritingAgentBase(ABC):
             api_key = self.llm_config.api_key or os.getenv("OPENAI_API_KEY")
             base_url = self.llm_config.base_url or os.getenv("OPENAI_BASE_URL")
 
+            # 如果使用MiniMax模型但未设置base_url，使用MiniMax默认地址
+            if not base_url and "minimax" in self.llm_config.model_name.lower():
+                base_url = "https://api.minimax.chat/v1"
+
             if provider == "openai":
                 from langchain_openai import ChatOpenAI
                 self._llm = ChatOpenAI(
@@ -130,32 +135,38 @@ class WritingAgentBase(ABC):
             logger.error(f"LLM初始化失败: {e}")
             self._llm = None
 
-    async def _llm_call(self, prompt: str) -> str:
-        """LLM调用封装"""
+    async def _llm_call(self, prompt: str, max_retries: int = 3) -> str:
+        """LLM调用封装，带重试机制"""
         if not self._llm:
             logger.warning("LLM未初始化，尝试重新初始化...")
             self._init_llm()
             if not self._llm:
                 raise RuntimeError("LLM未初始化")
 
-        try:
-            from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_core.messages import HumanMessage, SystemMessage
+        messages = [
+            SystemMessage(content=self.system_prompt or "你是一个专业的学术写作助手。"),
+            HumanMessage(content=prompt)
+        ]
 
-            messages = [
-                SystemMessage(content=self.system_prompt or "你是一个专业的学术写作助手。"),
-                HumanMessage(content=prompt)
-            ]
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = await self._llm.ainvoke(messages)
+                content = response.content if hasattr(response, 'content') else str(response)
+                content = self._clean_thinking_blocks(content)
+                return content
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # exponential backoff: 1s, 2s, 4s
+                    logger.warning(f"LLM调用失败 (尝试 {attempt+1}/{max_retries}): {e}, {wait_time}s后重试")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"LLM调用最终失败: {e}")
 
-            response = await self._llm.ainvoke(messages)
-            content = response.content if hasattr(response, 'content') else str(response)
-
-            # 清理MiniMax模型的思考块
-            content = self._clean_thinking_blocks(content)
-
-            return content
-        except Exception as e:
-            logger.error(f"LLM调用失败: {e}")
-            return ""  # 返回空字符串而不是抛出异常
+        # 所有重试都失败，返回空字符串
+        return ""
 
     def _clean_thinking_blocks(self, text: str) -> str:
         """清理思考块 (MiniMax等模型会输出)"""
@@ -163,12 +174,14 @@ class WritingAgentBase(ABC):
             return text
         try:
             import re
-            # 检查是否包含思考块标记
+            # 清理 markdown code blocks (```json ... ``` 或 ``` ... ```)
+            text = re.sub(r'```json\s*(.*?)\s*```', r'\1', text, flags=re.DOTALL)
+            text = re.sub(r'```\s*(.*?)\s*```', r'\1', text, flags=re.DOTALL)
+            # 清理思考块标记
             marker = '<think>'
-            if marker not in text:
-                return text.strip()
-            cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-            return cleaned.strip()
+            if marker in text:
+                text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+            return text.strip()
         except Exception as e:
             logger.warning(f"清理思考块失败: {e}")
             return text

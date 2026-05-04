@@ -1,0 +1,218 @@
+[
+  {
+    "question": "Transformer的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T03:58:16.133213",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "机器学习的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:05:00.765018",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "计算机视觉在哪些应用场景中使用？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:11:30.013199",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "详细介绍强化学习的最新研究进展？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:13:02.294347",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "强化学习相比传统方法有什么优势？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:14:07.854911",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "解释一下BERT的基本原理？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:14:27.867139",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "自然语言处理的未来发展趋势是什么？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:14:47.893167",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "Transformer的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:15:07.907852",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "机器学习在哪些应用场景中使用？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:15:27.922946",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "自然语言处理在哪些应用场景中使用？",
+    "answer": "这是一个模拟回答，因为没有配置真实的LLM服务。",
+    "confidence": 0.315,
+    "sources": [],
+    "timestamp": "2026-05-04T04:16:13.926525",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "解释一下计算机视觉的基本原理？",
+    "answer": "0.6",
+    "confidence": 0.36,
+    "sources": [],
+    "timestamp": "2026-05-04T04:19:11.625216",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "神经网络在哪些应用场景中使用？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:21:06.974881",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "详细介绍自然语言处理的最新研究进展？",
+    "answer": "自然语言处理是AI和语言学的交叉领域",
+    "confidence": 0.36,
+    "sources": [],
+    "timestamp": "2026-05-04T04:22:23.247594",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "医学影像的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:22:33.261690",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "详细介绍自然语言处理的最新研究进展？",
+    "answer": "自然语言处理是AI和语言学的交叉领域",
+    "confidence": 0.36,
+    "sources": [],
+    "timestamp": "2026-05-04T04:22:43.270216",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "详细介绍BERT的最新研究进展？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:25:36.129597",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "自然语言处理在哪些应用场景中使用？",
+    "answer": "这是一个模拟回答，因为没有配置真实的LLM服务。",
+    "confidence": 0.315,
+    "sources": [],
+    "timestamp": "2026-05-04T04:26:36.149300",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "深度学习的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:28:37.469027",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "机器学习的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:29:37.493043",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "强化学习的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:31:26.290796",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "医学影像的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:32:26.304036",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "医学影像相比传统方法有什么优势？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:33:44.230207",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "神经网络的未来发展趋势是什么？",
+    "answer": null,
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:34:44.265536",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "Transformer相比传统方法有什么优势？",
+    "answer": "Transformer是一种革命性的深度学习架构，由Vaswani等人在2017年提出。它使用自注意力机制替代了传统的循环神经网络，在自然语言处理和计算机视觉领域取得了突破性进展。",
+    "confidence": 0.4049999999999999,
+    "sources": [],
+    "timestamp": "2026-05-04T04:35:44.289937",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "详细介绍强化学习的最新研究进展？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:37:58.521870",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "解释一下神经网络的基本原理？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:39:10.798331",
+    "ragas_metrics": {}
+  },
+  {
+    "question": "深度学习相比传统方法有什么优势？",
+    "answer": "",
+    "confidence": 0.16499999999999998,
+    "sources": [],
+    "timestamp": "2026-05-04T04:40:10.817360",
+    "ragas_metrics": {}
+  }
+]

@@ -362,7 +362,7 @@ const ReportsPage = () => {
         {/* 右侧报告详情 */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* 上部：每日学术咨询 */}
-          <div className="h-[1000px] bg-white border rounded-lg flex flex-col overflow-hidden mb-3">
+          <div className="flex-1 bg-white border rounded-lg flex flex-col overflow-hidden mb-3">
             <div className="px-4 py-2 border-b bg-gradient-to-r from-blue-50 to-white flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Text strong className="text-lg">

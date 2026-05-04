@@ -231,15 +231,10 @@ class UnifiedWorkflow:
             "diagnostic",
             diagnostic_quality_gate,
             {
-                "outline": "topic",  # 质量达标，进入选题阶段
+                "topic": "topic",  # 诊断完成，进入选题阶段
                 "hitl_intervene": "hitl_intervene",  # 需要人工介入
-                "diagnostic_retry": "diagnostic",  # 迭代重试（循环回自身）
             },
         )
-
-        # diagnostic_retry 时迭代重试，需要加一条显式边让循环成立
-        # （LangGraph 的 conditional_edges 返回目标节点，但需要显式边连接）
-        workflow.add_edge("diagnostic", "diagnostic")  # self-loop for retry
 
         # HITL 中断节点（暂停等待人工响应）
         workflow.add_node("hitl_intervene", self._hitl_intervene_node)
@@ -440,10 +435,14 @@ class UnifiedWorkflow:
         return dict(result)
 
     async def _memory_recall_node(self, state: dict) -> dict:
-        return await self.memory.recall_before_search(state)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(self.memory.recall_before_search(state))
 
     async def _memory_remember_node(self, state: dict) -> dict:
-        return await self.memory.remember_after_selection(state)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(self.memory.remember_after_selection(state))
 
     async def _multimodal_node(self, state: dict) -> dict:
         return await self.multimodal.analyze_paper_figures(state)

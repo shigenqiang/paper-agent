@@ -9,6 +9,13 @@ Paper Agent 主入口
 import sys
 import os
 
+# 加载环境变量（最早执行）
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # 确保 src 目录在 path 中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

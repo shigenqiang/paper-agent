@@ -128,13 +128,26 @@ class FullPaperRunner:
         interrupt_node = result.get("interrupt_node", "")
 
         # 编译结果
+        # 获取润色后的论文正文
+        polished_text = final_state.get("polished_text", "")
+        draft_text = final_state.get("draft", "")
+        final_paper = polished_text or draft_text
+
+        # 获取参考文献列表
+        reference_list = final_state.get("reference_list", "")
+        citation_count = final_state.get("citation_count", 0)
+
+        # 如果有参考文献，追加到论文末尾
+        if reference_list and "参考文献" not in final_paper:
+            final_paper = final_paper + "\n\n" + reference_list
+
         output = {
             "success": not interrupted,
             "interrupted": interrupted,
             "interrupt_node": interrupt_node,
             "thread_id": result.get("thread_id", ""),
             "phases_completed": final_state.get("phase_sequence", []) if final_state else [],
-            "final_paper": final_state.get("polished_text") or final_state.get("draft", ""),
+            "final_paper": final_paper,
             "outline": final_state.get("outline", {}),
             "quality_score": final_state.get("quality_score", 0),
             "execution_time": execution_time,
@@ -150,7 +163,9 @@ class FullPaperRunner:
             },
             "polish_output": {
                 "polish_score": final_state.get("polish_quality_score", 0),
-                "polished_length": len(final_state.get("polished_text", "")),
+                "polished_length": len(polished_text),
+                "citation_count": citation_count,
+                "reference_list": reference_list,
             },
         }
 

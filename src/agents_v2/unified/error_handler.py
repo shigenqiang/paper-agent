@@ -11,6 +11,7 @@
 """
 from src.agents_v2.logging_config import get_logging_logger
 
+import logging
 import time
 
 from typing import Any, Callable, Dict, List, Optional, Type

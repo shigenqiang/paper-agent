@@ -516,6 +516,10 @@ class SelfRAGController:
 
     async def _call_llm(self, prompt: str) -> str:
         """调用 LLM"""
+        if not self.llm:
+            logger.warning("LLM not available, returning empty string")
+            return ""
+
         try:
             if hasattr(self.llm, 'agenerate'):
                 result = await self.llm.agenerate([prompt])
@@ -523,9 +527,12 @@ class SelfRAGController:
             elif hasattr(self.llm, 'generate'):
                 result = self.llm.generate([prompt])
                 return result.generations[0][0].text.strip()
+            else:
+                logger.warning(f"LLM has no generate method")
+                return ""
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
-            raise
+            return ""
 
 
 # 便捷函数

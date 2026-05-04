@@ -1,4 +1,12 @@
 """新架构Agent模块"""
+
+# 加载环境变量（最早执行）
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from .core.base_agent import (
     BaseAgent,
     AgentInput,

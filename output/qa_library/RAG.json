@@ -1,0 +1,14 @@
+[
+  {
+    "id": "qa_0",
+    "question": "RAG的优势和局限性是什么？",
+    "answer": "无法回答",
+    "confidence": 0.195,
+    "topics": [
+      "RAG"
+    ],
+    "entities": [],
+    "sources": [],
+    "timestamp": 1777837740.029926
+  }
+]

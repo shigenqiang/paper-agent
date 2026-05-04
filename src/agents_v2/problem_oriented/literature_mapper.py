@@ -42,7 +42,7 @@ def _clean_json_markdown(text: str) -> str:
             logger.warning(f"[{cls_name}:30] JSON doesn't start with '{{', extracting from position {match.start()}")
 
     # 尝试只提取第一个完整的JSON对象（处理JSON后有多余内容的情况）
-    if text.startswith('{'):
+    if text.startswith('{') or text.startswith('['):
         try:
             # 尝试标准 json.loads
             json.loads(text)
@@ -52,27 +52,81 @@ def _clean_json_markdown(text: str) -> str:
             cls_name = "LiteratureMapperAgent"
             logger.warning(f"[{cls_name}:40] JSON parse failed: {e}, attempting to extract complete JSON")
 
-            # 找到第一个 { 的位置，从那里开始找匹配的 }
-            start = text.index('{')
+            # 找到第一个 { 或 [ 的位置
+            first_char = text[0] if text else None
+            start = 0
+            start_char = '{' if first_char == '{' else '[' if first_char == '[' else None
+
+            if not start_char:
+                return text
+
+            # 计算起始标记
+            opening_mark = start_char
+            closing_mark = '}' if start_char == '{' else ']'
+
             depth = 0
             end_pos = -1
 
-            for i, c in enumerate(text[start:], start):
-                if c == '{':
+            for i, c in enumerate(text):
+                if c == opening_mark:
                     depth += 1
-                elif c == '}':
+                elif c == closing_mark:
                     depth -= 1
                     if depth == 0:
                         end_pos = i + 1
                         break
 
             if end_pos > 0:
-                extracted = text[start:end_pos]
+                extracted = text[:end_pos]
                 try:
                     json.loads(extracted)
                     logger.info(f"[{cls_name}:55] Successfully extracted complete JSON, length={end_pos}")
                     return extracted
                 except json.JSONDecodeError:
+                    # 如果提取失败，尝试查找下一个JSON对象的开始
+                    # 这处理 "}{" 或 "][" 等多个JSON对象连接的情况
+                    next_start = end_pos
+                    while next_start < len(text):
+                        # 跳过空白字符
+                        while next_start < len(text) and text[next_start] in ' \t\n\r':
+                            next_start += 1
+                        if next_start >= len(text):
+                            break
+                        next_char = text[next_start]
+                        if next_char == '{' or next_char == '[':
+                            # 找到下一个JSON对象，验证它是否完整
+                            sub_text = text[next_start:]
+                            try:
+                                json.loads(sub_text)
+                                # 完整有效，继续使用这个
+                                logger.info(f"[{cls_name}:62] Using second JSON object at position {next_start}")
+                                return sub_text
+                            except json.JSONDecodeError:
+                                # 不完整，尝试提取
+                                inner_start = 0
+                                inner_depth = 0
+                                inner_opening = next_char
+                                inner_closing = '}' if next_char == '{' else ']'
+                                inner_end = -1
+                                for j, c2 in enumerate(sub_text):
+                                    if c2 == inner_opening:
+                                        inner_depth += 1
+                                    elif c2 == inner_closing:
+                                        inner_depth -= 1
+                                        if inner_depth == 0:
+                                            inner_end = j + 1
+                                            break
+                                if inner_end > 0:
+                                    extracted2 = sub_text[:inner_end]
+                                    try:
+                                        json.loads(extracted2)
+                                        logger.info(f"[{cls_name}:68] Successfully extracted second JSON, position={next_start}")
+                                        return extracted2
+                                    except json.JSONDecodeError:
+                                        pass
+                                next_start += 1
+                        else:
+                            next_start += 1
                     pass
 
     return text

@@ -6,6 +6,7 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Callable
 from src.agents_v2.logging_config import get_logging_logger
+from src.agents_v2.academic_qa.query_decomposer import SubQuestion
 
 import asyncio
 

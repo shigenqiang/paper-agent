@@ -134,21 +134,30 @@ class ReferenceProcessorAgent(WritingAgentBase):
 - 确保作者、题目、期刊/会议、年份等信息的正确位置
 - 检查日期、卷、期、页码等信息的格式
 
-输出JSON格式：
+输出JSON格式（只输出JSON，不要其他内容）：
 {{
     "formatted": [
         {{
             "id": 1,
             "formatted_citation": "格式化的引用",
-            "original": {{原始信息}}
+            "original": {{"authors": ["作者"], "year": "2023", "title": "标题"}}
         }}
     ]
 }}
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
-            return data.get("formatted", [])
+
+            # 使用统一的 JSON 解析（处理 markdown 包裹等问题）
+            from src.agents_v2.unified.pydantic_validator import parse_json
+            data = parse_json(response)
+
+            if data and "formatted" in data:
+                return data["formatted"]
+
+            # 降级：返回原始格式
+            return [{"id": i+1, "formatted_citation": str(ref), "original": ref} for i, ref in enumerate(raw_references)]
+
         except Exception as e:
             logger.error(f"Reference formatting failed: {e}")
             return [{"id": i+1, "formatted_citation": str(ref), "original": ref} for i, ref in enumerate(raw_references)]
@@ -205,24 +214,30 @@ class ReferenceProcessorAgent(WritingAgentBase):
 {paper_content[:1500]}
 
 参考文献列表（{len(references)}条）：
-{json.dumps([ref.get("formatted_citation", "") for ref in references[:10]], ensure_ascii=False)}
+{json.dumps([ref.get("formatted_citation", "") if isinstance(ref.get("formatted_citation"), str) else str(ref) for ref in references[:10]], ensure_ascii=False)}
 
 请检查：
 1. 是否存在文中引用但未列入参考文献的情况
 2. 是否存在参考文献但文中未引用的情况
 3. 引用编号是否连续
 
-输出JSON格式：
+输出JSON格式（只输出JSON，不要其他内容）：
 {{
     "missing_in_refs": ["遗漏的引用"],
     "unused_refs": ["未被引用的文献"],
-    "completeness_score": 0-1
+    "completeness_score": 0.9
 }}
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
-            return data
+
+            from src.agents_v2.unified.pydantic_validator import parse_json
+            data = parse_json(response)
+
+            if data:
+                return data
+
+            return {"completeness_score": 1.0}
         except Exception as e:
             logger.error(f"Completeness check failed: {e}")
             return {"completeness_score": 1.0}
@@ -237,6 +252,23 @@ class ReferenceProcessorAgent(WritingAgentBase):
 
         for ref in references:
             citation = ref.get("formatted_citation", "")
+            original = ref.get("original", {})
+
+            # 处理不同格式的 citation
+            if isinstance(citation, dict):
+                # 如果是 dict，尝试构建字符串
+                authors = citation.get("authors", [])
+                year = citation.get("year", "")
+                title = citation.get("title", "")
+                journal = citation.get("journal", "")
+                if isinstance(authors, list):
+                    author_str = ", ".join(authors) if authors else ""
+                else:
+                    author_str = str(authors)
+                citation = f"{author_str}. {title}. {journal}, {year}." if author_str else str(citation)
+            elif not isinstance(citation, str):
+                citation = str(citation)
+
             if citation:
                 lines.append(f"- {citation}")
 

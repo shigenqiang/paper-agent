@@ -77,24 +77,19 @@ def diagnostic_quality_gate(state: dict) -> str:
     诊断质量门禁 - 决定诊断后是否进入写作流程
 
     规则：
-    - quality_score >= threshold: 进入 outline
+    - 诊断完成后直接进入 topic（跳过迭代）
     - 有选题问题且严重度 >= TOPIC_SEVERITY_THRESHOLD: 触发 HITL 中断
-    - 其他情况: 根据质量决定继续或迭代
 
     Args:
         state: 包含 diagnostic_result 的状态
 
     Returns:
-        "outline" - 质量达标，继续
+        "topic" - 进入选题阶段
         "hitl_intervene" - 需要人工介入
-        "diagnostic_retry" - 质量不达标但可迭代
     """
-    diagnostic = state.get("diagnostic_result", {})
-    quality_score = diagnostic.get("quality_score", 0)
-
     # 检查是否有选题问题
-    problems = diagnostic.get("problems", [])
-    severity = diagnostic.get("severity", {})
+    problems = state.get("diagnostic_result", {}).get("problems", [])
+    severity = state.get("diagnostic_result", {}).get("severity", {})
 
     topic_problems = [p for p in problems if p in (
         "topic_vague", "topic_too_broad", "topic_lack_novelty"
@@ -106,20 +101,7 @@ def diagnostic_quality_gate(state: dict) -> str:
         if sev >= TOPIC_SEVERITY_THRESHOLD:
             return "hitl_intervene"
 
-    # 质量达标 - 进入选题阶段
-    if quality_score >= DIAGNOSTIC_QUALITY_THRESHOLD:
-        return "topic"
-
-    # 质量不达标但可迭代
-    iteration = state.get("iteration", 0)
-    max_iterations = state.get("max_iterations", 3)
-    if iteration < max_iterations:
-        # 递增迭代计数，重新进入诊断
-        state["iteration"] = iteration + 1
-        state["diagnostic_retry"] = True
-        return "diagnostic_retry"
-
-    # 达到最大迭代，仍进入写作（降级处理）
+    # 直接进入选题阶段（不迭代诊断）
     return "topic"
 
 

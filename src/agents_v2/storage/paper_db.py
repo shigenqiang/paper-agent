@@ -212,8 +212,24 @@ class PaperDatabase:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_papers_source ON papers(source)
         """)
+
+        # 迁移：确保 embedding 列存在（旧数据库可能缺少此列）
+        self._migrate_embedding_column()
+
         self._conn.commit()
         logger.info(f"SQLite数据库初始化完成: {self.db_path}")
+
+    def _migrate_embedding_column(self):
+        """迁移：确保 embedding 列存在（旧数据库可能缺少此列）"""
+        cursor = self._conn.cursor()
+        cursor.execute("PRAGMA table_info(papers)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        if "embedding" not in columns:
+            cursor.execute("ALTER TABLE papers ADD COLUMN embedding TEXT")
+            logger.info("数据库迁移：已添加 embedding 列")
+        else:
+            logger.info("数据库迁移：embedding 列已存在")
 
     def save_paper(self, paper: Paper) -> Tuple[bool, str]:
         """

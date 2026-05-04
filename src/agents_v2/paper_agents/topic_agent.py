@@ -102,29 +102,42 @@ def _clean_json_markdown(text: str) -> str:
     if not text:
         return ""
 
-    if not text.startswith('{'):
-        match = re.search(r'\{', text)
+    if not text.startswith('{') and not text.startswith('['):
+        match = re.search(r'[\[{]', text)
         if match:
             text = text[match.start():]
 
-    if text.startswith('{'):
+    if text.startswith('{') or text.startswith('['):
         try:
             json.loads(text)
             return text
         except json.JSONDecodeError:
-            start = text.index('{')
+            first_char = text[0] if text else None
+            start_char = '{' if first_char == '{' else '[' if first_char == '[' else None
+            if not start_char:
+                return text
+
+            opening_mark = start_char
+            closing_mark = '}' if start_char == '{' else ']'
+
+            start = 0
             depth = 0
             end_pos = -1
-            for i, c in enumerate(text[start:], start):
-                if c == '{':
+            for i, c in enumerate(text):
+                if c == opening_mark:
                     depth += 1
-                elif c == '}':
+                elif c == closing_mark:
                     depth -= 1
                     if depth == 0:
                         end_pos = i + 1
                         break
             if end_pos > 0:
-                return text[start:end_pos]
+                extracted = text[:end_pos]
+                try:
+                    json.loads(extracted)
+                    return extracted
+                except json.JSONDecodeError:
+                    pass
 
     return text
 

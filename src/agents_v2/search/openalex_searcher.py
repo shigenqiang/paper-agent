@@ -12,7 +12,7 @@ API 文档: https://docs.openalex.org/
 
 from src.agents_v2.logging_config import get_logging_logger
 
-from typing import Optional
+from typing import List, Optional
 
 from .enhanced_base_searcher import EnhancedBaseSearcher, PlatformConfig
 from .base_searcher import SearchResult, SearchResponse
