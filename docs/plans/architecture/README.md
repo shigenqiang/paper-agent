@@ -30,6 +30,9 @@
 | [tools](tools/) | [tools模块开发计划.md](tools/tools模块开发计划.md) | PDF解析 + 工具系统 | 已规划 |
 | [paper_agents](paper_agents/) | [paper_agents模块开发计划.md](paper_agents/paper_agents模块开发计划.md) | 论文流水线 Agent | 已规划 |
 | [diagnostic](diagnostic/) | [diagnostic模块开发计划.md](diagnostic/diagnostic模块开发计划.md) | 诊断框架 + 7诊断Agent | 已规划 |
+| [citation](citation/) | [citation模块开发计划.md](citation/citation模块开发计划.md) | 统一引用管理 | **已实现** |
+| [reports](reports/) | [reports模块开发计划.md](reports/reports模块开发计划.md) | 统一报告生成 | **已实现** |
+| [search](search/) | [search模块开发计划.md](search/search模块开发计划.md) | 统一搜索编排 | **已实现** |
 
 ## 与未来框架设计 v2.1 对应关系
 

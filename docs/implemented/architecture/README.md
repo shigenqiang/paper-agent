@@ -97,6 +97,15 @@ architecture/
 ├── intent/                     # 意图路由 (新增)
 │   └── intent-router.md       # 意图识别与路由
 │
+├── citation/                  # 统一引用管理 (2026-05新增)
+│   └── citation-module.md     # 格式化/DOI验证/提取引用/溯源
+│
+├── reports/                   # 统一报告生成 (2026-05新增)
+│   └── reports-module.md      # 日报/周报/月报生成
+│
+├── search/                    # 统一搜索编排 (2026-05新增)
+│   └── search-module.md      # 多源搜索/结果合并
+│
 ├── security/                     # 安全模块 (新增)
 │   └── security-module.md       # RBAC + 输入验证
 │
