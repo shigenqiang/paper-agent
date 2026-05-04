@@ -37,7 +37,8 @@ class OutlineAgent:
         # 统计关键词
         keyword_freq: Dict[str, int] = {}
         for paper in papers:
-            for term in paper.abstract.lower().split():
+            abstract = paper.abstract if hasattr(paper, 'abstract') else paper.get("abstract", "")
+            for term in abstract.lower().split():
                 if len(term) > 4:
                     keyword_freq[term] = keyword_freq.get(term, 0) + 1
 
@@ -110,7 +111,9 @@ class OutlineAgent:
         }
 
         # 将高引用论文分配到 Introduction 作为参考文献
-        sorted_by_citations = sorted(papers, key=lambda p: p.citations, reverse=True)
+        def get_citations(p):
+            return p.citations if hasattr(p, 'citations') else p.get("citations", 0)
+        sorted_by_citations = sorted(papers, key=get_citations, reverse=True)
         intro_refs = [p.id for p in sorted_by_citations[:5]]
         outline["sections"][0]["references"] = intro_refs
 

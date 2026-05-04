@@ -5,19 +5,22 @@
 .PHONY: docker-build docker-tag-latest docker-login docker-push
 .PHONY: ghcr-login ghcr-build ghcr-push ghcr hub
 .PHONY: paper-full paper-phase paper-test
+.PHONY: test-acceptance test-perf test-parallel test-retry
+.PHONY: qa-service qa-demo auto-improver monitor
+.PHONY: clean paper topic outline draft run
 
 # ============ Config ============
 # Port config
 BACKEND_PORT = 8000
 FRONTEND_PORT = 5173
 
-# Docker Hub config (可选)
-# 使用: make hub DOCKER_IMAGE_NAME=your-image DOCKER_TAG=v1.0
+# Docker Hub config (optional)
+# Usage: make hub DOCKER_IMAGE_NAME=your-image DOCKER_TAG=v1.0
 DOCKER_IMAGE_NAME ?= paper-agent
 DOCKER_TAG ?= latest
 
-# GitHub Container Registry config (用于推送 ghcr.io)
-# 使用: make ghcr GHCR_USERNAME=xxx GHCR_PAT=xxx
+# GitHub Container Registry config
+# Usage: make ghcr GHCR_USERNAME=xxx GHCR_PAT=xxx
 GHCR_USERNAME ?= shigenqiang
 GHCR_PAT ?=
 GHCR_IMAGE_NAME = ghcr.io/$(GHCR_USERNAME)/paper-agent
@@ -53,12 +56,11 @@ ghcr-push:
 	docker push $(GHCR_IMAGE_NAME):$(DOCKER_TAG)
 	docker push $(GHCR_IMAGE_NAME):latest
 
-# 一键推送到 GitHub Container Registry
-# 必需参数: GHCR_USERNAME, GHCR_PAT
-# 示例: make ghcr GHCR_USERNAME=shigenqiang GHCR_PAT=gho_xxxxx
+# Push to GitHub Container Registry
+# Required: GHCR_USERNAME, GHCR_PAT
 ghcr: ghcr-login ghcr-build ghcr-push
 
-# 一键推送到 Docker Hub
+# Push to Docker Hub
 hub: docker-login docker-push
 
 # ============ Start ============
@@ -106,6 +108,20 @@ test-quick:
 test-verbose:
 	python -m pytest tests/test_api_comprehensive.py tests/test_e2e_paper_generation.py -v -s --tb=long
 
+# ============ Acceptance & Performance Test ============
+
+# Complete acceptance test (9 tests)
+test-acceptance:
+	python run_acceptance_test.py
+
+# Paper generation performance test (stage timing)
+test-perf:
+	python test_perf.py
+
+# Parallel chapter generation test
+test-parallel:
+	python test_parallel_verify.py
+
 # ============ Install ============
 
 install:
@@ -116,11 +132,36 @@ install-frontend:
 
 install-all: install install-frontend
 
+# ============ QA & Monitoring Services ============
+
+# QA持续问答服务（交互模式）
+# 输入问题进行问答，输入 'quit' 退出
+qa-service:
+	python scripts/start_qa_service.py
+
+# QA服务演示（预设问题循环）
+qa-demo:
+	python -c "import asyncio; from src.agents_v2.qa_service import run_demo; asyncio.run(run_demo())"
+
+# 监控与自动改进系统
+auto-improver:
+	python scripts/start_auto_improver.py
+
+# 监控演示模式（短间隔）
+monitor:
+	python -c "import asyncio; from src.agents_v2.monitoring.auto_improver import AutoImprover; asyncio.run(AutoImprover(check_interval=5.0).start())"
+
+# ============ Autonomous Services (完全自主运行) ============
+
+# QA自主进化系统 - 完全自主运行
+# 自己生成问题、搜索文献、构建知识图谱、保存QA库
+
 # ============ Tools ============
 
 clean:
 	rm -rf .pytest_cache __pycache__ src/**/__pycache__
 	find . -name "*.pyc" -delete
+	rm -rf output/monitoring/*.json output/paper.md
 
 # ============ Agent Commands ============
 
@@ -130,94 +171,77 @@ paper:
 topic:
 	python -c "import asyncio; from demos.run_demo import demo_topic; asyncio.run(demo_topic())"
 
-search:
-	python -c "import asyncio; from demos.run_demo import demo_paper_search; asyncio.run(demo_paper_search())"
+# ============ Paper Generation (modular) ============
 
-# ============ Paper Generation (模块化) ============
-
-# 全链路论文生成 (基于 UnifiedWorkflow)
-# 用法: make paper-full TOPIC="人工智能在教育领域"
+# Full pipeline paper generation (UnifiedWorkflow-based)
+# Usage: make paper-full TOPIC="AI in education"
 paper-full:
 	python demos/full_paper/runner.py "$(TOPIC)"
 
-# 全链路论文生成 + HITL 模式
-# 触发 HITL 时会暂停等待人工介入
+# Full pipeline + HITL mode
 paper-full-hitl:
 	python demos/full_paper/runner.py "$(TOPIC)" --hitl
 
-# 测试单个阶段
-# 用法: make paper-phase PHASE=diagnostic
+# Test single phase
+# Usage: make paper-phase PHASE=diagnostic
 paper-phase:
 	@python demos/full_paper/test_runner.py $(PHASE)
 
-# 测试完整流程（使用旧的 phases 模式）
+# Test full flow (old phases mode)
 paper-test:
 	python demos/full_paper/test_runner.py --full
 
-# 测试 LangGraph Workflow（全链路单元测试）
-# 运行 test_e2e_workflow.py 验证工作流结构和节点
+# Test LangGraph Workflow
 paper-full-test:
 	cd . && python -m demos.full_paper.test_e2e_workflow
 
-# 运行全链路论文生成，仅输出最终论文（无日志）
-# 用法: make paper-gen TOPIC="你的主题"
+# Paper only (no logs)
+# Usage: make paper-gen TOPIC="your topic"
 paper-gen:
 	cd . && python -m demos.full_paper.runner --paper-only "$(TOPIC)"
 
-# 测试 LangGraph Workflow 结构和边路由
+# Test LangGraph structure and routing
 paper-langgraph-test:
 	cd . && python -m demos.full_paper.test_langgraph
 
-# ============ LangGraph Node 单元测试 ============
-# 测试各个节点的独立功能
+# ============ LangGraph Node Unit Tests ============
 
-# 路由节点测试
 paper-test-router:
 	cd . && python -m demos.full_paper.test_langgraph --node router
 
-# 诊断节点测试
 paper-test-diagnostic:
 	cd . && python -m demos.full_paper.test_langgraph --node diagnostic
 
-# 选题节点测试
 paper-test-topic:
 	cd . && python -m demos.full_paper.test_langgraph --node topic
 
-# 文献节点测试
 paper-test-literature:
 	cd . && python -m demos.full_paper.test_langgraph --node literature
 
-# 方法论节点测试
 paper-test-methodology:
 	cd . && python -m demos.full_paper.test_langgraph --node methodology
 
-# 写作节点测试
 paper-test-writing:
 	cd . && python -m demos.full_paper.test_langgraph --node writing
 
-# 润色节点测试
 paper-test-polish:
 	cd . && python -m demos.full_paper.test_langgraph --node polish
 
-# 爬虫节点测试
 paper-test-crawler:
 	cd . && python -m demos.full_paper.test_langgraph --node crawler
 
-# 选择器节点测试
 paper-test-selector:
 	cd . && python -m demos.full_paper.test_langgraph --node selector
 
-# QA 节点测试
 paper-test-qa:
 	cd . && python -m demos.full_paper.test_langgraph --node qa
 
-# 运行所有 LangGraph Node 单元测试
 paper-test-all-nodes:
 	cd . && python -m demos.full_paper.test_langgraph --all
 
 docs:
-	@echo "API文档: http://localhost:8000/docs"
-	@start http://localhost:8000/docs 2>nul || open http://localhost:8000/docs 2>nul || echo "请手动打开: http://localhost:8000/docs"
+	@echo "API docs: http://localhost:8000/docs"
+	@start http://localhost:8000/docs 2>nul || open http://localhost:8000/docs 2>nul || echo "Manual: http://localhost:8000/docs"
 
 help:
 	@echo Available commands
@@ -235,7 +259,14 @@ help:
 	@echo   make paper-test-polish / make paper-test-crawler
 	@echo   make paper-test-selector / make paper-test-qa
 	@echo   make paper-test-all-nodes
+	@echo QA & Monitoring:
+	@echo   make qa-service    - QA持续问答服务（交互）
+	@echo   make qa-demo      - QA服务演示（预设问题）
+	@echo   make auto-improver - 监控与自动改进系统
+	@echo   make monitor      - 监控演示模式
 	@echo Port mgmt: make kill-ports / make kill-backend / make kill-frontend
 	@echo Test cmds: make test / make test-api / make test-e2e
+	@echo   make test-acceptance / make test-perf
+	@echo   make test-parallel / make test-retry
 	@echo Docker: make ghcr / make docker-build
 	@echo Tools: make clean

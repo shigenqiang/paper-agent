@@ -123,6 +123,20 @@ class LiteratureAgent(PaperAgentBase):
         self._embedding_base_url = "https://api-inference.modelscope.cn/v1"
         self._embedding_api_key = os.getenv("EMBEDDING_API_KEY", "ms-4bd332d6-c7cb-47a2-99c9-c1df1f6be1c3")
 
+        # 本地嵌入模型
+        self._local_embedding_model = None
+
+    def _get_local_embedding_model(self):
+        """获取本地嵌入模型（懒加载）"""
+        if self._local_embedding_model is None:
+            try:
+                from ...embedding import get_local_embedding_model
+                self._local_embedding_model = get_local_embedding_model()
+                logger.info("Local embedding model initialized")
+            except Exception as e:
+                logger.debug(f"Local embedding model init failed: {e}")
+        return self._local_embedding_model
+
     def _get_embedding_client(self):
         """获取 Embedding 客户端"""
         if self._embedding_client is None:
@@ -183,6 +197,35 @@ class LiteratureAgent(PaperAgentBase):
             return 0.0
         return dot / (norm1 * norm2)
 
+    def _keyword_similarity(self, text1: str, text2: str) -> float:
+        """基于关键词的简单相似度计算（embedding失败时的后备方案）"""
+        if not text1 or not text2:
+            return 0.0
+
+        # 简单分词
+        import re
+        words1 = set(re.findall(r'[\w]+', text1.lower()))
+        words2 = set(re.findall(r'[\w]+', text2.lower()))
+
+        # 移除停用词
+        stopwords = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+                     'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
+                     'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+                     'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i',
+                     'we', 'they', 'he', 'she', 'it', 'my', 'our', 'their', 'its', 'of',
+                     'and', 'et', 'al', 'via', 'using', 'based', 'using', 'method', 'methods'}
+
+        words1 = words1 - stopwords
+        words2 = words2 - stopwords
+
+        if not words1 or not words2:
+            return 0.0
+
+        # Jaccard 相似度
+        intersection = words1 & words2
+        union = words1 | words2
+        return len(intersection) / len(union) if union else 0.0
+
     async def _get_embedding(self, text: str) -> Optional[List[float]]:
         """获取文本嵌入向量（带重试和限流处理）"""
         client = self._get_embedding_client()
@@ -213,47 +256,69 @@ class LiteratureAgent(PaperAgentBase):
                 logger.warning(f"Embedding failed: {e}")
                 return None
 
+        # 云API失败，尝试本地模型
+        local_model = self._get_local_embedding_model()
+        if local_model:
+            try:
+                embedding = await asyncio.to_thread(
+                    local_model.get_embedding, text
+                )
+                if embedding:
+                    logger.info("Using local embedding model")
+                    return embedding
+            except Exception as e:
+                logger.debug(f"Local embedding failed: {e}")
+
+        return None
+
     async def _compute_paper_relevance(
         self,
         papers: List[Dict[str, Any]],
         topic: str
     ) -> List[Dict[str, Any]]:
-        """使用嵌入计算论文与主题的相关性"""
+        """使用嵌入计算论文与主题的相关性，失败时使用关键词匹配后备"""
         if not papers:
             return papers
 
         # 获取主题嵌入
         topic_embedding = await self._get_embedding(topic)
-        if not topic_embedding:
-            logger.warning("Failed to get topic embedding, using default relevance")
-            return papers
 
-        # 并行计算每篇论文的嵌入和相关性
-        semaphore = asyncio.Semaphore(5)
+        # 如果embedding可用，使用embedding计算
+        if topic_embedding:
+            semaphore = asyncio.Semaphore(5)
 
-        async def process_paper(paper: Dict[str, Any]) -> tuple:
-            async with semaphore:
-                try:
-                    # 组合标题和摘要计算嵌入
-                    text_to_embed = f"{paper.get('title', '')} {paper.get('abstract', '')}"
-                    embedding = await self._get_embedding(text_to_embed)
-                    if embedding:
-                        similarity = self._cosine_similarity(topic_embedding, embedding)
-                        return paper, similarity
-                    return paper, 0.5  # 默认相关性
-                except Exception as e:
-                    logger.debug(f"Paper embedding failed: {e}")
-                    return paper, 0.5
+            async def process_paper(paper: Dict[str, Any]) -> tuple:
+                async with semaphore:
+                    try:
+                        text_to_embed = f"{paper.get('title', '')} {paper.get('abstract', '')}"
+                        embedding = await self._get_embedding(text_to_embed)
+                        if embedding:
+                            similarity = self._cosine_similarity(topic_embedding, embedding)
+                            return paper, similarity
+                        return paper, 0.5
+                    except Exception as e:
+                        logger.debug(f"Paper embedding failed: {e}")
+                        return paper, 0.5
 
-        results = await asyncio.gather(*[process_paper(p) for p in papers])
-        scored_papers = []
-        for paper, score in results:
+            results = await asyncio.gather(*[process_paper(p) for p in papers])
+            scored_papers = []
+            for paper, score in results:
+                paper["embedding_relevance"] = round(score, 3)
+                scored_papers.append(paper)
+            scored_papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
+            return scored_papers
+
+        # Embedding失败，使用关键词匹配作为后备
+        logger.warning("Embedding不可用，使用关键词匹配作为后备方案")
+        for paper in papers:
+            title = paper.get('title', '')
+            abstract = paper.get('abstract', '')
+            text = f"{title} {abstract}"
+            score = self._keyword_similarity(topic, text)
             paper["embedding_relevance"] = round(score, 3)
-            scored_papers.append(paper)
 
-        # 按相关性排序
-        scored_papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
-        return scored_papers
+        papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
+        return papers
 
     async def execute(
         self,
@@ -319,12 +384,22 @@ class LiteratureAgent(PaperAgentBase):
                 ranked_papers = all_papers[:30] if len(all_papers) > 30 else all_papers
             self.logger.info(f"[Literature] 排序后 {len(ranked_papers)} 篇论文")
 
-            # 4. 深度阅读：过滤相关度>0.75，最多20篇
-            high_relevance_papers = [
-                p for p in ranked_papers
-                if p.get("embedding_relevance", 0) > 0.75
-            ][:20]
-            self.logger.info(f"[Literature] 高相关性论文（>0.75）数量: {len(high_relevance_papers)}")
+            # 4. 深度阅读：过滤相关度达标的论文，最多20篇
+            # 使用相对阈值：如果有embedding分数用0.75，否则取Top 20（关键词匹配）
+            high_relevance_papers = []
+            has_embedding_scores = any(p.get("embedding_relevance", 0) > 0.5 for p in ranked_papers)
+
+            if has_embedding_scores:
+                # Embedding模式：阈值0.75
+                high_relevance_papers = [
+                    p for p in ranked_papers
+                    if p.get("embedding_relevance", 0) > 0.75
+                ][:20]
+                self.logger.info(f"[Literature] Embedding模式，高相关性论文（>0.75）数量: {len(high_relevance_papers)}")
+            else:
+                # 关键词匹配模式：取Top 20
+                high_relevance_papers = ranked_papers[:20]
+                self.logger.info(f"[Literature] 关键词匹配模式，取Top 20论文，数量: {len(high_relevance_papers)}")
 
             try:
                 paper_analyses = await asyncio.wait_for(

@@ -247,7 +247,7 @@ docker build -f Dockerfile --target runtime-gpu -t paper-agent:gpu .
 
 ```
 project-root/
-├── src/agents_v2/               # 后端 Agent 系统 (311 个 Python 文件)
+├── src/agents_v2/               # 后端 Agent 系统
 │   ├── api_server.py            # aiohttp HTTP 服务入口 (端口 8000)
 │   ├── logging_config.py        # Loguru 日志配置
 │   ├── main.py                  # 入口: python -m src.main
@@ -259,118 +259,57 @@ project-root/
 │   │   ├── react_executor.py    # ReAct 执行器
 │   │   └── streaming.py         # SSE 流式输出
 │   │
-│   ├── api/                     # RESTful API 路由模块
-│   │   ├── paper_api.py         # 论文/文献/聊天 CRUD
-│   │   ├── reports_api.py       # 日报/周报/月报 API
-│   │   ├── knowledge_graph_api.py # 知识图谱 API
-│   │   ├── workflow_api.py      # LangGraph 工作流 API
-│   │   ├── gateway.py           # v1 API 网关 (未使用)
-│   │   └── sse_helper.py        # SSE 流式辅助
+│   ├── citation/                # 统一引用管理 (2026-05 新增)
+│   │   ├── formatter.py        # 格式化引用（APA/MLA/GB7714等）
+│   │   ├── verifier.py         # DOI 验证和元数据获取
+│   │   ├── extractor.py        # 从文本提取引用标记
+│   │   ├── tracker.py          # 答案溯源追踪
+│   │   └── styles.py           # 引用样式枚举
 │   │
-│   ├── unified/                 # 统一编排框架
-│   │   ├── intent_router.py     # 意图路由 (11 种意图类型)
-│   │   ├── master_supervisor.py # MasterSupervisor 6 阶段编排
-│   │   ├── phase_supervisor.py  # 阶段监督器
-│   │   ├── circuit_breaker.py   # 熔断保护
-│   │   ├── hitl_manager.py      # Human-in-the-Loop 管理
-│   │   └── pydantic_validator.py # 数据验证
+│   ├── reports/                 # 统一报告生成 (2026-05 新增)
+│   │   ├── base.py            # 基础生成器
+│   │   ├── daily.py           # 日报生成
+│   │   ├── weekly.py          # 周报生成
+│   │   └── monthly.py         # 月报生成
 │   │
-│   ├── paper_agents/            # 论文流水线 Agent (12 个)
-│   │   ├── topic_agent.py       # 选题与细化
-│   │   ├── literature_agent.py  # 文献检索与综述
-│   │   ├── thesis_agent.py      # 论点凝练
-│   │   ├── outline_agent.py     # 大纲设计
-│   │   ├── draft_writer.py      # 初稿撰写
-│   │   ├── editor_agent.py      # 内容修订
-│   │   ├── reviewer_agent.py    # 最终评审
-│   │   ├── digest_agent.py      # 论文摘要
-│   │   └── writing_pipeline.py  # 写作流水线
-│   │
-│   ├── paper_search/            # 论文搜索 Agent (独立模块)
-│   │   ├── paper_search.py      # 多源论文搜索
-│   │   ├── paper_flash.py       # 快速搜索
-│   │   ├── query_router.py      # 查询路由
-│   │   ├── citation_manager.py  # 引用管理
-│   │   └── report_generator.py  # 报告生成
-│   │
-│   ├── problem_oriented/        # 问题诊断 Agent (13 个)
-│   │   ├── topic_refiner.py     # 选题精炼
-│   │   ├── literature_mapper.py # 文献映射
-│   │   ├── methodology_advisor.py # 方法论指导
-│   │   ├── argument_builder.py  # 论点构建
-│   │   ├── research_gap.py      # 研究空白识别
-│   │   ├── language_polisher.py # 语言润色
-│   │   └── plagiarism_checker.py # 查重检测
-│   │
-│   ├── writing/                 # 写作 Agent (17 个)
-│   │   ├── outline_generator.py # 大纲生成
-│   │   ├── draft_generator.py   # 初稿生成
-│   │   ├── smart_reviser.py     # 智能修订
-│   │   ├── report_refiner.py    # 多轮精炼
-│   │   ├── literature_review.py # 文献综述
-│   │   └── generation_optimizer.py # 生成优化
-│   │
-│   ├── search/                  # 学术搜索引擎适配器 (12 个)
-│   │   ├── arxiv_searcher.py    # arXiv API
-│   │   ├── pubmed_searcher.py   # PubMed API
+│   ├── search/                  # 统一搜索编排 (2026-05 新增)
+│   │   ├── arxiv_searcher.py  # arXiv 搜索
+│   │   ├── pubmed_searcher.py # PubMed 搜索
 │   │   ├── semantic_scholar_searcher.py # Semantic Scholar
-│   │   ├── openalex_searcher.py # OpenAlex API
-│   │   └── crossref_searcher.py # CrossRef API
+│   │   ├── openalex_searcher.py # OpenAlex 搜索
+│   │   ├── search_orchestrator.py # 搜索编排器
+│   │   └── search_result_merger.py # 结果合并去重
 │   │
-│   ├── knowledge_graph/         # 知识图谱系统 (12 个)
-│   │   ├── kg_service.py        # KG 服务
-│   │   ├── kg_graphrag.py       # GraphRAG 问答
-│   │   ├── kg_embeddings.py     # 向量嵌入
-│   │   ├── kg_community.py      # 社区检测
-│   │   └── kg_batch_operations.py # 批量操作
+│   ├── qa_service.py           # QA 系统服务 (2026-05 新增)
 │   │
-│   ├── memory/                  # 记忆系统 v4 (20 个模块)
-│   │   ├── unified.py           # 统一记忆管理器
-│   │   ├── short_term.py        # 短期记忆 (内存 LRU)
-│   │   ├── long_term.py         # 长期记忆 (SQLite)
-│   │   ├── episodic.py          # 情景记忆
-│   │   ├── session.py           # 会话记忆
-│   │   ├── flow_controller.py   # 流转控制器
-│   │   ├── embeddings.py        # 向量嵌入
-│   │   └── compression.py       # 记忆压缩
+│   ├── monitoring/              # 监控与自动优化 (2026-05 新增)
+│   │   └── auto_improver.py   # 自动改进器
 │   │
-│   ├── retrieval/               # RAG 检索增强管线 (26 个)
-│   │   ├── adaptive_retrieval.py # 自适应检索
-│   │   ├── hyde_retriever.py    # HyDE 检索
-│   │   ├── cross_encoder_reranker.py # Cross-Encoder 重排
-│   │   └── self_rag_controller.py # Self-RAG 控制
-│   │
+│   ├── api/                     # RESTful API 路由模块
+│   ├── unified/                 # 统一编排框架
+│   ├── paper_agents/            # 论文流水线 Agent
+│   ├── paper_search/            # 论文搜索 Agent
+│   ├── problem_oriented/        # 问题诊断 Agent
+│   ├── writing/                 # 写作 Agent
+│   ├── knowledge_graph/         # 知识图谱系统
+│   ├── memory/                  # 记忆系统 v4
+│   ├── retrieval/               # RAG 检索增强管线
 │   ├── langgraph_workflow/      # LangGraph 工作流
-│   │   ├── unified_workflow.py  # 统一工作流 (5 条路径)
-│   │   ├── state.py             # 状态定义
-│   │   ├── edges.py             # 边定义
-│   │   ├── runner.py            # 运行器
-│   │   └── nodes/               # 节点 (17 个)
-│   │       ├── router.py        # 路由节点
-│   │       ├── crawler.py       # 搜索节点
-│   │       ├── selector.py      # 筛选节点
-│   │       ├── outline.py       # 大纲节点
-│   │       ├── writer.py        # 写作节点
-│   │       ├── reviewer.py      # 评审节点
-│   │       └── ...
-│   │
-│   ├── storage/                 # 存储层 (新增)
-│   │   └── paper_db.py         # SQLite + ChromaDB 论文存储
-│   │
-│   ├── routing/                 # 路由选择 (7 个)
-│   ├── evaluation/              # 评估与测试 (14 个)
-│   ├── monitoring/              # 监控告警 (10 个)
-│   ├── scheduler/               # 定时调度 (4 个)
-│   ├── sdk/                     # Claude Agent SDK (3 个)
-│   ├── skills/                  # Agent Skills 系统 (4 个)
-│   ├── tools/                   # 工具系统 (30+ 个)
-│   └── multimodal/             # 多模态处理 (6 个)
+│   ├── storage/                 # 存储层
+│   ├── routing/                 # 路由选择
+│   ├── evaluation/              # 评估与测试
+│   ├── monitoring/              # 监控告警
+│   ├── scheduler/               # 定时调度
+│   ├── sdk/                     # Claude Agent SDK
+│   ├── skills/                  # Agent Skills 系统
+│   ├── tools/                   # 工具系统
+│   └── multimodal/             # 多模态处理
 │
 ├── frontend/                    # 前端 React 应用
 │   └── src/
-│       ├── pages/               # 9 个页面组件
+│       ├── pages/               # 页面组件
 │       │   ├── HomePage.jsx     # 工作台/仪表盘
-│       │   ├── WritingPage.jsx  # 写作工作区 (34KB)
+│       │   ├── WritingPage.jsx  # 写作工作区
 │       │   ├── LiteraturePage.jsx # 文献浏览器
 │       │   ├── AIAssistantPage.jsx # AI 对话
 │       │   ├── ReportsPage.jsx  # 学术报告
@@ -379,30 +318,13 @@ project-root/
 │       │   ├── FeaturesPage.jsx # 功能导航
 │       │   └── SettingsPage.jsx # 设置中心
 │       ├── components/          # 通用组件
-│       ├── store/               # Zustand 状态管理 (9 个 Store)
+│       ├── store/               # Zustand 状态管理
 │       └── services/api.js      # Axios API 客户端
 │
-├── docs/                        # 文档 (48 份)
-│   ├── implemented/             # ✅ 已实现架构 (基于代码库)
-│   │   ├── architecture/       # 系统架构 (3份)
-│   │   ├── project/           # 项目概述 (2份)
-│   │   ├── guides/            # 开发指南 (4份)
-│   │   └── career/            # 简历面试 (4份)
-│   ├── plans/                  # 📋 开发计划架构
-│   │   └── architecture/       # 计划架构 (5份)
-│   │       ├── 论文Agent前沿开发报告.md
-│   │       ├── 框架审查与修正报告.md
-│   │       ├── 记忆系统与数据存储融合方案.md
-│   │       ├── 长期记忆写入短期记忆机制改进方案.md
-│   │       └── 测试计划_PaperAgent.md
-│   └── research/                # 🔬 技术调研 (17份)
-│       ├── 01-Agent协议与架构/
-│       ├── 02-提示词工程/
-│       ├── 03-Agent能力评估/
-│       ├── 04-PaperAgent技能/
-│       ├── 05-学术搜索与解析/
-│       ├── 06-意图识别与路由/
-│       └── 08-日志与监控/
+├── docs/                        # 文档
+│   ├── implemented/             # 已实现架构
+│   ├── plans/                  # 开发计划
+│   └── research/                # 技术调研
 │
 ├── tests/                       # 单元/集成测试
 ├── data/                        # 数据存储目录
@@ -453,6 +375,38 @@ project-root/
 - [x] 用户偏好学习 + 风格自适应
 - [x] 定时报告 (日报/周报/月报)
 
+## 模块化架构 (2026-05)
+
+项目已重构为模块化架构，提供统一的 API 接口：
+
+### 统一引用管理 `src.agents_v2.citation/`
+
+| 模块 | 功能 |
+|------|------|
+| `CitationFormatter` | 格式化引用（APA/MLA/GB7714等） |
+| `DOIVerifier` | DOI 验证和元数据获取 |
+| `CitationExtractor` | 从文本提取引用标记 |
+| `CitationTracker` | 答案溯源追踪 |
+
+### 统一报告生成 `src.agents_v2/reports/`
+
+| 模块 | 功能 |
+|------|------|
+| `DailyReportGenerator` | 日报生成 |
+| `WeeklyReportGenerator` | 周报生成 |
+| `MonthlyReportGenerator` | 月报生成 |
+
+### 统一搜索 `src.agents_v2/search/`
+
+| 模块 | 功能 |
+|------|------|
+| `ArxivSearcher` | arXiv 搜索 |
+| `PubmedSearcher` | PubMed 搜索 |
+| `SemanticScholarSearcher` | Semantic Scholar 搜索 |
+| `OpenAlexSearcher` | OpenAlex 搜索 |
+| `SearchOrchestrator` | 搜索编排器 |
+| `SearchResultMerger` | 结果合并去重 |
+
 ---
 
 ## 支持的 LLM 提供商
@@ -502,4 +456,4 @@ project-root/
 
 MIT License
 
-**最后更新**: 2026-05-02
+**最后更新**: 2026-05-04
