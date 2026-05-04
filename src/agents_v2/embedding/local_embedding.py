@@ -13,8 +13,8 @@ from ..logging_config import get_logging_logger
 
 logger = get_logging_logger(__name__)
 
-# 模型本地路径
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "Qwen3-Embedding-0.6B")
+# 模型本地路径（模型文件直接存放在此目录）
+MODEL_PATH = os.path.dirname(__file__)
 
 
 class LocalEmbeddingModel:
@@ -49,6 +49,8 @@ class LocalEmbeddingModel:
             try:
                 from transformers import AutoModel, AutoTokenizer
                 import torch
+
+                self._torch = torch  # 保存torch引用供encode使用
 
                 logger.info(f"Loading local embedding model from {self.model_path}")
 
@@ -109,7 +111,7 @@ class LocalEmbeddingModel:
                 encoded = {k: v.cuda() for k, v in encoded.items()}
 
             # Forward pass
-            with torch.no_grad():
+            with self._torch.no_grad():
                 outputs = self._model(**encoded)
 
             # Mean pooling
@@ -117,12 +119,12 @@ class LocalEmbeddingModel:
             token_embeddings = outputs.last_hidden_state
 
             input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, dim=1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
+            sum_embeddings = self._torch.sum(token_embeddings * input_mask_expanded, dim=1)
+            sum_mask = self._torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
             embeddings = sum_embeddings / sum_mask
 
             # L2 normalize
-            norms = torch.norm(embeddings, p=2, dim=1, keepdim=True)
+            norms = self._torch.norm(embeddings, p=2, dim=1, keepdim=True)
             embeddings = embeddings / norms
 
             all_embeddings.extend(embeddings.cpu().numpy().tolist())
