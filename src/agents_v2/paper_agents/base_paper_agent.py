@@ -166,7 +166,11 @@ class PaperAgentBase(ABC):
             base_url = self.llm_config.base_url or os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
             model = self.llm_config.model_name or os.getenv("LLM_MODEL", "MiniMax-M2.7")
 
-            client = OpenAI(api_key=api_key, base_url=base_url)
+            client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=60.0  # 60秒超时
+            )
 
             # 构建消息
             messages = []
@@ -177,7 +181,8 @@ class PaperAgentBase(ABC):
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                extra_body={"reasoning_split": False}
+                extra_body={"reasoning_split": False},
+                timeout=60.0  # 请求超时
             )
 
             # 检查响应类型
