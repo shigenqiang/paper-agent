@@ -540,7 +540,7 @@ class LiteratureAgent(PaperAgentBase):
                 # 扩大时间范围到5年，提高找到论文的概率
                 result = await self.search_agent.execute(
                     query,
-                    {"source": source, "time_range": 1825, "max_results": 10}
+                    {"source": source, "time_range": 1825, "max_results": 5}  # 减少返回数量加速
                 )
                 papers = result.get("papers", [])
                 # 过滤掉本地已存在的论文（通过title去重）
@@ -563,10 +563,10 @@ class LiteratureAgent(PaperAgentBase):
                 from src.agents_v2.search.search_factory import SearchFactory
                 from src.agents_v2.search.base_searcher import SearchResponse
 
-                # 直接使用各平台搜索器（SearchFactory 会自动创建）
-                searcher_names = ["openalex", "arxiv", "semantic_scholar", "pubmed", "crossref"]
+                # 只使用最快的搜索器，减少延迟
+                searcher_names = ["openalex", "crossref"]
                 fallback_papers = []
-                fallback_concurrency = _get_concurrency(self.ENV_FALLBACK_SEARCH_CONCURRENCY, 4)
+                fallback_concurrency = _get_concurrency(self.ENV_FALLBACK_SEARCH_CONCURRENCY, 2)
                 semaphore = asyncio.Semaphore(fallback_concurrency)
 
                 async def search_one(name: str) -> List[Dict[str, Any]]:
@@ -577,7 +577,7 @@ class LiteratureAgent(PaperAgentBase):
                                 return []
                             result = await asyncio.wait_for(
                                 searcher.search(query, 5),
-                                timeout=8.0
+                                timeout=5.0  # 减少超时时间
                             )
                             if isinstance(result, SearchResponse):
                                 papers = []
