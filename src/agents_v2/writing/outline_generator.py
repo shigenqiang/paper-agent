@@ -7,7 +7,7 @@ OutlineGeneratorAgent - 大纲生成Agent
 - 规划内容分配
 - 确保逻辑连贯性
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from src.agents_v2.logging_config import get_logging_logger
 
 import json
@@ -27,6 +27,189 @@ class OutlineGeneratorAgent(WritingAgentBase):
     - 规划每个章节的内容要点
     - 确保逻辑连贯性
     """
+
+    def _extract_json(self, text: str) -> Dict[str, Any]:
+        """从LLM输出中提取JSON - 增强版，处理截断的JSON"""
+        if not text:
+            return {}
+        try:
+            import re
+
+            # 预处理：清理可能的问题字符
+            text = text.strip()
+
+            # 尝试直接解析（如果文本本身是完整的JSON）
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+
+            # 尝试提取 ```json ... ``` 块
+            json_str = None
+
+            # 特殊情况：文本以 ```json 开头但可能没有关闭的 ```
+            if text.startswith('```json'):
+                # 手动去掉 ```json 前缀
+                json_str = text[7:].strip()  # 去掉 ```json 和换行
+                # 查找是否有关闭的 ```
+                closing_idx = json_str.rfind('```')
+                if closing_idx > 0:
+                    json_str = json_str[:closing_idx].strip()
+                # json_str 现在是可能的JSON内容（可能截断）
+            else:
+                # 尝试用正则表达式提取 ```...``` 块
+                m = re.search(r'```json\s*(.*?)```', text, re.DOTALL)
+                if m:
+                    json_str = m.group(1).strip()
+                else:
+                    m = re.search(r'```\s*(.*?)```', text, re.DOTALL)
+                    if m:
+                        json_str = m.group(1).strip()
+
+            if json_str:
+                # 尝试直接解析
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    pass
+
+                # 尝试修复不完整的JSON
+                fixed = self._try_fix_incomplete_json(json_str)
+                if fixed:
+                    return fixed
+
+            # 如果没有找到 ```...``` 块，但文本看起来像JSON（以 { 开头）
+            # 尝试直接修复
+            if text.startswith('{'):
+                fixed = self._try_fix_incomplete_json(text)
+                if fixed:
+                    return fixed
+
+            return {}
+        except Exception:
+            return {}
+
+    def _try_fix_incomplete_json(self, json_str: str) -> Optional[Dict[str, Any]]:
+        """尝试修复不完整的JSON - 增强版，处理字符串截断"""
+        try:
+            # 尝试直接解析
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                pass
+
+            # 统计括号数量
+            open_braces = json_str.count('{')
+            close_braces = json_str.count('}')
+            open_brackets = json_str.count('[')
+            close_brackets = json_str.count(']')
+
+            # 策略1: 找到最后一个完整章节对象的边界
+            last_valid_end = -1
+
+            patterns = [
+                '},\n        {\n            "level"',
+                '},\n        {\n            "title"',
+                '},\n        {\n            "content_points"',
+                '},\n    ]\n}',  # 章节数组结束
+                '}\n    ]\n}',
+            ]
+
+            for pattern in patterns:
+                idx = json_str.rfind(pattern)
+                if idx != -1 and idx > last_valid_end:
+                    test_end = idx + len(pattern)
+                    test_json = json_str[:test_end]
+
+                    if open_brackets > close_brackets:
+                        test_json += '\n    ]' * (open_brackets - close_brackets)
+                    if open_braces > close_braces:
+                        test_json += '\n    }' * (open_braces - close_braces)
+                    else:
+                        test_json += '\n    ]\n}'
+
+                    try:
+                        parsed = json.loads(test_json)
+                        last_valid_end = test_end
+                        break
+                    except:
+                        continue
+
+            if last_valid_end > 0:
+                fixed = json_str[:last_valid_end]
+                if open_brackets > close_brackets:
+                    fixed += '\n    ]' * (open_brackets - close_brackets)
+                if open_braces > close_braces:
+                    fixed += '\n    }' * (open_braces - close_braces)
+                else:
+                    fixed += '\n    ]\n}'
+
+                try:
+                    return json.loads(fixed)
+                except:
+                    pass
+
+            # 策略2: 如果字符串被截断（通常是中文或特殊字符），
+            # 尝试找到最后一个完整的内容值并截断
+            # 查找最后一个完整的 "key": "value" 对
+            truncated = self._fix_truncated_strings(json_str)
+            if truncated:
+                try:
+                    return json.loads(truncated)
+                except:
+                    pass
+
+            # 策略3: 简单补全括号
+            if open_brackets > close_brackets:
+                json_str += '\n' + '    ]' * (open_brackets - close_brackets)
+            if open_braces > close_braces:
+                json_str += '\n' + '    }' * (open_braces - close_braces)
+
+            return json.loads(json_str)
+        except Exception:
+            return None
+
+    def _fix_truncated_strings(self, json_str: str) -> Optional[str]:
+        """修复被截断的字符串（通常是中文或长文本被截断）"""
+        try:
+            # 如果JSON仍然无效，尝试找到最后一个完整对象边界
+            # 策略：从后往前找 "},{" 或 "}]" 等模式
+
+            # 找到最后一个 "},        {" 模式（章节分隔）
+            chapter_patterns = [
+                '},\n        {\n            "level"',
+                '},\n        {\n            "title"',
+                '},\n        {\n            "content_points"',
+            ]
+
+            last_pos = -1
+            for pattern in chapter_patterns:
+                pos = json_str.rfind(pattern)
+                if pos > last_pos:
+                    last_pos = pos
+
+            if last_pos > 0:
+                # 找到最后一个完整章节，分割并补全
+                fixed = json_str[:last_pos + 1]
+
+                # 补全数组和对象
+                open_brackets = fixed.count('[')
+                close_brackets = fixed.count(']')
+                if open_brackets > close_brackets:
+                    fixed += '\n    ]' * (open_brackets - close_brackets)
+
+                open_braces = fixed.count('{')
+                close_braces = fixed.count('}')
+                if open_braces > close_braces:
+                    fixed += '\n    }' * (open_braces - close_braces)
+                else:
+                    fixed += '\n    ]\n}'
+
+                return fixed
+
+            return None
+        except Exception:
+            return None
 
     def __init__(self, llm_config: Optional[LLMConfig] = None):
         system_prompt = """你是一个专业的学术论文大纲设计专家。
@@ -159,7 +342,7 @@ class OutlineGeneratorAgent(WritingAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = self._extract_json(response)
             return data
         except Exception as e:
             logger.error(f"Requirements analysis failed: {e}")
@@ -220,7 +403,7 @@ class OutlineGeneratorAgent(WritingAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = self._extract_json(response)
             return data
         except Exception as e:
             logger.error(f"Outline generation failed: {e}")
@@ -267,7 +450,7 @@ class OutlineGeneratorAgent(WritingAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = self._extract_json(response)
             return data.get("chapter_plans", {})
         except Exception as e:
             logger.error(f"Chapter planning failed: {e}")
@@ -307,7 +490,7 @@ class OutlineGeneratorAgent(WritingAgentBase):
 """
         try:
             response = await self._llm_call(prompt)
-            data = json.loads(response)
+            data = self._extract_json(response)
             scores = data.get("scores", {})
             overall = data.get("overall_score", 0.7)
 
