@@ -256,16 +256,19 @@ class LiteratureAgent(PaperAgentBase):
                 logger.warning(f"Embedding failed: {e}")
                 return None
 
-        # 云API失败，尝试本地模型
+        # 云API失败，尝试本地模型（5秒超时）
         local_model = self._get_local_embedding_model()
         if local_model:
             try:
-                embedding = await asyncio.to_thread(
-                    local_model.get_embedding, text
+                embedding = await asyncio.wait_for(
+                    asyncio.to_thread(local_model.get_embedding, text),
+                    timeout=5.0
                 )
                 if embedding:
                     logger.info("Using local embedding model")
                     return embedding
+            except asyncio.TimeoutError:
+                logger.warning("Local embedding timeout, using keyword fallback")
             except Exception as e:
                 logger.debug(f"Local embedding failed: {e}")
 
@@ -279,6 +282,9 @@ class LiteratureAgent(PaperAgentBase):
         """使用嵌入计算论文与主题的相关性，失败时使用关键词匹配后备"""
         if not papers:
             return papers
+
+        # 限制处理论文数量，避免耗时过长
+        papers_to_process = papers[:50]
 
         # 获取主题嵌入
         topic_embedding = await self._get_embedding(topic)
@@ -300,25 +306,27 @@ class LiteratureAgent(PaperAgentBase):
                         logger.debug(f"Paper embedding failed: {e}")
                         return paper, 0.5
 
-            results = await asyncio.gather(*[process_paper(p) for p in papers])
+            results = await asyncio.gather(*[process_paper(p) for p in papers_to_process])
             scored_papers = []
             for paper, score in results:
                 paper["embedding_relevance"] = round(score, 3)
                 scored_papers.append(paper)
             scored_papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
-            return scored_papers
+            # 合并未处理的论文
+            return scored_papers + papers[50:]
 
         # Embedding失败，使用关键词匹配作为后备
         logger.warning("Embedding不可用，使用关键词匹配作为后备方案")
-        for paper in papers:
+        for paper in papers_to_process:
             title = paper.get('title', '')
             abstract = paper.get('abstract', '')
             text = f"{title} {abstract}"
             score = self._keyword_similarity(topic, text)
             paper["embedding_relevance"] = round(score, 3)
 
-        papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
-        return papers
+        papers_to_process.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
+        # 合并未处理的论文
+        return papers_to_process + papers[50:]
 
     async def execute(
         self,
@@ -357,10 +365,10 @@ class LiteratureAgent(PaperAgentBase):
             )
             self.logger.info(f"[Literature] 生成 {len(search_queries)} 个搜索查询")
 
-            # 2. 多引擎并行搜索 (180秒超时，因为arXiv API可能限流)
+            # 2. 多引擎并行搜索 (120秒超时，arXiv API可能限流)
             all_papers = await asyncio.wait_for(
                 self._multi_engine_search(search_queries, topic),  # 传递原始 topic 用于本地查找
-                timeout=180.0
+                timeout=120.0
             )
             self.logger.info(f"[Literature] 搜索到 {len(all_papers)} 篇论文")
 
@@ -373,11 +381,11 @@ class LiteratureAgent(PaperAgentBase):
                     quality_score=0.0
                 )
 
-            # 3. 质量筛选与排序：使用嵌入计算相关性
+            # 3. 质量筛选与排序：使用嵌入计算相关性（超时缩短到90s）
             try:
                 ranked_papers = await asyncio.wait_for(
                     self._compute_paper_relevance(all_papers, topic),
-                    timeout=180.0
+                    timeout=90.0
                 )
             except asyncio.TimeoutError:
                 self.logger.warning("[Literature] _compute_paper_relevance 超时，尝试返回已排序的论文")
@@ -402,9 +410,11 @@ class LiteratureAgent(PaperAgentBase):
                 self.logger.info(f"[Literature] 关键词匹配模式，取Top 20论文，数量: {len(high_relevance_papers)}")
 
             try:
+                # 限制深度阅读论文数量，加速处理
+                papers_for_deep_read = high_relevance_papers[:10]
                 paper_analyses = await asyncio.wait_for(
-                    self._deep_read(high_relevance_papers),
-                    timeout=300.0
+                    self._deep_read(papers_for_deep_read),
+                    timeout=120.0
                 )
             except asyncio.TimeoutError:
                 self.logger.warning("[Literature] _deep_read 超时，返回空分析")
