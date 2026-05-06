@@ -5,6 +5,24 @@ Intent Type 枚举定义
 """
 from enum import Enum
 
+from .registry import (
+    IntentCategory,
+    WorkflowPath,
+    INTENTS,
+    MODULE_REGISTRY,
+    WORKFLOW_NODES,
+    IntentRegistry,
+    INTENT_REGISTRY,
+    get_intent_workflow,
+    list_all_intents,
+    list_search_intents,
+    list_writing_intents,
+    list_report_intents,
+    list_qa_intents,
+)
+
+
+# ============ 意图类型枚举（保持向后兼容） ============
 
 class IntentType(str, Enum):
     """意图类型枚举"""

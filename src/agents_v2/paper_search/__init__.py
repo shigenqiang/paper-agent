@@ -1,7 +1,23 @@
-"""统计学问答系统 - 智能路由、论文搜索、报告生成"""
+"""统计学问答系统 - 智能路由、论文搜索、报告生成
+
+.. deprecated::
+    本模块已弃用，请使用以下统一模块替代：
+    - 搜索功能: src.agents_v2.search
+    - 报告功能: src.agents_v2.reports
+    - 引用功能: src.agents_v2.citation
+
+    迁移指南：
+        旧: from src.agents_v2.paper_search import PaperSearchAgent
+        新: from src.agents_v2.search import SearchFactory
+
+        旧: from src.agents_v2.paper_search import ReportGenerator
+        新: from src.agents_v2.reports import BaseReportGenerator
+
+        旧: from src.agents_v2.paper_search import CitationManager
+        新: from src.agents_v2.citation import CitationFormatter
+"""
 
 # 统一模块导入（推荐）
-# 使用 src.agents_v2.citation 和 src.agents_v2.reports 替代以下旧模块
 from .citation_manager import CitationManager, Citation as LegacyCitation
 
 # 保持向后兼容的导出
