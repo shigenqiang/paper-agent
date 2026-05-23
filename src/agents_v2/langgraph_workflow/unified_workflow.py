@@ -86,6 +86,7 @@ class UnifiedWorkflow:
         enable_evaluation: bool = True,
         enable_hitl: bool = False,
         hitl_interrupt_after: Optional[list] = None,
+        max_writing_iterations: int = 2,
     ):
         """初始化统一工作流
 
@@ -98,6 +99,7 @@ class UnifiedWorkflow:
             enable_hitl: 是否启用 HITL 人机协作
             hitl_interrupt_after: HITL 中断点列表（节点名），
                 默认 ["outline", "review"]。在这些节点执行完毕后暂停等待人工审核。
+            max_writing_iterations: 最大写作迭代次数，默认2（减少时间）
         """
         self.llm = llm
         self.enable_memory = enable_memory
@@ -106,6 +108,7 @@ class UnifiedWorkflow:
         self.enable_evaluation = enable_evaluation
         self.enable_hitl = enable_hitl
         self.hitl_interrupt_after = hitl_interrupt_after or ["outline", "review"]
+        self.max_writing_iterations = max_writing_iterations
         self.tracer = create_tracer()
 
         # HITL checkpointer（内存级，进程重启后失效）
@@ -268,7 +271,7 @@ class UnifiedWorkflow:
                 should_continue,
                 {
                     "write": "writing",
-                    "done": "memory_remember" if self.enable_memory else END,
+                    "done": "polish" if self.enable_memory else "polish",
                 },
             )
         else:
@@ -277,9 +280,12 @@ class UnifiedWorkflow:
                 should_continue,
                 {
                     "write": "writing",
-                    "done": "memory_remember" if self.enable_memory else END,
+                    "done": "polish" if self.enable_memory else "polish",
                 },
             )
+
+        # Polish 节点
+        workflow.add_edge("polish", "memory_remember" if self.enable_memory else END)
 
         if self.enable_memory:
             workflow.add_edge("memory_remember", END)
@@ -306,62 +312,130 @@ class UnifiedWorkflow:
         return await self.router(state)
 
     def _crawler_node(self, state: dict) -> dict:
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.crawler.execute(agent_state)
-        return dict(result)
+        self.tracer.start_node("crawler")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.crawler.execute(agent_state)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     def _selector_node(self, state: dict) -> dict:
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.selector.execute(agent_state)
-        return dict(result)
+        self.tracer.start_node("selector")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.selector.execute(agent_state)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     def _outline_node(self, state: dict) -> dict:
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.outline.execute(agent_state)
-        return dict(result)
+        self.tracer.start_node("outline")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.outline.execute(agent_state)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     def _writer_node(self, state: dict) -> dict:
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.writer.execute(agent_state)
-        return dict(result)
+        """写作节点入口"""
+        self.tracer.start_node("writer")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.writer.execute(agent_state)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     def _reviewer_node(self, state: dict) -> dict:
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.reviewer.execute(agent_state)
-        return dict(result)
+        self.tracer.start_node("reviewer")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.reviewer.execute(agent_state)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     def _diagnostic_node(self, state: dict) -> dict:
         """诊断节点入口"""
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.diagnostic.execute(agent_state)
-        return dict(result)
+        self.tracer.start_node("diagnostic")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.diagnostic.execute(agent_state)
+            if hasattr(result, 'paper_count'):
+                self.tracer.record_paper_count(result.paper_count)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     def _topic_node(self, state: dict) -> dict:
         """选题节点入口"""
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.topic.execute(agent_state)
-        return dict(result)
+        self.tracer.start_node("topic")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.topic.execute(agent_state)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     def _literature_node(self, state: dict) -> dict:
         """文献节点入口"""
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.literature.execute(agent_state)
-        return dict(result)
+        self.tracer.start_node("literature")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.literature.execute(agent_state)
+            if hasattr(result, 'paper_count'):
+                self.tracer.record_paper_count(result.paper_count)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     def _methodology_node(self, state: dict) -> dict:
         """方法论节点入口"""
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.methodology.execute(agent_state)
-        return dict(result)
+        self.tracer.start_node("methodology")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.methodology.execute(agent_state)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
 
     async def _hitl_intervene_node(self, state: dict) -> dict:
         """
@@ -429,20 +503,28 @@ class UnifiedWorkflow:
             return "terminate"
 
     def _evaluator_node(self, state: dict) -> dict:
-        agent_state = PaperAgentState()
-        agent_state.update(state)
-        result = self.evaluator.execute(agent_state)
+        self.tracer.start_node("evaluator")
+        try:
+            agent_state = PaperAgentState()
+            agent_state.update(state)
+            result = self.evaluator.execute(agent_state)
+            return dict(result)
+        except Exception as e:
+            self.tracer.end_node(status="failed", error=str(e))
+            raise
+        finally:
+            self.tracer.end_node(status="completed")
         return dict(result)
 
     async def _memory_recall_node(self, state: dict) -> dict:
         import asyncio
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self.memory.recall_before_search(state))
+        # 在线程池中运行同步的 memory 函数
+        return await asyncio.to_thread(self.memory.recall_before_search, state)
 
     async def _memory_remember_node(self, state: dict) -> dict:
         import asyncio
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self.memory.remember_after_selection(state))
+        # 在线程池中运行同步的 memory 函数
+        return await asyncio.to_thread(self.memory.remember_after_selection, state)
 
     async def _multimodal_node(self, state: dict) -> dict:
         return await self.multimodal.analyze_paper_figures(state)
@@ -561,7 +643,7 @@ class UnifiedWorkflow:
             "hitl_enabled": hitl_enabled,
             "thread_id": thread_id,
             "iteration": 0,
-            "max_iterations": 3,
+            "max_iterations": self.max_writing_iterations,
         }
 
         # 如果明确指定了报告类型或关键词，跳过路由直接走报告路径

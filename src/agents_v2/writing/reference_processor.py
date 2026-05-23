@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from src.agents_v2.logging_config import get_logging_logger
 
 import json
+import re
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
 
@@ -123,44 +124,172 @@ class ReferenceProcessorAgent(WritingAgentBase):
         citation_style: str
     ) -> List[Dict[str, str]]:
         """格式化参考文献"""
-        prompt = f"""
-将以下参考文献格式化为标准的{citation_style}引用格式：
+        # 清理和验证输入数据
+        cleaned_refs = []
+        for ref in raw_references:
+            cleaned_ref = {
+                "id": len(cleaned_refs) + 1,
+                "authors": self._clean_authors(ref.get("authors", [])),
+                "year": self._clean_year(ref.get("year", "")),
+                "title": ref.get("title", "Unknown Title"),
+                "journal": ref.get("journal", "") or ref.get("venue", "") or ref.get("booktitle", ""),
+                "volume": ref.get("volume", ""),
+                "issue": ref.get("issue", ""),
+                "pages": ref.get("pages", ""),
+                "doi": ref.get("doi", "")
+            }
+            cleaned_refs.append(cleaned_ref)
 
-原始文献：
-{json.dumps(raw_references, ensure_ascii=False, indent=2)}
+        prompt = f"""
+将以下参考文献格式化为标准的{citation_style}引用格式。
+
+原始文献（{len(cleaned_refs)}条）：
+{json.dumps(cleaned_refs, ensure_ascii=False, indent=2)}
 
 {citation_style}引用格式要求：
-- 请将每条文献格式化为标准的{citation_style}格式
-- 确保作者、题目、期刊/会议、年份等信息的正确位置
-- 检查日期、卷、期、页码等信息的格式
+- APA格式: 作者 (年份). 标题. 期刊, 卷(期), 页码.
+- GB/T格式: [序号] 作者. 标题. 期刊, 年份.
 
 输出JSON格式（只输出JSON，不要其他内容）：
 {{
     "formatted": [
-        {{
-            "id": 1,
-            "formatted_citation": "格式化的引用",
-            "original": {{"authors": ["作者"], "year": "2023", "title": "标题"}}
-        }}
+        {{"id": 1, "formatted_citation": "格式化的引用"}},
+        ...
     ]
-}}
-"""
+}}"""
         try:
             response = await self._llm_call(prompt)
 
-            # 使用统一的 JSON 解析（处理 markdown 包裹等问题）
             from src.agents_v2.unified.pydantic_validator import parse_json
             data = parse_json(response)
 
             if data and "formatted" in data:
-                return data["formatted"]
+                formatted_list = data["formatted"]
+                # 合并原始信息到formatted
+                for item in formatted_list:
+                    idx = item.get("id", 0) - 1
+                    if 0 <= idx < len(cleaned_refs):
+                        item["original"] = cleaned_refs[idx]
+                    # 确保 formatted_citation 是字符串类型
+                    if isinstance(item.get("formatted_citation"), dict):
+                        item["formatted_citation"] = self._dict_to_citation_str(item["formatted_citation"])
+                    elif isinstance(item.get("formatted_citation"), str):
+                        # 清除 LLM 返回字符串中的编号前缀，如 "[1] " 或 "[[1]] "
+                        citation_clean = item["formatted_citation"].strip()
+                        while True:
+                            match = re.match(r'^\s*\[+\s*\d+\s*\]+\s*', citation_clean)
+                            if not match:
+                                break
+                            citation_clean = citation_clean[match.end():].strip()
+                        item["formatted_citation"] = citation_clean
+                return formatted_list
 
             # 降级：返回原始格式
-            return [{"id": i+1, "formatted_citation": str(ref), "original": ref} for i, ref in enumerate(raw_references)]
+            return [{"id": i+1, "formatted_citation": self._format_single_reference(ref, citation_style), "original": ref} for i, ref in enumerate(cleaned_refs)]
 
         except Exception as e:
             logger.error(f"Reference formatting failed: {e}")
-            return [{"id": i+1, "formatted_citation": str(ref), "original": ref} for i, ref in enumerate(raw_references)]
+            return [{"id": i+1, "formatted_citation": self._format_single_reference(ref, citation_style), "original": ref} for i, ref in enumerate(cleaned_refs)]
+
+    def _clean_authors(self, authors) -> List[str]:
+        """清理作者信息"""
+        if isinstance(authors, str):
+            authors = [a.strip() for a in authors.split(",")]
+        if not isinstance(authors, list):
+            return []
+        # 过滤空作者
+        return [a for a in authors if a and a.strip()]
+
+    def _clean_year(self, year) -> str:
+        """清理年份信息"""
+        year_str = str(year) if year else ""
+        # 提取数字
+        import re
+        match = re.search(r'\d{4}', year_str)
+        if match:
+            return match.group()
+        # 过滤无效年份
+        if year_str.isdigit() and 1900 <= int(year_str) <= 2030:
+            return year_str
+        return "Unknown"
+
+    def _format_single_reference(self, ref: Dict[str, Any], citation_style: str) -> str:
+        """格式化单条参考文献（降级使用）"""
+        authors = ref.get("authors", [])
+        if isinstance(authors, list) and authors:
+            author_str = ", ".join(authors)
+        else:
+            author_str = "Unknown Author"
+        year = ref.get("year", "Unknown")
+        title = ref.get("title", "Unknown Title")
+        journal = ref.get("journal", "") or ref.get("venue", "")
+        volume = ref.get("volume", "")
+        issue = ref.get("issue", "")
+        pages = ref.get("pages", "")
+
+        if citation_style == "GB_T":
+            parts = [author_str, title]
+            if journal:
+                parts.append(f"{journal}")
+            if year and year != "Unknown":
+                parts.append(f"{year}")
+            return ". ".join(parts)
+        else:
+            # APA style
+            parts = [f"{author_str} ({year})", title]
+            if journal:
+                if volume:
+                    parts.append(f"{journal}, {volume}")
+                    if issue:
+                        parts[-1] += f"({issue})"
+                    if pages:
+                        parts[-1] += f", {pages}"
+                else:
+                    parts.append(journal)
+            return ". ".join(parts)
+
+    def _dict_to_citation_str(self, citation_dict: Dict[str, Any], citation_style: str = "GB_T") -> str:
+        """将引用字典转换为字符串格式（处理LLM返回dict格式的降级）"""
+        if not isinstance(citation_dict, dict):
+            return str(citation_dict)
+
+        authors = citation_dict.get("authors", [])
+        year = citation_dict.get("year", "")
+        title = citation_dict.get("title", "")
+        journal = citation_dict.get("journal", "")
+        volume = citation_dict.get("volume", "")
+        issue = citation_dict.get("issue", "")
+        pages = citation_dict.get("pages", "")
+        doi = citation_dict.get("doi", "")
+
+        if isinstance(authors, list) and authors:
+            author_str = ", ".join(authors)
+        elif isinstance(authors, str):
+            author_str = authors
+        else:
+            author_str = "Unknown Author"
+
+        if citation_style == "GB_T":
+            # GB/T 格式: [序号] 作者. 标题. 期刊, 年份.
+            parts = [author_str, title]
+            if journal:
+                parts.append(f"{journal}")
+            if year and year != "Unknown":
+                parts.append(f"{year}")
+            return ". ".join(parts)
+        else:
+            # APA 风格
+            parts = [f"{author_str} ({year})", title]
+            if journal:
+                if volume:
+                    parts.append(f"{journal}, {volume}")
+                    if issue:
+                        parts[-1] += f"({issue})"
+                    if pages:
+                        parts[-1] += f", {pages}"
+                else:
+                    parts.append(journal)
+            return ". ".join(parts)
 
     async def _validate_citations(
         self,
@@ -207,6 +336,26 @@ class ReferenceProcessorAgent(WritingAgentBase):
         references: List[Dict[str, str]]
     ) -> Dict[str, Any]:
         """检查引用完整性"""
+        # 安全获取 formatted_citation 字符串
+        def get_citation_str(ref):
+            citation = ref.get("formatted_citation", "")
+            if isinstance(citation, str):
+                return citation
+            elif isinstance(citation, dict):
+                # dict 类型，转为字符串
+                authors = citation.get("authors", [])
+                if isinstance(authors, list) and authors:
+                    author_str = ", ".join(authors)
+                elif isinstance(authors, str):
+                    author_str = authors
+                else:
+                    author_str = "Unknown"
+                title = citation.get("title", "")
+                year = citation.get("year", "")
+                return f"{author_str}. {title}. {year}"
+            else:
+                return str(citation)
+
         prompt = f"""
 检查论文中引用的完整性：
 
@@ -214,7 +363,7 @@ class ReferenceProcessorAgent(WritingAgentBase):
 {paper_content[:1500]}
 
 参考文献列表（{len(references)}条）：
-{json.dumps([ref.get("formatted_citation", "") if isinstance(ref.get("formatted_citation"), str) else str(ref) for ref in references[:10]], ensure_ascii=False)}
+{json.dumps([get_citation_str(ref) for ref in references[:10]], ensure_ascii=False)}
 
 请检查：
 1. 是否存在文中引用但未列入参考文献的情况
@@ -248,28 +397,75 @@ class ReferenceProcessorAgent(WritingAgentBase):
         citation_style: str
     ) -> str:
         """生成参考文献列表"""
-        lines = ["# 参考文献\n"]
+        lines = []
+        ref_format = self._get_format_template(citation_style)
 
-        for ref in references:
+        for i, ref in enumerate(references, 1):
             citation = ref.get("formatted_citation", "")
             original = ref.get("original", {})
 
             # 处理不同格式的 citation
             if isinstance(citation, dict):
-                # 如果是 dict，尝试构建字符串
+                # 如果是 dict，提取各部分信息
                 authors = citation.get("authors", [])
                 year = citation.get("year", "")
                 title = citation.get("title", "")
                 journal = citation.get("journal", "")
+                volume = citation.get("volume", "")
+                issue = citation.get("issue", "")
+                pages = citation.get("pages", "")
+                doi = citation.get("doi", "")
+
                 if isinstance(authors, list):
                     author_str = ", ".join(authors) if authors else ""
+                elif isinstance(authors, str):
+                    author_str = authors
                 else:
-                    author_str = str(authors)
-                citation = f"{author_str}. {title}. {journal}, {year}." if author_str else str(citation)
-            elif not isinstance(citation, str):
-                citation = str(citation)
+                    author_str = original.get("authors", "Unknown Author") if isinstance(original, dict) else "Unknown Author"
 
-            if citation:
-                lines.append(f"- {citation}")
+                # 使用格式化模板
+                formatted = ref_format.format(
+                    num=i,
+                    authors=author_str,
+                    year=year or original.get("year", ""),
+                    title=title or original.get("title", "Unknown Title"),
+                    journal=journal or original.get("journal", ""),
+                    volume=volume or original.get("volume", ""),
+                    issue=issue or original.get("issue", ""),
+                    pages=pages or original.get("pages", ""),
+                    doi=doi or original.get("doi", "")
+                )
+                lines.append(formatted)
+            elif isinstance(citation, str) and citation:
+                # 字符串类型：彻底清除所有可能的编号前缀
+                # 匹配各种格式: "[1] ", "[1]" , "[[1]] ", "[1] [1] " 等，递归清除直到没有
+                citation_clean = citation.strip()
+                # 递归清除所有编号前缀
+                while True:
+                    # 匹配 [n] 或 [[n]] 格式的开头
+                    match = re.match(r'^\s*\[+\s*\d+\s*\]+\s*', citation_clean)
+                    if not match:
+                        break
+                    citation_clean = citation_clean[match.end():].strip()
+                if citation_clean:
+                    lines.append(f"[{i}] {citation_clean}")
+                else:
+                    title = original.get("title", "Unknown Title") if isinstance(original, dict) else "Unknown Title"
+                    lines.append(f"[{i}] {title}")
+            else:
+                # 降级处理
+                title = original.get("title", "Unknown Title") if isinstance(original, dict) else "Unknown Title"
+                lines.append(f"[{i}] {title}")
 
         return "\n".join(lines)
+
+    def _get_format_template(self, citation_style: str) -> str:
+        """获取引用格式模板"""
+        templates = {
+            "GB_T": "[{num}] {authors}. {title}. {journal}, {year}.",  # 简化版GB/T
+            "APA": "{authors} ({year}). {title}. {journal}, {volume}({issue}), {pages}.",
+            "IEEE": "{authors}, \"{title},\" {journal}, vol. {volume}, no. {issue}, pp. {pages}, {year}.",
+            "MLA": "{authors}. \"{title}.\" {journal}, {volume}, no. {issue}, {year}, pp. {pages}.",
+            "CHICAGO": "{authors}. \"{title}.\" {journal} {volume}, no. {issue} ({year}): {pages}."
+        }
+        return templates.get(citation_style, templates["GB_T"])

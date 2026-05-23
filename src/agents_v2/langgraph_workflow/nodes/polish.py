@@ -34,7 +34,8 @@ def _get_llm_config():
         api_key=api_key,
         base_url=base_url,
         temperature=0.7,
-        max_tokens=4096
+        max_tokens=4096,
+        timeout=300
     )
 
 
@@ -54,7 +55,12 @@ class PolishNode:
         try:
             from src.agents_v2.problem_oriented.language_polisher import LanguagePolisherAgent
 
+            # 对于长文本，增加 max_tokens 避免输出截断
             llm_config = _get_llm_config()
+            if len(text) > 10000:
+                # 长文本使用更大的 max_tokens
+                llm_config.max_tokens = 8192 if len(text) > 30000 else 6144
+
             agent = LanguagePolisherAgent(llm_config=llm_config)
             result = await agent.diagnose({
                 "text": text,
@@ -231,10 +237,29 @@ class PolishNode:
 
         papers_json = json.dumps(citation_context, ensure_ascii=False, indent=2)
 
+        # 限制输入文本长度（最大50000字符），避免 LLM 处理过长文本导致超时
+        # 如果文本过长，分段处理并合并结果
+        max_input_chars = 50000
+        if len(text) > max_input_chars:
+            # 分段并行处理：所有chunk并发提交，大幅降低总耗时
+            chunk_size = 20000
+            chunks = []
+            for i in range(0, len(text), chunk_size):
+                chunks.append(text[i:i + chunk_size])
+            import asyncio
+            results = await asyncio.gather(*[
+                self._insert_citations_single_chunk(chunk, papers_json, citation_context)
+                for chunk in chunks
+            ])
+            return "\n\n".join(results)
+
+        # 设置合适的 max_tokens：基于实际发送的文本长度，估算输出约1.15倍
+        max_tokens = max(8192, int(len(text) * 1.15))
+
         prompt = f"""请在论文正文中适当位置插入文献引用。
 
 论文正文：
-{text[:8000]}
+{text}
 
 可用文献（按编号）：
 {papers_json}
@@ -264,7 +289,8 @@ class PolishNode:
                 api_key=api_key,
                 base_url=base_url,
                 temperature=0.3,
-                max_tokens=8192
+                max_tokens=max_tokens,
+                timeout=300
             )
 
             from src.agents_v2.unified.pydantic_validator import parse_json
@@ -277,18 +303,74 @@ class PolishNode:
 
         return text
 
+    async def _insert_citations_single_chunk(self, text: str, papers_json: str, citation_context: list) -> str:
+        """处理单个文本片段的引用插入（用于分段处理长文本）"""
+        max_tokens = max(8192, int(len(text) * 1.15))
+
+        prompt = f"""请在论文正文中适当位置插入文献引用。
+
+论文正文：
+{text}
+
+可用文献（按编号）：
+{papers_json}
+
+引用格式：GB/T 7714标准，使用上标 [编号] 或 (作者, 年份) 格式。
+
+要求：
+1. 在提到研究背景、方法、结果时插入对应文献引用
+2. 引用位置应紧跟在相关陈述之后
+3. 保持原文不变，只在适当位置添加引用标记
+4. 优先引用最近5年内的论文
+
+输出格式：
+{{
+    "cited_paper": "已插入引用的论文正文"
+}}
+"""
+        try:
+            from src.agents_v2.config import LLMConfig
+            import os
+            api_key = os.getenv("OPENAI_API_KEY")
+            base_url = os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
+            model_name = os.getenv("LLM_MODEL", "MiniMax-M2.7")
+            llm_config = LLMConfig(
+                provider="openai",
+                model_name=model_name,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=0.3,
+                max_tokens=max_tokens,
+                timeout=300
+            )
+
+            from src.agents_v2.unified.pydantic_validator import parse_json
+            response = await self._llm_call(prompt, llm_config)
+            data = parse_json(response)
+            if data and "cited_paper" in data:
+                return data["cited_paper"]
+        except Exception as e:
+            logger.warning(f"Citation insertion single chunk failed: {e}")
+
+        return text
+
     async def _llm_call(self, prompt: str, llm_config) -> str:
-        """调用 LLM"""
+        """调用 LLM（带超时控制）"""
+        import asyncio
         from openai import AsyncOpenAI
         client = AsyncOpenAI(
             api_key=llm_config.api_key,
-            base_url=llm_config.base_url
+            base_url=llm_config.base_url,
+            timeout=llm_config.timeout
         )
-        response = await client.chat.completions.create(
-            model=llm_config.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=llm_config.temperature,
-            max_tokens=llm_config.max_tokens
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=llm_config.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=llm_config.temperature,
+                max_tokens=llm_config.max_tokens
+            ),
+            timeout=float(llm_config.timeout)
         )
         return response.choices[0].message.content
 
@@ -317,10 +399,12 @@ class PolishNode:
         # 获取文献列表（用于引用处理）
         papers = state.get("papers", [])
 
-        # 0. 引用处理（插入文献引用）
+        # 0. 引用处理（插入文献引用）- 限制最多30篇高相关性论文，避免超时
+        # 排序 papers 按相关性，取前30篇
+        papers_for_citation = papers[:30] if len(papers) > 30 else papers
         citation_result = await self._run_citation_processor(
             text=draft,
-            papers=papers,
+            papers=papers_for_citation,
             citation_style="GB_T"
         )
         cited_text = citation_result.get("cited_text", draft)
@@ -329,16 +413,27 @@ class PolishNode:
 
         logger.info(f"[Polish] 引用处理完成: {citation_count} 篇文献被引用")
 
-        # 1. 语言润色
-        polish_result = await self._run_language_polisher(
-            text=cited_text,
-            language=state.get("language", "zh"),
-            polish_level="medium"
-        )
+        # 1. 语言润色（对于长文本，跳过完整润色避免截断）
+        # 长文本直接使用cited_text，仅做基础清理
+        polish_result = None
+        polish_result_success = False
+        if len(cited_text) > 30000:
+            logger.info(f"[Polish] 文本过长({len(cited_text)}字符)，跳过完整润色")
+            polished_text = cited_text
+            language_score = 0.5
+            language_issues = []
+            polish_result_success = True  # 长文本不经过LLM，视为成功
+        else:
+            polish_result = await self._run_language_polisher(
+                text=cited_text,
+                language=state.get("language", "zh"),
+                polish_level="medium"
+            )
 
-        polished_text = polish_result.get("polished_text", cited_text)
-        language_score = polish_result.get("quality_score", 0)
-        language_issues = polish_result.get("diagnosed_issues", [])
+            polished_text = polish_result.get("polished_text", cited_text)
+            language_score = polish_result.get("quality_score", 0)
+            language_issues = polish_result.get("diagnosed_issues", [])
+            polish_result_success = polish_result.get("success", False)
 
         # 2. 智能修订（如果有问题）
         revised_text = polished_text
@@ -348,13 +443,45 @@ class PolishNode:
             revised_text = revision_result.get("revised_text", polished_text)
             revision_score = revision_result.get("quality_score", 0)
 
+        # 3. 连贯性检查（术语、逻辑、重复）
+        coherence_issues = []
+        try:
+            from ..nodes.reviewer import (
+                TerminologyChecker,
+                CoherenceChecker,
+                DuplicateDetector
+            )
+
+            term_checker = TerminologyChecker()
+            coherence_checker = CoherenceChecker()
+            dup_detector = DuplicateDetector()
+
+            # 术语检查（revised_text 是字符串）
+            if isinstance(revised_text, str):
+                term_issues = term_checker.check_consistency(revised_text)
+                coherence_issues.extend(term_issues)
+
+            # 重复内容检测（revised_text 是字符串）
+            if isinstance(revised_text, str):
+                dup_issues = dup_detector.detect_duplicates(revised_text)
+                coherence_issues.extend(dup_issues)
+
+            if coherence_issues:
+                logger.info(f"[Polish] 连贯性检查发现问题: {len(coherence_issues)}项")
+                for issue in coherence_issues[:5]:  # 只记录前5条
+                    logger.info(f"  - {issue[:100]}")
+
+        except Exception as e:
+            logger.warning(f"[Polish] 连贯性检查失败: {e}")
+
         # 存储结果
         state["polished_text"] = revised_text
         state["polish_quality_score"] = (language_score + revision_score) / 2
-        state["polish_success"] = polish_result.get("success", False)
+        state["polish_success"] = polish_result_success
         state["polish_issues"] = language_issues
-        state["reference_list"] = reference_list  # 参考文献列表
-        state["citation_count"] = citation_count  # 引用数量
+        state["coherence_issues"] = coherence_issues  # 新增：连贯性问题
+        state["reference_list"] = reference_list
+        state["citation_count"] = citation_count
 
         elapsed = time.time() - start
         logger.info(

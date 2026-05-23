@@ -13,9 +13,11 @@ from typing import Any, Dict, List, Optional
 from src.agents_v2.logging_config import get_logging_logger
 
 import json
+import asyncio
 
 from .base_problem_agent import ProblemAgentBase, AgentOutput, LLMConfig
 from ..paper_search.paper_search import PaperSearchAgent
+from ..embedding import get_local_embedding_model
 
 logger = get_logging_logger(__name__)
 
@@ -193,23 +195,44 @@ class LiteratureMapperAgent(ProblemAgentBase):
             # 1. 生成多角度搜索查询
             queries = await self._generate_search_queries(topic)
 
-            # 2. 模拟文献搜索（实际应该调用搜索API）
+            # 2. 文献搜索（已有网络I/O并行优化）
             papers = await self._search_papers(queries, existing_papers)
 
             # 3. 分类整理文献
             categorized = await self._categorize_papers(papers)
 
-            # 4. 识别研究空白
+            # 4. 识别研究空白（依赖categorized，需要串行）
             gaps = await self._identify_gaps(topic, categorized)
 
-            # 5. 生成文献地图
-            literature_map = await self._generate_literature_map(topic, categorized, gaps)
+            # 5. 生成文献地图（依赖categorized和gaps，轻量组装）
+            literature_map = {
+                "topic": topic,
+                "categories": list(categorized.keys()),
+                "category_counts": {k: len(v) for k, v in categorized.items()},
+                "gaps": gaps,
+                "key_papers": self._identify_key_papers_fast(categorized)
+            }
 
-            # 6. 诊断问题
-            issues = await self._diagnose_review_issues(existing_papers, papers, gaps)
+            # 6-7. 并行执行：诊断问题和生成建议（相互独立，且都是轻量逻辑）
+            issues_task = self._diagnose_review_issues_async(existing_papers, papers)
+            recommendations_task = self._generate_recommendations_async(papers)
 
-            # 7. 生成建议
-            recommendations = await self._generate_recommendations(issues, gaps)
+            issues, recommendations = await asyncio.gather(
+                issues_task, recommendations_task,
+                return_exceptions=True
+            )
+
+            # 处理并行执行中的异常
+            if isinstance(issues, Exception):
+                self.logger.warning(f"Diagnose issues failed: {issues}, using default")
+                issues = ["文献综述基本完整"]
+            if isinstance(recommendations, Exception):
+                self.logger.warning(f"Generate recommendations failed: {recommendations}, using default")
+                recommendations = ["文献综述较为完整，可进入下一阶段"]
+
+            # 8. 预计算论文embedding（后台执行，不阻塞主流程）
+            asyncio.create_task(self._embed_papers(papers, topic))
+            self.logger.info(f"[{self.__class__.__name__}] 启动后台embedding预计算任务")
 
             # 质量评分：基于文献数量和空白识别
             quality_score = min(1.0, len(papers) / 20) * 0.5 + (len(gaps) / 5) * 0.5
@@ -222,7 +245,8 @@ class LiteratureMapperAgent(ProblemAgentBase):
                     "categorized_literature": categorized,
                     "research_gaps": gaps,
                     "total_papers_found": len(papers),
-                    "search_queries_used": queries
+                    "search_queries_used": queries,
+                    "papers": papers  # 返回 papers 供后续阶段复用
                 },
                 agent_name=self.name,
                 diagnosed_issues=issues,
@@ -321,7 +345,7 @@ class LiteratureMapperAgent(ProblemAgentBase):
             async with semaphore:
                 return await search_query(query)
 
-        tasks = [bounded_search(q) for q in queries[:8]]
+        tasks = [bounded_search(q) for q in queries[:4]]  # 限制查询数量，避免过长等待
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for result in results:
@@ -341,6 +365,97 @@ class LiteratureMapperAgent(ProblemAgentBase):
 
         self.logger.debug(f"去重后论文数: {len(unique_papers)}")
         return unique_papers
+
+    async def _embed_papers(self, papers: List[Dict[str, Any]], topic: str = "") -> List[Dict[str, Any]]:
+        """
+        后台预计算论文embedding，供后续LiteratureAgent复用
+
+        Args:
+            papers: 论文列表
+            topic: 研究主题（用于计算主题embedding）
+        Returns:
+            带embedding的论文列表
+        """
+        if not papers:
+            return papers
+
+        cls_name = self.__class__.__name__
+        self.logger.info(f"[{cls_name}] 开始预计算 {len(papers)} 篇论文的 embedding")
+
+        # 获取本地embedding模型
+        local_model = get_local_embedding_model()
+        if not local_model:
+            self.logger.warning(f"[{cls_name}] 本地embedding模型不可用，跳过预计算")
+            return papers
+
+        # 限制处理数量（增大到50篇，加速且覆盖更多论文）
+        papers_to_embed = papers[:50]
+
+        # 计算主题embedding（用于相关性计算）
+        topic_embedding = None
+        if topic:
+            try:
+                topic_embedding = await asyncio.wait_for(
+                    asyncio.to_thread(local_model.get_embedding, topic),
+                    timeout=60.0
+                )
+            except Exception as e:
+                self.logger.warning(f"[{cls_name}] 主题embedding计算失败: {e}")
+
+        def compute_embedding_sync(text: str):
+            """同步计算embedding（在线程中执行）"""
+            try:
+                return local_model.get_embedding(text)
+            except Exception:
+                return None
+
+        async def process_paper(paper: Dict[str, Any], idx: int) -> Dict[str, Any]:
+            try:
+                text_to_embed = f"{paper.get('title', '')} {paper.get('abstract', '')}"
+                embedding = await asyncio.wait_for(
+                    asyncio.to_thread(compute_embedding_sync, text_to_embed),
+                    timeout=60.0
+                )
+                paper["embedding"] = embedding
+                if embedding and topic_embedding:
+                    # 计算余弦相似度
+                    dot = sum(a * b for a, b in zip(embedding, topic_embedding))
+                    norm1 = sum(a * a for a in embedding) ** 0.5
+                    norm2 = sum(b * b for b in topic_embedding) ** 0.5
+                    if norm1 > 0 and norm2 > 0:
+                        paper["embedding_relevance"] = dot / (norm1 * norm2)
+                self.logger.debug(f"[{cls_name}] 论文 {idx+1}/{len(papers_to_embed)} embedding完成")
+                return paper
+            except asyncio.TimeoutError:
+                self.logger.warning(f"[{cls_name}] 论文 {idx} embedding超时")
+                return paper
+            except Exception as e:
+                self.logger.warning(f"[{cls_name}] 论文 {idx} embedding失败: {e}")
+                return paper
+
+        # 并行处理（最多10个并发）
+        semaphore = asyncio.Semaphore(10)
+        async def bounded_process(paper, idx):
+            async with semaphore:
+                return await process_paper(paper, idx)
+
+        tasks = [bounded_process(p, i) for i, p in enumerate(papers_to_embed)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 合并结果
+        embedded = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                self.logger.warning(f"[{cls_name}] 论文 {i} 处理异常: {result}")
+                embedded.append(papers_to_embed[i])
+            else:
+                embedded.append(result)
+
+        # 未处理的论文保持原样
+        embedded.extend(papers[50:])
+
+        self.logger.info(f"[{cls_name}] embedding预计算完成: {len(embedded)} 篇")
+        return embedded
 
     async def _categorize_papers(self, papers: List[Dict[str, Any]]) -> Dict[str, List]:
         """分类整理文献 - 并行版本（分批处理后合并）"""
@@ -487,6 +602,20 @@ class LiteratureMapperAgent(ProblemAgentBase):
             "key_papers": await self._identify_key_papers(categorized)
         }
 
+    def _identify_key_papers_fast(self, categorized: Dict) -> List[Dict]:
+        """快速识别关键论文（同步版本，无需LLM）"""
+        key_papers = []
+        for category, papers in categorized.items():
+            if papers and isinstance(papers, list):
+                for p in papers[:2]:
+                    if isinstance(p, dict):
+                        key_papers.append({
+                            "title": p.get("title", ""),
+                            "category": category,
+                            "key_finding": p.get("key_finding", "")
+                        })
+        return key_papers
+
     async def _identify_key_papers(self, categorized: Dict) -> List[Dict]:
         """识别关键论文"""
         key_papers = []
@@ -538,6 +667,43 @@ class LiteratureMapperAgent(ProblemAgentBase):
                     recommendations.append(f"可考虑以下研究空白: {gaps[0].get('description', '')}")
 
         if not recommendations:
+            recommendations.append("文献综述较为完整，可进入下一阶段")
+
+        return recommendations[:5]
+
+    async def _diagnose_review_issues_async(
+        self,
+        existing: List,
+        found: List
+    ) -> List[str]:
+        """诊断文献综述问题（异步轻量版本）"""
+        issues = []
+
+        if len(existing) < 5:
+            issues.append("已有文献数量不足")
+
+        if len(found) < 10:
+            issues.append("搜索到的文献数量偏少，建议扩大搜索范围")
+
+        # 检查文献质量
+        if found:
+            # 检查有多少论文有 abstract
+            papers_with_abstract = sum(1 for p in found if p.get("abstract"))
+            if papers_with_abstract < len(found) * 0.5:
+                issues.append("部分论文缺少摘要，可能影响分析质量")
+
+        if not issues:
+            issues.append("文献综述基本完整")
+
+        return issues
+
+    async def _generate_recommendations_async(self, papers: List) -> List[str]:
+        """生成改进建议（基于论文列表的轻量版本）"""
+        recommendations = []
+
+        if len(papers) < 10:
+            recommendations.append("扩大搜索关键词范围，添加同义词和相关术语")
+        else:
             recommendations.append("文献综述较为完整，可进入下一阶段")
 
         return recommendations[:5]

@@ -96,10 +96,17 @@ class WorkflowTracer:
         self._active_span.status = status
         self._active_span.error = error
 
+        # 显示时间：>=1000ms 显示为秒，否则显示毫秒
+        duration = self._active_span.duration_ms
+        if duration >= 1000:
+            duration_str = f"{duration/1000:.1f}s"
+        else:
+            duration_str = f"{duration:.0f}ms"
+
         if status == "completed":
             logger.info(
                 f"[Trace] 节点 {self._active_span.node_name} 完成, "
-                f"耗时 {self._active_span.duration_ms:.1f}ms"
+                f"耗时 {duration_str}"
             )
         else:
             logger.warning(

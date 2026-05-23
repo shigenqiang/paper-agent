@@ -118,12 +118,9 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
         except Exception as e:
             cls_name = self.__class__.__name__
             self.logger.error(f"[{cls_name}:98] OutlineAgent execution failed: {e}")
-            return AgentOutput(
-                success=False,
-                result=None,
-                agent_name=self.name,
-                error=str(e)
-            )
+            # 根据 CLAUDE.md 要求：禁止使用模板回退，必须使用 LLM
+            # LLM 失败时抛出明确错误
+            raise ValueError(f"OutlineAgent LLM 调用失败: {e}. 不支持模板回退.") from None
 
     async def _design_structure(self, thesis: str) -> Dict[str, Any]:
         """设计章节结构（英文优先模式）"""
@@ -195,10 +192,9 @@ class OutlineAgent(EnglishFirstMixin, PaperAgentBase):
 
         except Exception as e:
             self.logger.error(f"[{cls_name}] Structure design failed: {type(e).__name__}: {e}")
-            # 返回通用结构让流程继续
-            fallback = FALLBACK_STRUCTURE.copy()
-            fallback["title"] = f"{thesis_en}研究"
-            return fallback
+            # 根据 CLAUDE.md 要求：禁止使用模板回退
+            # LLM 失败时应重试一次，如果仍然失败则抛出错误
+            raise ValueError(f"OutlineAgent._design_structure LLM 调用失败: {e}. 不支持规则后备.") from None
 
     async def _plan_chapters(
         self,

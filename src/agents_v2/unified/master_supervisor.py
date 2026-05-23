@@ -140,29 +140,13 @@ class MasterSupervisor:
             from ..problem_oriented import (
                 TopicRefinerAgent,
                 LiteratureMapperAgent,
-                MethodologyAdvisorAgent,
-                ArgumentBuilderAgent,
-                SectionDifferentiatorAgent,
-                DiscussionDeepenerAgent,
-                ChartFormatterAgent,
-                LanguagePolisherAgent,
-                PlagiarismCheckerAgent
+                MethodologyAdvisorAgent
             )
 
             # 诊断类Agent
             self.agents["topic_refiner"] = TopicRefinerAgent(self.llm_config)
             self.agents["literature_mapper"] = LiteratureMapperAgent(self.llm_config)
             self.agents["methodology_advisor"] = MethodologyAdvisorAgent(self.llm_config)
-
-            # 写作类Agent
-            self.agents["argument_builder"] = ArgumentBuilderAgent(self.llm_config)
-            self.agents["section_diff"] = SectionDifferentiatorAgent(self.llm_config)
-            self.agents["discussion_deepener"] = DiscussionDeepenerAgent(self.llm_config)
-
-            # 完善类Agent
-            self.agents["chart_formatter"] = ChartFormatterAgent(self.llm_config)
-            self.agents["language_polisher"] = LanguagePolisherAgent(self.llm_config)
-            self.agents["plagiarism_checker"] = PlagiarismCheckerAgent(self.llm_config)
 
             logger.debug("Problem-oriented agents registered")
         except ImportError as e:
@@ -243,10 +227,8 @@ class MasterSupervisor:
                 return await self._run_full_paper_flow(input_data)
             elif task_type == "diagnostic_only":
                 return await self._run_diagnostic_only(input_data)
-            elif task_type == "problem_focused":
-                return await self._run_problem_focused(input_data)
             else:
-                return await self._run_custom_flow(task_type, input_data)
+                return await self._run_full_paper_flow(input_data)
 
         except Exception as e:
             logger.error(f"MasterSupervisor.run failed: {e}")
@@ -338,17 +320,9 @@ class MasterSupervisor:
             if result.quality_score and result.quality_score.score < threshold:
                 logger.warning(f"Phase {phase} quality below threshold: score={result.quality_score.score:.2f}, threshold={threshold}")
 
-                # 如果有诊断问题，转到完善阶段
-                if result.diagnostic and result.diagnostic.problems_found:
-                    await self._apply_fixes(result.diagnostic)
-
             # 更新上下文
             if result.output:
                 self.state.context.update(result.output)
-
-            # 检查是否需要迭代
-            if self._should_iterate(result, phase):
-                await self._iterate_phase(phase, result, input_data)
 
         return self._compile_final_result()
 
@@ -369,84 +343,6 @@ class MasterSupervisor:
             "recommendations": result.diagnostic.recommendations if result.diagnostic else []
         }
 
-    async def _run_problem_focused(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        问题聚焦流程 - 针对特定问题运行
-
-        输入需要包含:
-        - problems: 问题类型列表
-        - content: 需要修复的内容
-        """
-        problems = input_data.get("problems", [])
-        content = input_data.get("content", {})
-
-        logger.info(f"Problem-focused flow for: {[p.value if isinstance(p, ProblemType) else p for p in problems]}")
-
-        fixes_applied = []
-
-        for problem in problems:
-            fix_result = await self._apply_single_fix(problem, content)
-            fixes_applied.append(fix_result)
-
-        return {
-            "success": True,
-            "fixes_applied": fixes_applied,
-            "problem_count": len(problems)
-        }
-
-    async def _apply_single_fix(
-        self,
-        problem: ProblemType,
-        content: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """对单个问题应用修复"""
-        # 映射问题类型到对应的Agent
-        problem_agent_map = {
-            ProblemType.TOPIC_VAGUE: "topic_refiner",
-            ProblemType.TOPIC_TOO_BROAD: "topic_refiner",
-            ProblemType.LITERATURE_INSUFFICIENT: "literature_mapper",
-            ProblemType.ARGUMENT_WEAK: "argument_builder",
-            ProblemType.ABSTRACT_REPEATS_CONCLUSION: "section_diff",
-            ProblemType.DISCUSSION_SHALLOW: "discussion_deepener",
-            ProblemType.CHART_POOR: "chart_formatter",
-            ProblemType.LANGUAGE_POOR: "language_polisher",
-            ProblemType.PLAGIARISM_RISK: "plagiarism_checker"
-        }
-
-        agent_name = problem_agent_map.get(problem)
-        if not agent_name or agent_name not in self.agents:
-            return {"success": False, "error": f"No agent for problem {problem.value}"}
-
-        agent = self.agents[agent_name]
-        agent_input = self._prepare_agent_input(problem, content)
-
-        try:
-            if hasattr(agent, 'execute'):
-                result = await agent.execute(agent_input)
-            else:
-                result = await agent(agent_input)
-
-            return {
-                "success": True,
-                "problem": problem.value,
-                "agent": agent_name,
-                "result": result
-            }
-        except Exception as e:
-            logger.error(f"Failed to apply fix for {problem.value}: {e}")
-            return {"success": False, "error": str(e), "problem": problem.value}
-
-    async def _apply_fixes(self, diagnostic: DiagnosticResult):
-        """根据诊断结果应用修复"""
-        logger.info(f"Applying fixes for {len(diagnostic.problems_found)} problems")
-
-        for problem in diagnostic.problems_found:
-            severity = diagnostic.severity.get(problem, 0.5)
-
-            # 只修复严重的问题
-            if severity >= 0.6:
-                await self._apply_single_fix(problem, self.state.context)
-
     def _get_phase_agents(self, phase: str) -> List[Callable]:
         """获取指定阶段的Agent列表，过滤掉未注册的None"""
         if phase == "diagnostic":
@@ -461,8 +357,7 @@ class MasterSupervisor:
             agents = [self.agents.get("literature")]
         elif phase == "methodology":
             agents = [
-                self.agents.get("methodology_advisor"),
-                self.agents.get("argument_builder")
+                self.agents.get("methodology_advisor")
             ]
         elif phase == "writing":
             agents = [
@@ -561,42 +456,6 @@ class MasterSupervisor:
         else:
             return self.state.context
 
-    def _prepare_agent_input(self, problem: ProblemType, content: Dict[str, Any]) -> Dict[str, Any]:
-        """为特定问题准备Agent输入"""
-        # 问题导向Agent接受的输入格式
-        return content
-
-    def _should_iterate(self, result: StatePhaseResult, phase: str) -> bool:
-        """判断是否需要迭代"""
-        if result.status == PhaseStatus.FAILED:
-            return True
-
-        if result.quality_score and result.quality_score.score < self.QUALITY_THRESHOLDS.get(phase, 7.0):
-            return self.state.iteration < self.state.max_iterations
-
-        return False
-
-    async def _iterate_phase(self, phase: str, result: StatePhaseResult, original_input: Dict[str, Any]):
-        """迭代阶段执行"""
-        logger.info(f"Iterating phase {phase}, iteration {self.state.iteration + 1}")
-
-        self.state.iteration += 1
-
-        supervisor = self.phase_supervisors.get(phase)
-        if not supervisor:
-            return
-
-        # 使用前一次的输出作为输入
-        iteration_input = result.output or self.state.context
-
-        new_result = await supervisor.run_agents(
-            self._get_phase_agents(phase),
-            iteration_input,
-            self.state.context
-        )
-
-        self.state.update_phase(f"{phase}_iter_{self.state.iteration}", new_result)
-
     def _clean_final_paper(self, text: str) -> str:
         """清理论文文本，移除诊断标记、思考过程等干扰信息"""
         import re
@@ -611,6 +470,9 @@ class MasterSupervisor:
         text = re.sub(r'\{[^{}]*"[^{}]*":[^{}]*\}', '', text)
         # 移除行内诊断标记 [...]
         text = re.sub(r'\[[A-Z_]+(?:\|[^\]]+)?\]', '', text)
+        # 移除思考过程块 (<think>... 和 <think>...</think>)
+        text = re.sub(r'<think>[\s\S]*?', '', text)
+        text = re.sub(r'<think>[\s\S]*?</think>', '', text)
         # 移除多余空行
         text = re.sub(r'\n{3,}', '\n\n', text)
         return text.strip()

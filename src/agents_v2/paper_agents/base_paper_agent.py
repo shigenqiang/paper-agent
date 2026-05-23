@@ -169,7 +169,7 @@ class PaperAgentBase(ABC):
             client = OpenAI(
                 api_key=api_key,
                 base_url=base_url,
-                timeout=60.0  # 60秒超时
+                timeout=self.llm_config.timeout  # 使用配置的超时时间
             )
 
             # 构建消息
@@ -182,7 +182,7 @@ class PaperAgentBase(ABC):
                 model=model,
                 messages=messages,
                 extra_body={"reasoning_split": False},
-                timeout=60.0  # 请求超时
+                timeout=self.llm_config.timeout  # 使用配置的超时时间
             )
 
             # 检查响应类型

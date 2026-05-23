@@ -97,6 +97,8 @@ class EvaluatorNode:
         }
 
         # 6. 存储到状态
+        # 保存上一次的评分用于早期停止判断
+        state["last_evaluation_score"] = state.get("evaluation_score", 0.0)
         state["evaluation_report"] = report
         state["evaluation_score"] = report.overall_score
 

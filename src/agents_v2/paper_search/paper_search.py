@@ -66,6 +66,9 @@ class PaperSearchAgent(BaseQAAgent):
     支持的数据源:
     - arXiv: 机器学习、统计理论
     - PubMed: 生物统计、医学应用
+    - Semantic Scholar: AI学术搜索
+    - CrossRef: 学术元数据
+    - OpenAlex: 跨学科学术API（免费、无限制）
 
     搜索策略:
     1. 多关键词组合
@@ -136,6 +139,15 @@ class PaperSearchAgent(BaseQAAgent):
 
             if source in ["all", "pubmed"]:
                 tasks.append(self._search_pubmed(query, time_range, max_results, page))
+
+            if source in ["all", "semantic_scholar"]:
+                tasks.append(self._search_semantic_scholar(query, max_results))
+
+            if source in ["all", "crossref"]:
+                tasks.append(self._search_crossref(query, max_results))
+
+            if source in ["all", "openalex"]:
+                tasks.append(self._search_openalex(query, max_results))
 
             # 并行执行搜索
             search_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -306,7 +318,8 @@ class PaperSearchAgent(BaseQAAgent):
             date_query = f"submittedDate:[{start_date.strftime('%Y%m%d')} TO NOW]"
             queries_to_try.append(f"all:{query} AND {date_query}")
 
-            max_retries = 3
+            max_retries = 0  # 不重试，快速失败
+            timeout = 1  # arXiv在国内访问不可用，设置1秒超时快速失败
             for idx, search_query_str in enumerate(queries_to_try):
                 for retry in range(max_retries):
                     try:
@@ -319,7 +332,7 @@ class PaperSearchAgent(BaseQAAgent):
                         url = f"{base_url}?{params}"
                         self.logger.debug(f"arXiv请求 [{idx+1}/4]: query={search_query_str[:80]}...")
 
-                        with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
+                        with urllib.request.urlopen(url, timeout=timeout, context=ssl_context) as response:
                             data = response.read().decode("utf-8")
                             self.logger.debug(f"arXiv响应长度: {len(data)} bytes")
 
@@ -333,7 +346,7 @@ class PaperSearchAgent(BaseQAAgent):
                     except urllib.error.HTTPError as e:
                         if e.code == 429:
                             # Rate limiting，等待后重试（减少等待时间）
-                            wait_time = (retry + 1) * 2  # 原来是 * 5，现在改为 * 2
+                            wait_time = (retry + 1) * 2
                             self.logger.warning(f"arXiv API限流，等待{wait_time}秒后重试...")
                             time.sleep(wait_time)
                             continue
@@ -421,6 +434,257 @@ class PaperSearchAgent(BaseQAAgent):
 
         except Exception as e:
             self.logger.error(f"PubMed搜索失败: {e}")
+            return []
+
+    async def _search_semantic_scholar(
+        self,
+        query: str,
+        max_results: int = 10
+    ) -> List[Paper]:
+        """搜索Semantic Scholar"""
+        try:
+            import urllib.request
+            import urllib.parse
+            import ssl
+
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+            params = urllib.parse.urlencode({
+                "query": query,
+                "limit": min(max_results, 20),
+                "fields": "paperId,title,abstract,authors,year,citationCount,venue,externalIds"
+            })
+
+            url = f"{base_url}?{params}"
+            self.logger.debug(f"Semantic Scholar URL: {url}")
+
+            with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
+                import json as json_lib
+                data = json_lib.loads(response.read().decode("utf-8"))
+
+            papers = []
+            for item in data.get("data", []):
+                try:
+                    authors = [a.get("name", "") for a in item.get("authors", [])[:10]]
+                    external_ids = item.get("externalIds", {}) or {}
+                    doi = external_ids.get("DOI", "")
+
+                    paper = Paper(
+                        paper_id=item.get("paperId", ""),
+                        title=item.get("title", ""),
+                        authors=authors,
+                        year=item.get("year", 0) or 0,
+                        abstract=item.get("abstract", "") or "",
+                        url=f"https://www.semanticscholar.org/paper/{item.get('paperId', '')}",
+                        source="semantic_scholar",
+                        citations=item.get("citationCount", 0) or 0,
+                        methodology=self._extract_methodology(item.get("abstract", "")),
+                        key_contributions=self._extract_contributions(item.get("abstract", ""))
+                    )
+                    papers.append(paper)
+                except Exception as e:
+                    self.logger.warning(f"解析Semantic Scholar论文失败: {e}")
+                    continue
+
+            self.logger.debug(f"Semantic Scholar找到 {len(papers)} 篇论文")
+            return papers
+
+        except Exception as e:
+            self.logger.error(f"Semantic Scholar搜索失败: {e}")
+            return []
+
+    async def _search_crossref(
+        self,
+        query: str,
+        max_results: int = 10
+    ) -> List[Paper]:
+        """搜索CrossRef"""
+        try:
+            import urllib.request
+            import urllib.parse
+            import ssl
+            import re
+
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            base_url = "https://api.crossref.org/works"
+            params = urllib.parse.urlencode({
+                "query": query,
+                "rows": min(max_results, 20),
+                "sort": "relevance"
+            })
+
+            url = f"{base_url}?{params}"
+            self.logger.debug(f"CrossRef URL: {url}")
+
+            headers = {
+                "User-Agent": "Paper-Agent/1.0 (mailto:paper-agent@example.com)"
+            }
+
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
+                import json as json_lib
+                data = json_lib.loads(response.read().decode("utf-8"))
+
+            papers = []
+            items = data.get("message", {}).get("items", [])
+            for item in items:
+                try:
+                    # 提取作者
+                    authors = []
+                    for author in item.get("author", []):
+                        given = author.get("given", "")
+                        family = author.get("family", "")
+                        if given or family:
+                            authors.append(f"{given} {family}".strip())
+
+                    # 提取年份
+                    published = item.get("published-print") or item.get("published-online") or {}
+                    date_parts = published.get("date-parts", [[None]])
+                    year = date_parts[0][0] if date_parts and date_parts[0] else 0
+
+                    # 提取期刊
+                    container = item.get("container-title", [])
+                    venue = container[0] if container else ""
+
+                    # 提取DOI和URL
+                    doi = item.get("DOI", "")
+                    url = f"https://doi.org/{doi}" if doi else ""
+
+                    # 提取摘要
+                    abstract = item.get("abstract", "") or ""
+                    abstract = re.sub(r'<[^>]+>', '', abstract)
+
+                    paper = Paper(
+                        paper_id=doi,
+                        title=item.get("title", [""])[0] if item.get("title") else "",
+                        authors=authors,
+                        year=int(year) if year else 0,
+                        abstract=abstract,
+                        url=url,
+                        source="crossref",
+                        citations=item.get("is-referenced-by-count", 0) or 0,
+                        methodology=self._extract_methodology(abstract),
+                        key_contributions=self._extract_contributions(abstract)
+                    )
+                    papers.append(paper)
+                except Exception as e:
+                    self.logger.warning(f"解析CrossRef论文失败: {e}")
+                    continue
+
+            self.logger.debug(f"CrossRef找到 {len(papers)} 篇论文")
+            return papers
+
+        except Exception as e:
+            self.logger.error(f"CrossRef搜索失败: {e}")
+            return []
+
+    async def _search_openalex(
+        self,
+        query: str,
+        max_results: int = 10
+    ) -> List[Paper]:
+        """搜索OpenAlex - 开源跨学科学术API"""
+        try:
+            import urllib.request
+            import urllib.parse
+            import ssl
+            import json
+
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            base_url = "https://api.openalex.org/works"
+            params = urllib.parse.urlencode({
+                "search": query,
+                "per-page": min(max_results, 50),
+                "filter": "publication_year:2020-2026"
+            })
+
+            url = f"{base_url}?{params}"
+            self.logger.debug(f"OpenAlex URL: {url}")
+
+            headers = {
+                "User-Agent": "Paper-Agent/1.0 (mailto:paper-agent@example.com)"
+            }
+
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
+                data = json.loads(response.read().decode("utf-8"))
+
+            papers = []
+            for item in data.get("results", []):
+                try:
+                    # 提取作者
+                    authors = []
+                    for auth in item.get("authorships", [])[:10]:
+                        author = auth.get("author", {})
+                        if author:
+                            name = author.get("display_name", "")
+                            if name:
+                                authors.append(name)
+
+                    # 提取年份
+                    year = item.get("publication_year", 0) or 0
+
+                    # 提取期刊/会议
+                    primary_location = item.get("primary_location", {}) or {}
+                    source = primary_location.get("source", {}) or {}
+                    venue = source.get("display_name", "") or item.get("type", "")
+
+                    # 提取DOI和URL
+                    doi = item.get("doi", "") or ""
+                    if doi.startswith("https://doi.org/"):
+                        url = doi
+                    elif doi.startswith("10."):
+                        url = f"https://doi.org/{doi}"
+                    else:
+                        url = doi or item.get("id", "")
+
+                    # 提取摘要
+                    abstract_index = item.get("abstract_inverted_index")
+                    abstract = ""
+                    if abstract_index and isinstance(abstract_index, dict):
+                        try:
+                            words = []
+                            for word, positions in abstract_index.items():
+                                if isinstance(positions, list) and len(positions) > 0:
+                                    pos = positions[0]
+                                    if isinstance(pos, dict) and "EndOffset" in pos:
+                                        words.append((word, pos["EndOffset"]))
+                            words.sort(key=lambda x: x[1])
+                            abstract = " ".join(w[0] for w in words)
+                        except Exception:
+                            abstract = ""
+
+                    paper = Paper(
+                        paper_id=doi or item.get("id", "").split("/")[-1],
+                        title=item.get("title", "") or "",
+                        authors=authors,
+                        year=int(year) if year else 0,
+                        abstract=abstract,
+                        url=url or item.get("id", ""),
+                        source="openalex",
+                        citations=item.get("cited_by_count", 0) or 0,
+                        methodology=self._extract_methodology(abstract),
+                        key_contributions=self._extract_contributions(abstract)
+                    )
+                    papers.append(paper)
+                except Exception as e:
+                    self.logger.warning(f"解析OpenAlex论文失败: {e}")
+                    continue
+
+            self.logger.debug(f"OpenAlex找到 {len(papers)} 篇论文")
+            return papers
+
+        except Exception as e:
+            self.logger.error(f"OpenAlex搜索失败: {e}")
             return []
 
     def _parse_arxiv_xml(self, xml_data: str, query: str) -> List[Paper]:

@@ -113,8 +113,12 @@ class OutlineAgent:
         # 将高引用论文分配到 Introduction 作为参考文献
         def get_citations(p):
             return p.citations if hasattr(p, 'citations') else p.get("citations", 0)
+
+        def get_paper_id(p):
+            return p.id if hasattr(p, 'id') else p.get("paper_id", p.get("id", ""))
+
         sorted_by_citations = sorted(papers, key=get_citations, reverse=True)
-        intro_refs = [p.id for p in sorted_by_citations[:5]]
+        intro_refs = [get_paper_id(p) for p in sorted_by_citations[:5]]
         outline["sections"][0]["references"] = intro_refs
 
         return outline
@@ -124,10 +128,16 @@ class OutlineAgent:
         if self.llm is None:
             return self._build_rule_based_outline(papers, query)
 
+        def get_paper_attr(p, key, default=""):
+            return getattr(p, key, None) if hasattr(p, key) else p.get(key, default)
+
         paper_contexts = []
         for p in papers[:15]:
+            p_title = get_paper_attr(p, 'title', 'Unknown')
+            p_abstract = get_paper_attr(p, 'abstract', '')[:200]
+            p_citations = get_paper_attr(p, 'citations', 0)
             paper_contexts.append(
-                f"- Title: {p.title}\n  Abstract: {p.abstract[:200]}\n  Citations: {p.citations}"
+                f"- Title: {p_title}\n  Abstract: {p_abstract}\n  Citations: {p_citations}"
             )
 
         prompt = f"""Based on the following papers about "{query}", generate a comprehensive survey outline.

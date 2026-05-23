@@ -452,8 +452,9 @@ class OutlineReflector:
         prompt = f"{self.SYSTEM_PROMPT}\n\n论文大纲：\n{outline_text}"
 
         try:
-            response = await self.llm_provider(prompt)
-            return self._parse_response(response)
+            from langchain_core.messages import HumanMessage
+            response = await self.llm_provider.ainvoke([HumanMessage(content=prompt)])
+            return self._parse_response(response.content if hasattr(response, 'content') else str(response))
         except Exception as e:
             logger.warning(f"OutlineReflector LLM failed: {e}")
             return self._rule_based_reflect(outline)

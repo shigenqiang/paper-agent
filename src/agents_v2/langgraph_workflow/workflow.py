@@ -159,10 +159,18 @@ class PaperAgentWorkflow:
         score = state.get("evaluation_score", 0.0)
         iteration = state.get("iteration", 0)
         max_iterations = state.get("max_iterations", 3)
+        last_score = state.get("last_evaluation_score", 0.0)
 
         # 质量达标或达到最大迭代
         if score >= self.evaluator.min_quality_score or iteration >= max_iterations:
             return "done"
+
+        # 早期停止：如果分数没有提升（improvement < 0.1），停止迭代
+        improvement = score - last_score
+        if iteration > 0 and improvement < 0.1:
+            logger.info(f"[Workflow] 早期停止：分数无提升 ({last_score:.2f} -> {score:.2f}, 提升 {improvement:.2f})")
+            return "done"
+
         return "write"
 
     def compile(self):

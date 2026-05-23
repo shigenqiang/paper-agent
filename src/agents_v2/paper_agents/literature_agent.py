@@ -117,76 +117,19 @@ class LiteratureAgent(PaperAgentBase):
         # 使用真实的论文搜索Agent
         self.search_agent = PaperSearchAgent()
 
-        # Embedding 配置（ModelScope）
-        self._embedding_client = None
-        self._embedding_model = "Qwen/Qwen3-Embedding-0.6B"
-        self._embedding_base_url = "https://api-inference.modelscope.cn/v1"
-        self._embedding_api_key = os.getenv("EMBEDDING_API_KEY", "ms-4bd332d6-c7cb-47a2-99c9-c1df1f6be1c3")
-
-        # 本地嵌入模型
+        # 本地嵌入模型（已移除云端API，直接使用本地模型避免限流）
         self._local_embedding_model = None
 
     def _get_local_embedding_model(self):
         """获取本地嵌入模型（懒加载）"""
         if self._local_embedding_model is None:
             try:
-                from ...embedding import get_local_embedding_model
+                from ..embedding import get_local_embedding_model
                 self._local_embedding_model = get_local_embedding_model()
                 logger.info("Local embedding model initialized")
             except Exception as e:
                 logger.debug(f"Local embedding model init failed: {e}")
         return self._local_embedding_model
-
-    def _get_embedding_client(self):
-        """获取 Embedding 客户端"""
-        if self._embedding_client is None:
-            try:
-                from openai import OpenAI
-                self._embedding_client = OpenAI(
-                    base_url=self._embedding_base_url,
-                    api_key=self._embedding_api_key
-                )
-            except Exception as e:
-                logger.warning(f"Embedding client init failed: {e}")
-        return self._embedding_client
-
-    async def _close_embedding_client(self):
-        """关闭 Embedding 客户端，清理 aiohttp session"""
-        if self._embedding_client is not None:
-            try:
-                client = self._embedding_client
-                self._embedding_client = None
-
-                # 尝试多种方式关闭 aiohttp session
-                # 方式1: 通过 _sync_client 访问
-                sync_client = getattr(client, "_sync_client", None)
-                if sync_client is not None:
-                    session = getattr(sync_client, "_session", None)
-                    if session is not None and not session.closed:
-                        await session.aclose()
-
-                # 方式2: 通过 _client 访问
-                base_client = getattr(client, "_client", None)
-                if base_client is not None:
-                    session = getattr(base_client, "_session", None)
-                    if session is not None and not session.closed:
-                        await session.aclose()
-
-                # 方式3: 直接尝试关闭 client 本身
-                try:
-                    await client.close()
-                except Exception:
-                    pass
-
-                # 方式4: 尝试获取底层 connector 并关闭
-                try:
-                    connector = getattr(client, "_connector", None)
-                    if connector is not None:
-                        await connector.close()
-                except Exception:
-                    pass
-            except Exception as e:
-                logger.debug(f"Embedding client close: {e}")
 
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """计算余弦相似度"""
@@ -227,48 +170,21 @@ class LiteratureAgent(PaperAgentBase):
         return len(intersection) / len(union) if union else 0.0
 
     async def _get_embedding(self, text: str) -> Optional[List[float]]:
-        """获取文本嵌入向量（带重试和限流处理）"""
-        client = self._get_embedding_client()
-        if not client:
-            return None
-
-        max_retries = 3
-        base_delay = 1.0
-
-        for attempt in range(max_retries):
-            try:
-                response = await asyncio.to_thread(
-                    client.embeddings.create,
-                    model=self._embedding_model,
-                    input=text[:2000]
-                )
-                return response.data[0].embedding
-            except Exception as e:
-                error_str = str(e)
-                is_rate_limit = "429" in error_str or "rate limit" in error_str.lower()
-
-                if is_rate_limit and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    logger.warning(f"Embedding rate limited, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
-                    await asyncio.sleep(delay)
-                    continue
-
-                logger.warning(f"Embedding failed: {e}")
-                return None
-
-        # 云API失败，尝试本地模型（5秒超时）
+        """获取文本嵌入向量 - 直接使用本地模型，不再调用云端API"""
+        # 直接使用本地模型，避免云端API限流问题
         local_model = self._get_local_embedding_model()
         if local_model:
             try:
+                # 本地模型推理，60秒超时
                 embedding = await asyncio.wait_for(
                     asyncio.to_thread(local_model.get_embedding, text),
-                    timeout=5.0
+                    timeout=60.0
                 )
                 if embedding:
-                    logger.info("Using local embedding model")
                     return embedding
             except asyncio.TimeoutError:
-                logger.warning("Local embedding timeout, using keyword fallback")
+                logger.warning("Local embedding timeout")
+                raise RuntimeError("Embedding 计算超时（30秒），模型推理速度过慢")
             except Exception as e:
                 logger.debug(f"Local embedding failed: {e}")
 
@@ -279,54 +195,53 @@ class LiteratureAgent(PaperAgentBase):
         papers: List[Dict[str, Any]],
         topic: str
     ) -> List[Dict[str, Any]]:
-        """使用嵌入计算论文与主题的相关性，失败时使用关键词匹配后备"""
+        """使用嵌入计算论文与主题的相关性"""
         if not papers:
             return papers
 
-        # 限制处理论文数量，避免耗时过长
+        # 限制处理论文数量，避免耗时过长（增大到50篇以充分利用Diagnostic预计算结果）
         papers_to_process = papers[:50]
 
         # 获取主题嵌入
         topic_embedding = await self._get_embedding(topic)
 
-        # 如果embedding可用，使用embedding计算
-        if topic_embedding:
-            semaphore = asyncio.Semaphore(5)
+        # 使用embedding计算
+        semaphore = asyncio.Semaphore(10)
 
-            async def process_paper(paper: Dict[str, Any]) -> tuple:
-                async with semaphore:
-                    try:
-                        text_to_embed = f"{paper.get('title', '')} {paper.get('abstract', '')}"
-                        embedding = await self._get_embedding(text_to_embed)
-                        if embedding:
-                            similarity = self._cosine_similarity(topic_embedding, embedding)
-                            return paper, similarity
-                        return paper, 0.5
-                    except Exception as e:
-                        logger.debug(f"Paper embedding failed: {e}")
-                        return paper, 0.5
+        async def process_paper(paper: Dict[str, Any]) -> tuple:
+            async with semaphore:
+                try:
+                    # 检查是否已有预计算的embedding
+                    existing_embedding = paper.get("embedding")
+                    if existing_embedding and topic_embedding:
+                        similarity = self._cosine_similarity(topic_embedding, existing_embedding)
+                        return paper, similarity
 
-            results = await asyncio.gather(*[process_paper(p) for p in papers_to_process])
-            scored_papers = []
-            for paper, score in results:
+                    # 没有预计算embedding，重新计算
+                    text_to_embed = f"{paper.get('title', '')} {paper.get('abstract', '')}"
+                    embedding = await self._get_embedding(text_to_embed)
+                    if embedding:
+                        similarity = self._cosine_similarity(topic_embedding, embedding)
+                        return paper, similarity
+                    raise RuntimeError("Embedding 计算返回 None")
+                except Exception as e:
+                    logger.debug(f"Paper embedding failed: {e}")
+                    raise
+
+        results = await asyncio.gather(*[process_paper(p) for p in papers_to_process], return_exceptions=True)
+        scored_papers = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning(f"Paper {i} embedding failed: {result}")
+                papers_to_process[i]["embedding_relevance"] = 0.0
+                scored_papers.append(papers_to_process[i])
+            else:
+                paper, score = result
                 paper["embedding_relevance"] = round(score, 3)
                 scored_papers.append(paper)
-            scored_papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
-            # 合并未处理的论文
-            return scored_papers + papers[50:]
-
-        # Embedding失败，使用关键词匹配作为后备
-        logger.warning("Embedding不可用，使用关键词匹配作为后备方案")
-        for paper in papers_to_process:
-            title = paper.get('title', '')
-            abstract = paper.get('abstract', '')
-            text = f"{title} {abstract}"
-            score = self._keyword_similarity(topic, text)
-            paper["embedding_relevance"] = round(score, 3)
-
-        papers_to_process.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
+        scored_papers.sort(key=lambda x: x.get("embedding_relevance", 0), reverse=True)
         # 合并未处理的论文
-        return papers_to_process + papers[50:]
+        return scored_papers + papers[20:]
 
     async def execute(
         self,
@@ -358,19 +273,77 @@ class LiteratureAgent(PaperAgentBase):
             )
 
         try:
-            # 1. 多角度搜索查询 (30秒超时)
-            search_queries = await asyncio.wait_for(
-                self._generate_search_queries(topic, research_question),
-                timeout=30.0
-            )
-            self.logger.info(f"[Literature] 生成 {len(search_queries)} 个搜索查询")
+            # 0. 检查是否有 Diagnostic 阶段复用的论文
+            diagnostic_papers = context.get("diagnostic_papers", []) if context else []
+            search_queries = []  # 初始化，避免后续访问未定义
+            self.logger.info(f"[Literature] 收到 Diagnostic 阶段 {len(diagnostic_papers)} 篇论文")
 
-            # 2. 多引擎并行搜索 (120秒超时，arXiv API可能限流)
-            all_papers = await asyncio.wait_for(
-                self._multi_engine_search(search_queries, topic),  # 传递原始 topic 用于本地查找
-                timeout=120.0
-            )
-            self.logger.info(f"[Literature] 搜索到 {len(all_papers)} 篇论文")
+            # 提取 Topic 阶段传递的关键词
+            topic_keywords = []
+            if context:
+                topic_keywords = context.get("topic_keywords", [])
+                if topic_keywords:
+                    self.logger.info(f"[Literature] 使用 Topic 关键词: {topic_keywords[:5]}...")
+
+            # 优先使用 Diagnostic 论文进行相关性筛选
+            if diagnostic_papers:
+                self.logger.info(f"[Literature] 使用 Diagnostic 论文进行相似度筛选")
+                try:
+                    ranked_from_diagnostic = await asyncio.wait_for(
+                        self._compute_paper_relevance(diagnostic_papers, topic),
+                        timeout=60.0
+                    )
+                    filtered_diagnostic = [
+                        p for p in ranked_from_diagnostic
+                        if p.get("embedding_relevance", 0) > 0.5
+                    ]
+                except asyncio.TimeoutError:
+                    self.logger.warning(f"[Literature] Diagnostic 论文相关性排序超时，跳过embedding过滤")
+                    filtered_diagnostic = diagnostic_papers  # 超时时使用全部论文
+                except Exception as e:
+                    self.logger.warning(f"[Literature] 论文相似度计算失败: {e}，使用全部论文")
+                    filtered_diagnostic = diagnostic_papers
+
+                self.logger.info(f"[Literature] Diagnostic 论文相似度过滤后: {len(filtered_diagnostic)} 篇 (阈值>0.5)")
+
+                # 如果 Diagnostic 论文足够，直接使用；否则搜索补充
+                if len(filtered_diagnostic) >= 15:
+                    all_papers = filtered_diagnostic
+                    self.logger.info(f"[Literature] Diagnostic 论文数量充足 ({len(all_papers)} 篇)，跳过搜索")
+                else:
+                    self.logger.info(f"[Literature] Diagnostic 论文不足 ({len(filtered_diagnostic)} < 15)，补充搜索")
+                    # 补充搜索
+                    search_queries = await asyncio.wait_for(
+                        self._generate_search_queries(topic, research_question, context),
+                        timeout=30.0
+                    )
+                    more_papers = await asyncio.wait_for(
+                        self._multi_engine_search(search_queries, topic),
+                        timeout=120.0
+                    )
+                    # 合并去重
+                    existing_ids = {p.get("id") or p.get("paper_id") or "" for p in filtered_diagnostic}
+                    for p in more_papers:
+                        pid = p.get("id") or p.get("paper_id") or ""
+                        if pid and pid not in existing_ids:
+                            filtered_diagnostic.append(p)
+                            existing_ids.add(pid)
+                    all_papers = filtered_diagnostic
+            else:
+                # 没有 Diagnostic 论文，正常搜索流程
+                # 1. 多角度搜索查询 (30秒超时)
+                search_queries = await asyncio.wait_for(
+                    self._generate_search_queries(topic, research_question, context),
+                    timeout=30.0
+                )
+                self.logger.info(f"[Literature] 生成 {len(search_queries)} 个搜索查询")
+
+                # 2. 多引擎并行搜索 (120秒超时，arXiv API可能限流)
+                all_papers = await asyncio.wait_for(
+                    self._multi_engine_search(search_queries, topic),  # 传递原始 topic 用于本地查找
+                    timeout=120.0
+                )
+                self.logger.info(f"[Literature] 搜索到 {len(all_papers)} 篇论文")
 
             if not all_papers:
                 return AgentOutput(
@@ -381,33 +354,35 @@ class LiteratureAgent(PaperAgentBase):
                     quality_score=0.0
                 )
 
-            # 3. 质量筛选与排序：使用嵌入计算相关性（超时缩短到90s）
+            # 3. 质量筛选与排序：使用嵌入计算相关性
+            # 注意：禁止使用关键词匹配后备，embedding 必须成功
             try:
                 ranked_papers = await asyncio.wait_for(
                     self._compute_paper_relevance(all_papers, topic),
                     timeout=90.0
                 )
             except asyncio.TimeoutError:
-                self.logger.warning("[Literature] _compute_paper_relevance 超时，尝试返回已排序的论文")
-                ranked_papers = all_papers[:30] if len(all_papers) > 30 else all_papers
+                self.logger.warning(f"[Literature] 论文相关性排序超时（90秒），使用原始论文列表")
+                ranked_papers = all_papers
+            except Exception as e:
+                self.logger.warning(f"[Literature] 论文相似度计算失败: {e}，使用原始论文列表")
+                ranked_papers = all_papers
             self.logger.info(f"[Literature] 排序后 {len(ranked_papers)} 篇论文")
 
             # 4. 深度阅读：过滤相关度达标的论文，最多20篇
-            # 使用相对阈值：如果有embedding分数用0.75，否则取Top 20（关键词匹配）
+            # 注意：必须使用 embedding 分数，禁止使用关键词匹配
             high_relevance_papers = []
             has_embedding_scores = any(p.get("embedding_relevance", 0) > 0.5 for p in ranked_papers)
 
-            if has_embedding_scores:
-                # Embedding模式：阈值0.75
-                high_relevance_papers = [
-                    p for p in ranked_papers
-                    if p.get("embedding_relevance", 0) > 0.75
-                ][:20]
-                self.logger.info(f"[Literature] Embedding模式，高相关性论文（>0.75）数量: {len(high_relevance_papers)}")
-            else:
-                # 关键词匹配模式：取Top 20
-                high_relevance_papers = ranked_papers[:20]
-                self.logger.info(f"[Literature] 关键词匹配模式，取Top 20论文，数量: {len(high_relevance_papers)}")
+            if not has_embedding_scores:
+                self.logger.warning(f"[Literature] 论文缺少 embedding 分数，使用原始列表继续")
+
+            # Embedding模式：阈值0.6（降低阈值确保有足够论文）
+            high_relevance_papers = [
+                p for p in ranked_papers
+                if p.get("embedding_relevance", 0) > 0.6
+            ][:20]
+            self.logger.info(f"[Literature] Embedding模式，高相关性论文（>0.6）数量: {len(high_relevance_papers)}")
 
             try:
                 # 限制深度阅读论文数量，加速处理
@@ -463,25 +438,35 @@ class LiteratureAgent(PaperAgentBase):
                 error=str(e)
             )
         finally:
-            # 确保清理 Embedding 客户端资源
-            await self._close_embedding_client()
+            # 已移除云端Embedding客户端，无需清理
+            pass
 
     async def _generate_search_queries(
         self,
         topic: str,
-        research_question: str = ""
+        research_question: str = "",
+        context: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, str]]:
         """生成多角度搜索查询"""
-        prompt = f"""
-为以下研究主题生成多个搜索角度：
+        # 优先使用 Topic 阶段传递的关键词进行精确搜索
+        topic_keywords = []
+        if context:
+            topic_keywords = context.get("topic_keywords", [])
+
+        keywords_context = ""
+        if topic_keywords:
+            keywords_context = f"\n\n参考关键词（来自选题阶段）：{', '.join(topic_keywords[:10])}"
+
+        prompt = f"""为以下研究主题生成多个搜索角度：
 
 主题：{topic}
-研究问题：{research_question}
+研究问题：{research_question}{keywords_context}
 
 请生成8-12个不同角度的搜索查询，每个查询应：
 1. 覆盖不同的子主题或方面
 2. 使用不同的关键词组合
 3. 包含同义词和相关术语
+4. **优先使用上述参考关键词进行精确匹配**
 
 输出JSON格式：
 {{

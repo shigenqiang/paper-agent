@@ -114,7 +114,8 @@ class ProblemAgentBase(ABC):
                     temperature=self.llm_config.temperature,
                     max_tokens=self.llm_config.max_tokens,
                     api_key=api_key,
-                    base_url=base_url
+                    base_url=base_url,
+                    request_timeout=self.llm_config.timeout if hasattr(self.llm_config, 'timeout') else 120
                 )
             elif provider == "anthropic":
                 from langchain_anthropic import ChatAnthropic
@@ -144,13 +145,19 @@ class ProblemAgentBase(ABC):
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
+            import asyncio
 
             messages = [
                 SystemMessage(content=self.system_prompt or "你是一个专业的学术写作助手。"),
                 HumanMessage(content=prompt)
             ]
 
-            response = await self._llm.ainvoke(messages)
+            # 使用配置的timeout，避免无限等待
+            timeout = self.llm_config.timeout if hasattr(self.llm_config, 'timeout') else 120
+            response = await asyncio.wait_for(
+                self._llm.ainvoke(messages),
+                timeout=float(timeout)
+            )
             content = response.content if hasattr(response, 'content') else str(response)
 
             # 清理MiniMax模型的思考块
@@ -161,6 +168,9 @@ class ProblemAgentBase(ABC):
                 raise ValueError(f"LLM返回空内容，无法解析JSON")
 
             return content
+        except asyncio.TimeoutError:
+            logger.error(f"LLM调用超时（{int(timeout)}秒）")
+            raise ValueError(f"LLM调用超时（{int(timeout)}秒）")
         except ValueError:
             raise  # 重新抛出ValueError，保留原始堆栈
         except Exception as e:
