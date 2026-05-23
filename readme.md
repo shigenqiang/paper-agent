@@ -88,15 +88,35 @@ Paper Agent 是一个面向大学生的智能论文学术助手，提供从**选
 - Node.js 18+ (前端)
 - Docker (可选)
 
+### 配置 API Key
+
+```bash
+cp .env.example .env
+# 编辑 .env 填入以下配置
+```
+
+**LLM 配置 (.env)**：
+```bash
+LLM_PROVIDER=openai
+LLM_MODEL=minimax-m2.7
+LLM_TEMPERATURE=0.7
+LLM_MAX_TOKENS=4096
+
+OPENAI_API_KEY=sk-cp-xxxxx
+ANTHROPIC_API_KEY=sk-cp-xxxxx
+```
+
+**Embedding 配置**：`src/agents_v2/embedding/`
+- 本地模型：`Qwen3-Embedding-0.6B`
+- 当云 API 不可用时，自动回退到本地模型
+
+---
+
 ### 后端启动
 
 ```bash
 # 安装依赖
 pip install -r requirements.txt
-
-# 配置 API Key
-cp .env.example .env
-# 编辑 .env 填入 OPENAI_API_KEY 等
 
 # 启动 API 服务
 python -m src.main
@@ -146,25 +166,29 @@ docker build -f Dockerfile --target runtime-gpu -t paper-agent:gpu .
 ## Agent 写作流水线
 
 ```
-阶段 1: 选题诊断
-  Searcher Agent → Planner Agent → Reviewer Agent → [HITL: 人工确认选题]
+阶段 1: 选题诊断 (Diagnostic)
+  问题导向Agent诊断 → LiteratureMapperAgent (串行，先完成获取论文)
+                    → TopicRefinerAgent + MethodologyAdvisorAgent (并行)
+                    → [HITL: 选题问题严重度 ≥ 0.7 时人工确认]
 
-阶段 2: 文献综述
-  Searcher Agent (6 源深度检索) → Writer Agent → Reviewer Agent → [HITL: 审核综述]
+阶段 2: 选题 (Topic)
+  TopicAgent → [HITL: 人工选择课题]
 
-阶段 3: 大纲规划
-  Planner Agent → Methodology Advisor → Reviewer Agent → [HITL: 确认大纲]
+阶段 3: 文献综述 (Literature)
+  LiteratureAgent (并行多源搜索: arXiv/PubMed/Semantic Scholar/CrossRef/OpenAlex)
+                → Embedding相关性排序 (超时使用原始论文列表)
+                → [HITL: 审核综述]
 
-阶段 4: 逐章写作 (Generator-Critic 循环)
-  Writer Agent → Reviewer Agent → Polisher Agent
-      ↑                  ↓
-      └── 分数 < 阈值 ──→ 返修 ──→ [HITL: 每章可选审核]
+阶段 4: 大纲规划 (Outline)
+  OutlineAgent (EnglishFirstMixin) → [HITL: 确认大纲]
 
-阶段 5: 综合润色
+阶段 5: 逐章写作 (Writing, Generator-Critic 循环)
+  Writer Agent (6章节并行asyncio.gather) → Reviewer Agent → Evaluator
+      ↑                                          ↓
+      └── 分数无提升(<0.1) 或 迭代≥max ──→ 返修 ──→ [HITL: 每章可选审核]
+
+阶段 6: 综合润色 (Polish)
   Polisher Agent → Citation Manager → Plagiarism Checker → [HITL: 终审]
-
-阶段 6: 格式输出
-  Chart Formatter → Citation Formatter → LaTeX / Word / PDF / Markdown
 ```
 
 ### Harness 质量保障
@@ -406,6 +430,72 @@ project-root/
 | `OpenAlexSearcher` | OpenAlex 搜索 |
 | `SearchOrchestrator` | 搜索编排器 |
 | `SearchResultMerger` | 结果合并去重 |
+
+---
+
+## 论文字数与上下文材料加载分析
+
+**模型**: MiniMax-M2.7（上下文 ~32K tokens）
+
+### 上下文窗口约束
+
+| 内容类型 | 估算方式 |
+|---------|---------|
+| 中文文本 | ~1.8 tokens/字符 |
+| 英文文本 | ~2.5 tokens/词 |
+| 安全系数 | 80%（预留 prompt 和响应空间）→ 有效可用 ~25K tokens |
+
+### 论文规模与材料配比
+
+**10000字论文基准分析**
+
+| 内容类型 | 字数/数量 | tokens | 占比 |
+|---------|----------|--------|------|
+| 论文正文 | 10000字 | ~18000 | 60% |
+| 参考文献元数据(30篇) | ~3000字 | ~3000 | 10% |
+| Prompt/系统 | - | ~4000 | 15% |
+| 响应缓冲 | - | ~3000 | 10% |
+| **总计** | - | **~28000** | 100% |
+
+### 按论文字数的材料加载建议
+
+| 论文字数 | 建议加载篇数 | 参考文献tokens | 占比 | 状态 |
+|---------|-------------|---------------|------|------|
+| 5000字 | 15篇 | ~1500 | 8% | ✅ |
+| 8000字 | 25篇 | ~2500 | 10% | ✅ |
+| 10000字 | 30篇 | ~3000 | 10% | ✅ 建议上限 |
+| 15000字 | 30篇 | ~3000 | 7% | ✅ 上限 |
+| 20000字 | 30篇 | ~3000 | 5% | ✅ 上限 |
+
+### Polish阶段性能瓶颈（10000字论文，104篇文献）
+
+| 操作 | 耗时 | 占比 | 瓶颈 |
+|-----|------|------|------|
+| `_run_citation_processor` | ~152秒 | 49% | 104篇文献处理超时 |
+| `_run_language_polisher` | ~89秒 | 28% | JSON解析失败重试 |
+| 连贯性检查 | ~73秒 | 23% | 正常 |
+| **总计** | **~314秒** | 100% | 远超目标60秒 |
+
+**根因**: 104篇引用超载，导致 ReferenceProcessorAgent 和 LLM 插入引用超时。
+
+### 优化方案
+
+| 方案 | 措施 | 预期效果 |
+|-----|------|---------|
+| A: 硬性限制引用数量 | `papers[:30]` | 引用处理 152秒→50秒 |
+| B: 限制 max_tokens 上限 | `min(max_tokens, 8192)` | 避免输出截断 |
+| C: 跳过长文本完整润色 | `len > 15000` 跳过 | 节省~90秒 |
+
+### 动态加载策略
+
+```python
+def get_recommended_paper_count(paper_chars: int) -> int:
+    """根据论文长度推荐参考文献数量"""
+    # 每篇参考约100 tokens，预留40%空间给参考文献
+    available_ref_tokens = paper_chars * 1.8 * 0.4
+    recommended = int(available_ref_tokens / 100)
+    return min(recommended, 30)  # 上限30篇
+```
 
 ---
 

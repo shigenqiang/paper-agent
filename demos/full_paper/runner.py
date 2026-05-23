@@ -71,6 +71,10 @@ class FullPaperRunner:
 
     def _init_workflow(self):
         """初始化 UnifiedWorkflow"""
+        # 从环境变量加载 LLM 配置
+        llm = self._load_llm_from_env()
+        self.llm = llm
+
         self.workflow = UnifiedWorkflow(
             llm=self.llm,
             enable_memory=self.enable_memory,
@@ -82,6 +86,35 @@ class FullPaperRunner:
         )
         self.workflow.compile()
         logger.info("UnifiedWorkflow initialized for full_paper")
+
+    def _load_llm_from_env(self):
+        """从环境变量加载 LLM 配置"""
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
+
+        provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        model = os.getenv("LLM_MODEL", "minimax-m2.7")
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL", "https://api.minimax.chat/v1")
+
+        if provider == "openai" and api_key:
+            try:
+                from langchain_openai import ChatOpenAI
+                logger.info(f"加载 LLM: {provider} - {model}")
+                return ChatOpenAI(
+                    model=model,
+                    temperature=0.7,
+                    max_tokens=4096,
+                    api_key=api_key,
+                    base_url=base_url if base_url else None
+                )
+            except Exception as e:
+                logger.warning(f"LLM 加载失败: {e}")
+
+        return None
 
     async def run(
         self,
@@ -132,6 +165,27 @@ class FullPaperRunner:
         polished_text = final_state.get("polished_text", "")
         draft_text = final_state.get("draft", "")
         final_paper = polished_text or draft_text
+
+        # 清理论文文本，移除思考过程等干扰信息
+        import re
+        if final_paper:
+            # 移除思考过程块 (<think>...[/think])
+            final_paper = re.sub(r'<think>[\s\S]*?/sync/n?/s*', '', final_paper)
+            # 移除 ```json ... ``` 格式的JSON块
+            final_paper = re.sub(r'```json\s*.*?\s*```', '', final_paper, flags=re.DOTALL)
+            # 移除独立成行的JSON诊断报告（润色诊断报告）
+            final_paper = re.sub(r'## 润色诊断报告\s*\{[\s\S]*?\n\}', '', final_paper)
+            # 移除 【...】 格式的诊断标记
+            final_paper = re.sub(r'【[^】]*】', '', final_paper)
+            # 移除行内诊断标记 [...]
+            final_paper = re.sub(r'\[[A-Z_]+(?:\|[^\]]+)?\]', '', final_paper)
+            # 移除 model's thinking 提示（The user is asking me... 等）
+            final_paper = re.sub(r"The user is asking me to write.*?(?=\n# )", '', final_paper, flags=re.DOTALL)
+            # 移除"Let me analyze"等提示
+            final_paper = re.sub(r"^Let me analyze.*?\n", '', final_paper, flags=re.MULTILINE)
+            # 移除连续空行
+            final_paper = re.sub(r'\n{3,}', '\n\n', final_paper)
+            final_paper = final_paper.strip()
 
         # 获取参考文献列表
         reference_list = final_state.get("reference_list", "")
@@ -256,6 +310,19 @@ def main():
         # 仅输出最终论文（paper_only模式下不打印任何中间结果）
         final_paper = result.get("final_paper", "")
         if final_paper:
+            # 保存论文到文件
+            import os
+            from datetime import datetime
+            output_dir = "output"
+            os.makedirs(output_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # 清理topic作为文件名
+            safe_topic = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in topic)[:30]
+            filename = f"{safe_topic}_{timestamp}.md"
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(final_paper)
+            print(f"论文已保存到: {filepath}", file=sys.stderr)
             # stdout 只输出论文内容
             print(final_paper)
         else:

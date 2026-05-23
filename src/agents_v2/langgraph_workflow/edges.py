@@ -22,13 +22,31 @@ def should_continue(state: dict) -> str:
         "write" - 需要修改，回到写作节点
         "done" - 质量达标或达到最大迭代次数，结束
     """
+    from src.agents_v2.logging_config import get_logging_logger
+    logger = get_logging_logger(__name__)
+
     iteration = state.get("iteration", 0)
     max_iterations = state.get("max_iterations", 3)
     feedback = state.get("feedback", [])
+    score = state.get("evaluation_score", 0.0)
+    last_score = state.get("last_evaluation_score", 0.0)
 
     # 达到最大迭代次数
     if iteration >= max_iterations:
         return "done"
+
+    # 质量达标（评估分数 >= 6.0）
+    if score >= 6.0:
+        return "done"
+
+    # 早期停止：如果分数没有提升（improvement < 0.1），停止迭代
+    # 注意：last_score在首次评估时为0.0，此时improvement=score > 0.1，应该继续
+    # 只有当分数维持在低位（如5.8）且无提升时才停止
+    if last_score > 0:  # 确保不是首次评估
+        improvement = score - last_score
+        if improvement < 0.1:
+            logger.info(f"[Edges] 早期停止：分数无提升 ({last_score:.2f} -> {score:.2f}, 提升 {improvement:.2f})")
+            return "done"
 
     # 没有可操作的反馈
     if not feedback or all("good" in f.lower() for f in feedback):

@@ -167,7 +167,17 @@ class ConfidenceCalibrator:
 
         try:
             response = await self._call_llm(prompt)
-            score = float(response.strip())
+            response_clean = response.strip()
+            try:
+                score = float(response_clean)
+            except ValueError:
+                import re
+                numbers = re.findall(r'0\.\d+|1\.0|[01]', response_clean)
+                if numbers:
+                    score = float(numbers[0])
+                else:
+                    logger.warning(f"No numeric score in retrieval eval: {response_clean[:50]}...")
+                    return 0.5
             return max(0.0, min(1.0, score))
         except Exception as e:
             logger.error(f"Retrieval relevance evaluation failed: {e}")
@@ -233,7 +243,17 @@ class ConfidenceCalibrator:
 
         try:
             response = await self._call_llm(prompt)
-            score = float(response.strip())
+            response_clean = response.strip()
+            try:
+                score = float(response_clean)
+            except ValueError:
+                import re
+                numbers = re.findall(r'0\.\d+|1\.0|[01]', response_clean)
+                if numbers:
+                    score = float(numbers[0])
+                else:
+                    logger.warning(f"No numeric score in completeness eval: {response_clean[:50]}...")
+                    return 0.5
             return max(0.0, min(1.0, score))
         except Exception as e:
             logger.error(f"Completeness evaluation failed: {e}")
@@ -325,7 +345,17 @@ class ConfidenceCalibrator:
 
         try:
             response = await self._call_llm(prompt)
-            score = float(response.strip())
+            response_clean = response.strip()
+            try:
+                score = float(response_clean)
+            except ValueError:
+                import re
+                numbers = re.findall(r'0\.\d+|1\.0|[01]', response_clean)
+                if numbers:
+                    score = float(numbers[0])
+                else:
+                    logger.warning(f"No numeric score in consistency eval: {response_clean[:50]}...")
+                    return 0.5
             return max(0.0, min(1.0, score))
         except Exception as e:
             logger.error(f"Consistency evaluation failed: {e}")
@@ -390,7 +420,17 @@ class ConfidenceCalibrator:
 
         try:
             response = await self._call_llm(prompt)
-            score = float(response.strip())
+            response_clean = response.strip()
+            try:
+                score = float(response_clean)
+            except ValueError:
+                import re
+                numbers = re.findall(r'0\.\d+|1\.0|[01]', response_clean)
+                if numbers:
+                    score = float(numbers[0])
+                else:
+                    logger.warning(f"No numeric score in groundedness eval: {response_clean[:50]}...")
+                    return 0.5
             return max(0.0, min(1.0, score))
         except Exception as e:
             logger.error(f"Groundedness evaluation failed: {e}")
@@ -454,7 +494,17 @@ class ConfidenceCalibrator:
 
         try:
             response = await self._call_llm(prompt)
-            score = float(response.strip())
+            response_clean = response.strip()
+            try:
+                score = float(response_clean)
+            except ValueError:
+                import re
+                numbers = re.findall(r'0\.\d+|1\.0|[01]', response_clean)
+                if numbers:
+                    score = float(numbers[0])
+                else:
+                    logger.warning(f"No numeric score in uncertainty eval: {response_clean[:50]}...")
+                    return 0.5
             return max(0.0, min(1.0, score))
         except Exception as e:
             logger.error(f"Uncertainty evaluation failed: {e}")

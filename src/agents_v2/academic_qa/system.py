@@ -491,29 +491,16 @@ class AcademicQASystem:
         Returns:
             Dict[str, Any]: ingestion 结果
         """
-        chunks = []
+        # 使用retriever的index_documents直接完成分块+存储
+        result = await self.retriever.index_documents(
+            documents=documents,
+            chunk_size=512,
+            chunk_overlap=100,
+        )
 
-        for doc in documents:
-            content = doc.get("content", "")
-            metadata = doc.get("metadata", {})
+        logger.info(f"Ingested {result['num_chunks']} chunks from {result['num_documents']} documents")
 
-            # 分块
-            doc_chunks = self.chunker.chunk(content, metadata)
-
-            for chunk in doc_chunks:
-                chunks.append({
-                    "content": chunk.content,
-                    "chunk_id": chunk.chunk_id,
-                    "metadata": chunk.metadata,
-                })
-
-        logger.info(f"Ingested {len(chunks)} chunks from {len(documents)} documents")
-
-        return {
-            "num_documents": len(documents),
-            "num_chunks": len(chunks),
-            "chunks": chunks,
-        }
+        return result
 
     def format_answer_with_citations(self, result: AcademicQAResult) -> str:
         """格式化带引用的答案

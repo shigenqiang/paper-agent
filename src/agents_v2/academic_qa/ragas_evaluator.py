@@ -246,7 +246,20 @@ class RAGAsEvaluator:
 
         try:
             response = await self._call_llm(prompt)
-            score = float(response.strip())
+            response_clean = response.strip()
+            try:
+                score = float(response_clean)
+            except ValueError:
+                import re
+                # 匹配各种可能的数字格式：0.5, 0.75, 1.0, 0, 1, 0.85等
+                # 也处理如 "评分: 0.8" 或 "得分是0.5" 等格式
+                numbers = re.findall(r'(?:0?\.\d+|1\.0|0(?!\.\d)|1(?!\.\d))', response_clean)
+                if numbers:
+                    score = float(numbers[0])
+                else:
+                    # 如果找不到数字，返回默认值并记录
+                    logger.warning(f"No numeric score found in response: {response_clean[:80]}...")
+                    return 0.5
             return max(0.0, min(1.0, score))
         except Exception as e:
             logger.error(f"Answer relevance evaluation failed: {e}")
@@ -323,7 +336,17 @@ class RAGAsEvaluator:
 
         try:
             response = await self._call_llm(prompt)
-            score = float(response.strip())
+            response_clean = response.strip()
+            try:
+                score = float(response_clean)
+            except ValueError:
+                import re
+                numbers = re.findall(r'0\.\d+|1\.0|[01]', response_clean)
+                if numbers:
+                    score = float(numbers[0])
+                else:
+                    logger.warning(f"No numeric score in context precision: {response_clean[:50]}...")
+                    return 0.5
             return max(0.0, min(1.0, score))
         except Exception as e:
             logger.error(f"Context precision evaluation failed: {e}")

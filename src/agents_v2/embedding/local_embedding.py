@@ -28,20 +28,20 @@ class LocalEmbeddingModel:
         self,
         model_path: Optional[str] = None,
         device: str = "cpu",
-        max_length: int = 512
+        max_length: int = 256
     ):
         """
         Args:
             model_path: 模型路径，默认使用本地Qwen3-Embedding-0.6B
             device: 设备类型，"cpu" 或 "cuda"
-            max_length: 最大输入长度
+            max_length: 最大输入长度（减少到256以加快推理速度）
         """
         self.model_path = model_path or MODEL_PATH
         self.device = device
         self.max_length = max_length
         self._model = None
         self._tokenizer = None
-        self._dimension = 768  # Qwen3-Embedding-0.6B 维度
+        self._dimension = None  # 动态获取
 
     def _load_model(self):
         """懒加载模型"""
@@ -76,7 +76,7 @@ class LocalEmbeddingModel:
                 logger.error(f"Failed to load local embedding model: {e}")
                 raise
 
-    def encode(self, texts: List[str], batch_size: int = 8) -> List[List[float]]:
+    def encode(self, texts: List[str], batch_size: int = 1) -> List[List[float]]:
         """
         将文本编码为嵌入向量
 
@@ -143,6 +143,10 @@ class LocalEmbeddingModel:
         """
         try:
             embeddings = self.encode([text])
+            # 动态设置维度（首次调用时）
+            if self._dimension is None and embeddings:
+                self._dimension = len(embeddings[0])
+                logger.info(f"Detected embedding dimension: {self._dimension}")
             return embeddings[0] if embeddings else None
         except Exception as e:
             logger.debug(f"Local embedding failed: {e}")
@@ -151,7 +155,10 @@ class LocalEmbeddingModel:
     @property
     def dimension(self) -> int:
         """嵌入向量维度"""
-        return self._dimension
+        if self._dimension is None:
+            # 触发模型加载和维度检测
+            self.get_embedding("init")
+        return self._dimension or 1024  # 默认1024
 
     def cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """计算余弦相似度"""

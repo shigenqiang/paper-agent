@@ -281,6 +281,83 @@ class HybridRetriever:
 
         return final_results
 
+    async def index_documents(
+        self,
+        documents: List[Dict[str, Any]],
+        chunk_size: int = 512,
+        chunk_overlap: int = 100,
+    ) -> Dict[str, Any]:
+        """索引文档到向量存储
+
+        Args:
+            documents: 文档列表，每项需包含 content 字段
+            chunk_size: 块大小
+            chunk_overlap: 块重叠大小
+
+        Returns:
+            Dict[str, Any]: 索引结果
+        """
+        if not self.vector_store:
+            logger.error("No vector store configured")
+            return {"num_documents": 0, "num_chunks": 0, "chunks": []}
+
+        if not self.embedding_model:
+            logger.error("No embedding model configured")
+            return {"num_documents": 0, "num_chunks": 0, "chunks": []}
+
+        from .chunker import AcademicChunker
+        chunker = AcademicChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+        all_chunks = []
+        indexed_count = 0
+
+        for doc in documents:
+            content = doc.get("content", "")
+            metadata = doc.get("metadata", {})
+
+            # 分块
+            chunks = chunker.chunk(content, metadata)
+
+            for chunk in chunks:
+                # 生成embedding
+                if hasattr(self.embedding_model, 'get_embedding'):
+                    vector = self.embedding_model.get_embedding(chunk.content)
+                elif hasattr(self.embedding_model, 'encode'):
+                    vectors = self.embedding_model.encode([chunk.content])
+                    vector = vectors[0] if vectors else None
+                else:
+                    logger.error("Embedding model has no get_embedding or encode method")
+                    continue
+
+                if vector is None:
+                    continue
+
+                # 存储到向量库（确保ID唯一）
+                chunk_id = f"doc_{indexed_count}_chunk_{len(all_chunks)}"
+                self.vector_store.upsert(
+                    id=chunk_id,
+                    vector=vector,
+                    payload={
+                        "content": chunk.content,
+                        "metadata": chunk.metadata,
+                    }
+                )
+
+                all_chunks.append({
+                    "chunk_id": chunk_id,
+                    "content": chunk.content,
+                    "metadata": chunk.metadata,
+                })
+                indexed_count += 1
+
+        logger.info(f"Indexed {len(documents)} documents into {len(all_chunks)} chunks")
+
+        return {
+            "num_documents": len(documents),
+            "num_chunks": len(all_chunks),
+            "chunks": all_chunks,
+        }
+
 
 class BM25Index:
     """简单的 BM25 索引实现

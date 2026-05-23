@@ -97,11 +97,16 @@ class LiteratureNode:
             asyncio.set_event_loop(loop)
 
         # 构建上下文
+        topic_result = state.get("topic_result", {})
         context = {
-            "topic_result": state.get("topic_result", {}),
+            "topic_result": topic_result,
             "papers": state.get("papers", []),
             "diagnostic_result": state.get("diagnostic_result", {}),
+            "diagnostic_papers": state.get("diagnostic_papers", []),  # 复用 Diagnostic 论文
             "hitl_feedback": state.get("hitl_feedback", ""),
+            # 传递 Topic 阶段的关键词给 LiteratureAgent 用于精确搜索
+            # TopicAgent 返回的 result 中 selected_topic 是 TopicCandidate，keywords 在 domain_analysis 里
+            "topic_keywords": topic_result.get("domain_analysis", {}).get("keywords", []) if isinstance(topic_result, dict) else [],
         }
 
         # 运行文献 Agent

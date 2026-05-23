@@ -6,6 +6,7 @@ diagnostic 作为守门员，必须通过质量阈值才能进入 outline/writin
 """
 from src.agents_v2.logging_config import get_logging_logger
 
+import asyncio
 import time
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -55,6 +56,10 @@ class DiagnosticNode:
         """
         运行诊断 Agent（问题导向）
 
+        流程：
+        1. 先运行 LiteratureMapperAgent（搜索论文、生成文献地图）
+        2. 然后并行运行 TopicRefinerAgent 和 MethodologyAdvisorAgent（使用文献结果）
+
         Returns:
             dict with keys: problems, severity, recommendations, quality_score
         """
@@ -63,21 +68,38 @@ class DiagnosticNode:
         agents_results = []
         quality_scores = []
 
-        # 选题诊断
-        topic_result = await self._diagnose_topic(user_query, context)
-        if topic_result:
-            agents_results.append(("topic", topic_result))
-            quality_scores.append(topic_result.quality_score)
-
-        # 文献诊断
+        # Step 1: 先运行文献诊断（必须先完成，获取论文列表）
         literature_result = await self._diagnose_literature(user_query, context)
         if literature_result:
             agents_results.append(("literature", literature_result))
             quality_scores.append(literature_result.quality_score)
 
-        # 方法诊断
-        method_result = await self._diagnose_methodology(user_query, context)
-        if method_result:
+        # Step 2: 基于文献结果，并行运行选题和方法诊断
+        # 将 literature_result 的论文和分析结果加入 context，供其他 agent 使用
+        enhanced_context = dict(context)
+        if literature_result and literature_result.result:
+            enhanced_context["literature_result"] = literature_result.result
+            enhanced_context["papers"] = literature_result.result.get("papers", [])
+            enhanced_context["research_gaps"] = literature_result.result.get("research_gaps", [])
+            enhanced_context["categorized_literature"] = literature_result.result.get("categorized_literature", {})
+
+        topic_task = self._diagnose_topic(user_query, enhanced_context)
+        method_task = self._diagnose_methodology(user_query, enhanced_context)
+
+        # 并行执行 Topic 和 Methodology
+        topic_result, method_result = await asyncio.gather(
+            topic_task, method_task, return_exceptions=True
+        )
+
+        if isinstance(topic_result, Exception):
+            logger.warning(f"Topic diagnostic failed: {topic_result}")
+        elif topic_result:
+            agents_results.append(("topic", topic_result))
+            quality_scores.append(topic_result.quality_score)
+
+        if isinstance(method_result, Exception):
+            logger.warning(f"Methodology diagnostic failed: {method_result}")
+        elif method_result:
             agents_results.append(("methodology", method_result))
             quality_scores.append(method_result.quality_score)
 
@@ -103,7 +125,8 @@ class DiagnosticNode:
             "recommendations": list(set(all_recommendations)),
             "quality_score": avg_quality,
             "agent_results": {name: {"success": r.success, "quality": r.quality_score}
-                             for name, r in agents_results}
+                             for name, r in agents_results},
+            "papers": literature_result.result.get("papers", []) if literature_result and literature_result.result else []
         }
 
     async def _diagnose_topic(self, user_query: str, context: Dict[str, Any]) -> Optional[Any]:
@@ -217,6 +240,11 @@ class DiagnosticNode:
             "quality_score": diag_result["quality_score"],
             "agent_results": diag_result["agent_results"]
         }
+
+        # 存储 Diagnostic 阶段搜索到的论文，供后续 Literature 阶段复用
+        # literature_result 存储在 diag_result["papers"] 中
+        state["diagnostic_papers"] = diag_result.get("papers", [])
+        logger.info(f"[Diagnostic] 保存 {len(state['diagnostic_papers'])} 篇论文供后续阶段复用")
 
         # 检查是否有选题问题
         has_topic_prob, topic_problems = self._check_topic_problems(diag_result["problems"])

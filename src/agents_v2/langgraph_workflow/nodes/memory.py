@@ -43,11 +43,15 @@ class MemoryNode:
     def _get_or_create_loop(self):
         """获取或创建事件循环"""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                raise RuntimeError("Loop is closed")
-            return loop
-        except RuntimeError:
+            # 首先尝试获取运行中的循环
+            loop = asyncio.get_running_loop()
+            # 如果有运行中的循环，不能使用 run_until_complete
+            raise RuntimeError("Cannot use run_until_complete in running loop")
+        except RuntimeError as e:
+            if "Cannot use" in str(e):
+                # 运行中的循环存在，抛出异常让调用者处理
+                raise
+            # 如果是"no running event loop"，创建新循环
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             return loop
@@ -77,7 +81,12 @@ class MemoryNode:
             return state
 
         # 召回相关记忆（带遗忘曲线衰减）
-        loop = self._get_or_create_loop()
+        try:
+            loop = self._get_or_create_loop()
+        except RuntimeError as e:
+            logger.debug(f"[Memory] 事件循环已在运行，跳过记忆召回")
+            return state
+
         try:
             recalled = loop.run_until_complete(
                 self.memory_manager.recall_with_decay(
@@ -161,7 +170,11 @@ class MemoryNode:
         if not user_id or not papers:
             return state
 
-        loop = self._get_or_create_loop()
+        try:
+            loop = self._get_or_create_loop()
+        except RuntimeError as e:
+            logger.debug(f"[Memory] 事件循环已在运行，跳过记忆存储: {e}")
+            return state
 
         # 记住 Top 5 论文
         remember_count = 0
@@ -223,7 +236,12 @@ class MemoryNode:
             return state
 
         # 尝试获取用户画像进行个性化
-        loop = self._get_or_create_loop()
+        try:
+            loop = self._get_or_create_loop()
+        except RuntimeError as e:
+            logger.debug(f"[Memory] 事件循环已在运行，跳过个性化输出")
+            return state
+
         try:
             user_profile = loop.run_until_complete(
                 self.memory_manager.get_user_profile(user_id)

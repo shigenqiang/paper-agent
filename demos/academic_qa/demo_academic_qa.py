@@ -340,7 +340,6 @@ async def demo_document_ingestion():
 
     config = AcademicQAConfig(
         llm=MockLLM(),
-        chunk_size=512,
     )
 
     system = AcademicQASystem(config=config)

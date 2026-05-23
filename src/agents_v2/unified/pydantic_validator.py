@@ -91,6 +91,16 @@ def _clean_json_markdown(text: str) -> str:
         return truncated
 
     # 策略6：正则提取任何完整对象
+    # 先清理思考块，避免干扰正则匹配
+    text_cleaned = _remove_thinking_blocks(text)
+    if text_cleaned != text:
+        # 重试解析清理后的文本
+        try:
+            json.loads(text_cleaned)
+            return text_cleaned
+        except json.JSONDecodeError:
+            pass
+
     match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
     if match:
         try:
@@ -107,8 +117,9 @@ def _remove_thinking_blocks(text: str) -> str:
     """移除各种格式的思考块"""
     patterns = [
         r'<start_thinking>.*?<end_thinking>',
-        r'<think>.*?\加成',
+        r'<think>.*?</think>',
         r'<think>.*?',
+        r'<end_thinking>.*?',
     ]
     for p in patterns:
         text = re.sub(p, '', text, flags=re.DOTALL)
