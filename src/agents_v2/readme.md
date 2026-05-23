@@ -6,7 +6,7 @@
 
 ## 项目概述
 
-面向学术文献调研场景，输入研究问题后自动完成多源检索、去重排序、GraphRAG图谱构建与可溯源综述报告生成。基于LangGraph 20+节点StateGraph统一编排搜索、写作、报告、问答、修订5条工作流路径，串联从问题拆解到报告输出的完整调研流水线。
+面向学术文献调研场景，输入研究问题后自动完成多源检索、去重排序、GraphRAG图谱构建与可溯源综述报告生成，基于LangGraph 20+节点StateGraph统一编排搜索、写作、报告、问答、修订5条工作流路径，串联从问题拆解到报告输出的完整调研流水线。
 
 **技术栈**：Python / aiohttp / asyncio / LangGraph / LangChain / Pydantic / Cross-Encoder / GraphRAG / Neo4j / PostgreSQL / Redis / Qwen3-Embedding / React / G6
 
@@ -67,101 +67,150 @@
 
 ```
 agents_v2/
-├── api_server.py            # aiohttp HTTP 服务入口（端口 8000）
+├── __init__.py
+├── readme.md
+├── logging_config.py
 │
 ├── core/                    # 基础层：Agent 基类、配置、类型定义
-│   ├── base_agent.py        # BaseAgent, AgentInput/Output, LLMConfig, Tool
+│   ├── base_agent.py
 │   ├── config.py            # YAML 配置管理 + 16 模型注册表
-│   ├── exceptions.py        # AgentError 异常层次结构
+│   ├── exceptions.py
 │   ├── streaming.py         # SSE 流式输出支持
-│   ├── validators.py        # 输入验证与输出格式化
-│   ├── plugins.py           # 插件系统（动态加载、沙盒）
-│   ├── security.py          # 安全加固（输入清理、密钥管理）
-│   ├── rbac.py              # 基于角色的访问控制
-│   └── ...
+│   ├── validators.py
+│   ├── plugins.py
+│   ├── security.py
+│   ├── rbac.py
+│   └── enhanced_base.py
 │
 ├── api/                     # RESTful API 路由模块
-│   ├── paper_api.py         # 论文/文献/聊天 API
-│   ├── reports_api.py       # 报告/资讯 API
-│   ├── knowledge_graph_api.py # 知识图谱 API
-│   └── workflow_api.py      # 工作流 API
+│   ├── paper_api.py
+│   ├── reports_api.py
+│   ├── knowledge_graph_api.py
+│   └── workflow_api.py
 │
 ├── unified/                 # 编排层：多阶段监督与质量保障
 │   ├── master_supervisor.py # MasterSupervisor 6 阶段编排
-│   ├── phase_supervisor.py  # 阶段监督器
+│   ├── phase_supervisor.py
 │   ├── circuit_breaker.py   # 熔断保护
 │   ├── intent_router.py     # 意图路由（16种意图类型）
-│   └── ...
+│   └── pydantic_validator.py
 │
 ├── paper_agents/            # 论文写作流水线 Agent
+│   ├── base_paper_agent.py
 │   ├── topic_agent.py       # 选题 Agent（5维可行性评分）
 │   ├── literature_agent.py  # 文献调研 Agent
-│   ├── thesis_agent.py      # Thesis 凝练 Agent
-│   ├── outline_agent.py     # 大纲制定 Agent
-│   ├── draft_writer.py      # 初稿撰写 Agent
-│   ├── editor_agent.py      # 修订编辑 Agent
-│   └── reviewer_agent.py    # 最终审核 Agent
+│   ├── thesis_agent.py
+│   ├── outline_agent.py
+│   ├── draft_writer.py
+│   ├── editor_agent.py
+│   └── reviewer_agent.py
 │
 ├── writing/                 # 写作支持：生成、修订、润色
-│   ├── draft_generator.py   # 初稿生成
-│   ├── outline_generator.py # 大纲生成
-│   ├── smart_reviser.py     # 智能修订 + 语言润色
-│   ├── report_refiner.py    # 多轮精炼
-│   ├── literature_review.py # 文献综述
-│   └── ...
+│   ├── draft_generator.py
+│   ├── outline_generator.py
+│   ├── smart_reviser.py
+│   ├── report_refiner.py
+│   ├── literature_review.py
+│   ├── reference_processor.py
+│   └── reflection_engine.py
 │
 ├── problem_oriented/        # 问题诊断与质量检查
-│   ├── language_polisher.py # 语言润色
-│   ├── plagiarism_checker.py # 查重检测
-│   ├── methodology_advisor.py # 方法论指导
-│   ├── chart_formatter.py   # 图表格式化
-│   └── ...
+│   ├── base_problem_agent.py
+│   ├── language_polisher.py
+│   ├── methodology_advisor.py
+│   └── literature_mapper.py
 │
-├── qa/                      # 问答与报告 Agent
-│   ├── paper_search.py      # 多源论文搜索
-│   ├── daily_watcher.py     # 每日监控
-│   ├── weekly_report.py     # 周报生成
-│   ├── monthly_report.py    # 月报生成
-│   └── query_router.py      # 查询路由
+├── academic_qa/            # 学术 QA 系统（RAG 架构）
+│   ├── system.py
+│   ├── ragas_evaluator.py    # RAGAS 评估指标
+│   ├── confidence_calibrator.py
+│   ├── hybrid_retriever.py
+│   ├── hallucination_detector.py
+│   ├── multi_hop_reasoner.py
+│   └── query_decomposer.py
+│
+├── paper_search/           # 学术搜索
+│   ├── paper_search.py
+│   └── query_router.py
 │
 ├── search/                  # 学术搜索引擎适配器
-│   ├── arxiv_searcher.py    # arXiv API
-│   ├── pubmed_searcher.py   # PubMed API
-│   ├── semantic_scholar_searcher.py # Semantic Scholar
-│   └── ...                  # CrossRef, OpenAlex, DBLP
-│   └── strategies.py         # 搜索策略（FAST/BALANCED/COMPREHENSIVE/PRECISE）
+│   ├── arxiv_searcher.py
+│   ├── pubmed_searcher.py
+│   ├── semantic_scholar_searcher.py
+│   ├── strategies.py        # 搜索策略（FAST/BALANCED/COMPREHENSIVE/PRECISE）
+│   └── search_orchestrator.py
 │
 ├── retrieval/               # RAG 检索增强管线
 │
 ├── knowledge_graph/         # 知识图谱系统
-│   └── community_detection.py # Louvain/Leiden社区检测
+│   └── community_detection.py # Louvain/Leiden 社区检测
 │
 ├── memory/                  # 记忆系统（短期/长期/情景记忆）
 │
-├── tools/                   # 工具系统（PDF解析/引文提取/图表生成）
+├── langgraph_workflow/     # LangGraph 工作流定义
+│   ├── unified_workflow.py
+│   ├── workflow.py
+│   ├── edges.py
+│   ├── nodes/
+│   │   ├── diagnostic.py
+│   │   ├── literature.py
+│   │   ├── memory.py
+│   │   ├── outline.py
+│   │   ├── polish.py
+│   │   ├── reviewer.py
+│   │   ├── writer.py
+│   │   └── evaluator.py
+│   └── observability/
+│       └── tracer.py        # OpenTelemetry 链路追踪
 │
-├── langgraph_workflow/      # LangGraph 工作流定义
+├── reports/                 # 报告生成
+│   ├── base.py
+│   ├── daily.py
+│   ├── weekly.py
+│   └── monthly.py
 │
-├── sdk/                     # Claude Agent SDK 框架（@tool 装饰器/Agent 基类）
+├── common/                  # 公共模块
+│   ├── citation/            # 引用处理
+│   │   ├── citation_formatter.py
+│   │   ├── citation_parser.py
+│   │   └── citation_tracker.py
+│   └── llm/                # LLM 工厂
+│       └── llm_factory.py
 │
-├── skills/                  # Agent Skills 系统（SKILL.md 标准）
+├── embedding/              # 向量嵌入（本地 Qwen3-Embedding）
+│   ├── local_embedding.py
+│   └── model.safetensors
 │
-├── evaluation/              # 评估与测试工具
-│   └── ragas_evaluator.py   # RAGAS评估指标
+├── state/                   # 状态管理与检查点
 │
-├── monitoring/              # 监控告警（链路追踪/日志/仪表板）
+├── evaluation/             # 评估与测试工具
 │
-├── scheduler/               # 定时调度与订阅管理
+├── monitoring/             # 监控告警
+│   └── otel_tracer.py      # OpenTelemetry 追踪
 │
-├── intent/ / routing/       # 意图识别与路由选择
+├── prompts/                 # Prompt 模板
+│   └── coherence_prompts.py
 │
-├── state/                   # 状态管理与检查点（CheckpointManager）
+├── intent/                  # 意图识别
+│   └── registry.py
 │
-├── multimodal/              # 多模态处理（视觉/图表/公式）
+├── routing/                # 路由选择
 │
-├── demos/                   # 演示脚本
+├── scheduler/              # 定时调度
 │
-└── _archive/                # 已归档未使用的模块（21 个子包，保留备查）
+├── storage/               # 存储
+│
+├── multimodal/           # 多模态处理
+│
+├── config/               # 配置
+│
+├── sdk/                   # Claude Agent SDK 框架
+│
+├── skills/                # Agent Skills 系统
+│
+├── tools/                 # 工具系统
+│
+└── demos/                 # 演示脚本
 ```
 
 ---
@@ -185,7 +234,7 @@ python -m src.main
 
 ```
 POST /api/topic       → handle_topic()      → TopicAgent (paper_agents)
-POST /api/search      → handle_search()     → PaperSearchAgent (qa)
+POST /api/search      → handle_search()     → PaperSearchAgent (academic_qa)
 POST /api/route       → handle_route()      → IntentRouter (unified, 16种意图类型)
 POST /api/literature  → handle_literature() → LiteratureReviewAgent (writing)
 POST /api/proposal    → handle_proposal()   → ProposalGeneratorAgent (writing)
