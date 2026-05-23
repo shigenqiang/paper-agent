@@ -174,3 +174,6 @@ logs/
 memory/
 *.log
 CLAUDE.md
+
+# === Docs (local only) ===
+docs/
