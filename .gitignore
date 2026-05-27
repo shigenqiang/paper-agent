@@ -22,11 +22,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.pytest_cache/
-.coverage
-htmlcov/
 .tox/
-*.log
 mypy.ini
 
 # === Environment Variables (CRITICAL) ===
@@ -77,16 +73,12 @@ $RECYCLE.BIN/
 
 # === Jupyter Notebook ===
 .ipynb_checkpoints
-*.ipynb_checkpoints
 
 # === Database ===
 *.db
 *.sqlite
 *.sqlite3
 *.duckdb
-data/*.db
-data/*.sqlite
-data/*.sqlite3
 
 # === Vector Stores & Cache ===
 chroma/
@@ -97,8 +89,9 @@ weaviate_data/
 milvus_data/
 .cache/
 .claude/
-__pycache__/
-*.pyc
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
 
 # === LightRAG ===
 LightRAG/lightrag_data/
@@ -110,13 +103,7 @@ LightRAG/knowledge_graph/
 *.parquet
 
 # === Large Data Files ===
-data/*.RData
-data/*.RDS
-data/*.csv
-data/*.json
-data/*.parquet
-data/*.xlsx
-data/*.pdf
+data/
 *.pdf
 src/data/*.json
 src/data/*.csv
@@ -130,31 +117,23 @@ src/data/*.csv
 # === Temporary Files ===
 *.tmp
 *.bak
-*.swp
-*~
 temp/
 tmp/
 PackageVersions.lock
 
-# === Build Artifacts ===
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-dist/
-build/
-*.egg-info
-
 # === OS Specific ===
-.DS_Store
-Thumbs.db
 desktop.ini
-frontend/node_modules/
 
 # === Node.js ===
 frontend/node_modules/
 frontend/.vite/
+
+# === Output & Runtime Data ===
+output/
+.memory*/
+.test_memory/
+logs/
+*.log
 
 # === Test Results & Reports ===
 test_result.json
@@ -167,13 +146,6 @@ docs/test_results/
 demos/demo_*.py
 demos/query_rewrite_comparison_test.py
 demos/*test*.py
-
-# === Claude Logs & Memory ===
-logs/
-.claude/
-memory/
-*.log
-CLAUDE.md
 
 # === Large Model Files ===
 *.safetensors
