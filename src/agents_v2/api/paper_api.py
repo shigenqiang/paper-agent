@@ -325,7 +325,7 @@ async def generate_outline(request: web.Request) -> web.Response:
 
         # Use OutlineAgent to generate outline
         from src.agents_v2.paper_agents import OutlineAgent
-        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+        from src.agents_v2.agents.paper.base_paper_agent import LLMConfig
 
         llm_config = LLMConfig(
             provider="openai",
@@ -397,7 +397,7 @@ async def generate_content(request: web.Request) -> web.Response:
 
         # 使用 DraftWriterAgent 生成内容
         from src.agents_v2.paper_agents import DraftWriterAgent
-        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+        from src.agents_v2.agents.paper.base_paper_agent import LLMConfig
 
         llm_config = LLMConfig(
             provider="openai",
@@ -465,7 +465,7 @@ async def generate_content(request: web.Request) -> web.Response:
 
 async def format_content(request: web.Request) -> web.Response:
     """POST /papers/{id}/sections/{sectionId}/format - 修正格式（公式和格式）"""
-    from src.agents_v2.monitoring.chain_tracer import chain_trace, ChainPhase, ChainStatus
+    from src.agents_v2.infra.monitoring.chain_tracer import chain_trace, ChainPhase, ChainStatus
 
     # 创建链路追踪上下文
     trace_ctx = None
@@ -476,7 +476,7 @@ async def format_content(request: web.Request) -> web.Response:
         section_id = request.match_info["sectionId"]
 
         # 启动链路追踪
-        from src.agents_v2.monitoring.chain_tracer import get_chain_tracer
+        from src.agents_v2.infra.monitoring.chain_tracer import get_chain_tracer
         tracer = get_chain_tracer()
         trace_ctx = tracer.start_trace()
 
@@ -590,7 +590,7 @@ async def format_content(request: web.Request) -> web.Response:
 
         # 直接调用 LanguagePolisherAgent 修正格式（使用writing中的融合版）
         from src.agents_v2.writing import LanguagePolisherAgent
-        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+        from src.agents_v2.agents.paper.base_paper_agent import LLMConfig
 
         llm_config = LLMConfig(
             provider="openai",
@@ -1416,7 +1416,7 @@ async def generate_outline_stream(request: web.Request) -> web.StreamResponse:
         await sse.send_phase("outline", "start", f"正在生成大纲: {topic[:50]}")
 
         from src.agents_v2.paper_agents import OutlineAgent
-        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+        from src.agents_v2.agents.paper.base_paper_agent import LLMConfig
 
         llm_config = LLMConfig(
             provider="openai",
@@ -1484,7 +1484,7 @@ async def generate_content_stream(request: web.Request) -> web.StreamResponse:
         await sse.send_phase("content", "start", f"正在生成: {section_title}")
 
         from src.agents_v2.paper_agents import DraftWriterAgent
-        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+        from src.agents_v2.agents.paper.base_paper_agent import LLMConfig
 
         llm_config = LLMConfig(
             provider="openai",

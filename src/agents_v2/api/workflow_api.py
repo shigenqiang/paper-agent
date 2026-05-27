@@ -37,7 +37,7 @@ def get_workflow(enable_hitl: bool = False):
     cache_key = "hitl" if enable_hitl else "default"
 
     if cache_key not in _workflow_instances:
-        from src.agents_v2.langgraph_workflow.unified_workflow import UnifiedWorkflow
+        from src.agents_v2.workflow.langgraph.unified_workflow import UnifiedWorkflow
 
         instance = UnifiedWorkflow(
             llm=None,

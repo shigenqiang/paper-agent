@@ -1,179 +1,121 @@
-# Paper Agent 文档目录
+# Paper Agent Documentation
 
-> 更新时间：2026-05-02 | 文档总数：48 份 | 3 个主目录
-
----
-
-## 文档目录结构
+## Structure
 
 ```
 docs/
-├── implemented/              # ✅ 已实现 - 当前代码库架构
-├── plans/                   # 📋 开发计划 - 未来开发架构
-└── research/                # 🔬 技术调研 - 深度调研报告
+├── getting-started/     # Quick start, setup, project overview
+├── architecture/        # System architecture (per-module docs)
+├── api/                 # API reference
+├── development/         # Development guide, plans, testing
+└── research/            # Technical research notes
 ```
 
----
+## Getting Started
 
-## 一、implemented/ - 已实现架构
+| Document | Description |
+|----------|-------------|
+| [Project Overview](getting-started/project-overview.md) | Architecture, tech stack, module overview |
+| [Quick Start](getting-started/quickstart.md) | How to run the project |
+| [Running Guide](getting-started/running.md) | Detailed startup instructions |
+| [Frontend Overview](getting-started/frontend-overview.md) | Frontend pages and features |
+| [Docker Registry](getting-started/docker-registry.md) | Container image registry |
 
-> 基于当前代码库结构，反映实际实现的系统。所有内容都与代码库一致。
+## Architecture
 
-### 1. implemented/architecture/ - 系统架构 (3份)
+System architecture docs organized by module.
 
-| 文档 | 说明 |
-|------|------|
-| `architecture-diagram.md` | 完整系统架构图、工作流、数据流 |
-| `执行链路与追踪分析.md` | Agent 完整执行链路、可观测性设计 |
-| `组件架构与调研报告.md` | 模块拆分、技术选型、测试覆盖 |
+| Document | Description |
+|----------|-------------|
+| [Architecture Diagram](architecture/architecture-diagram.md) | Full system architecture |
+| [Execution Paths](architecture/execution-paths.md) | Execution flow and tracing |
+| [Agents Catalog](architecture/agents-catalog.md) | Complete agent inventory |
 
-### 2. implemented/project/ - 项目概述 (2份)
+### Core
 
-| 文档 | 说明 |
-|------|------|
-| `PaperAgent项目概览.md` | 项目介绍、技术架构、40+ Agent 详解 |
-| `前端界面功能总结.md` | 前端 9 个页面功能详解 |
+| Module | Document |
+|--------|----------|
+| core | [Base Agent](architecture/core/base-agent.md) |
+| unified | [Circuit Breaker](architecture/unified/circuit-breaker.md), [Intent Router](architecture/unified/intent-router.md), [Multi-Agent](architecture/unified/multi-agent.md) |
+| config | [Config Module](architecture/config/config-module.md) |
+| security | [Security Module](architecture/security/security-module.md) |
+| validation | [Validation Module](architecture/validation/validation-module.md) |
 
-### 3. implemented/guides/ - 开发指南 (4份)
+### Workflow & API
 
-| 文档 | 说明 |
-|------|------|
-| `论文Agent开发文档.md` | **主开发文档**（需求+架构+实现+最佳实践）v8.1 |
-| `API文档_完整版.md` | 完整 REST API 端点、接口对照表 |
-| `错误与解决方案.md` | 错误码分类、调试指南 |
-| `Loguru日志系统使用指南.md` | Loguru 日志配置与使用 |
+| Module | Document |
+|--------|----------|
+| langgraph_workflow | [LangGraph Workflow](architecture/langgraph_workflow/langgraph-workflow.md) |
+| api | [API Gateway](architecture/api/api-gateway.md) |
+| server | [Server Module](architecture/server/server-module.md) |
+| sdk | [SDK Module](architecture/sdk/sdk-module.md) |
 
-### 4. implemented/career/ - 简历与面试 (4份)
+### Agents
 
-| 文档 | 说明 |
-|------|------|
-| `AI_Agent_Interview_Questions.md` | AI Agent 面试题汇总 |
-| `AI工程师简历写作指南.md` | 简历写作指南 |
-| `resume-project-final.md` | 项目描述（英文） |
-| `简历项目描述-迭代优化版.md` | 项目描述（中文） |
+| Module | Document |
+|--------|----------|
+| paper_agents | [Paper Agents](architecture/paper_agents/paper-agents.md) |
+| paper_search | [Paper Search](architecture/paper_search/paper-search-module.md) |
+| writing | [Writing Module](architecture/writing/writing-module.md) |
+| academic_qa | [Academic QA](architecture/academic_qa/academic-qa-system.md) |
+| problem_oriented | [Problem Oriented](architecture/problem_oriented/problem-oriented-module.md) |
 
----
+### Data & Retrieval
 
-## 二、plans/ - 开发计划
+| Module | Document |
+|--------|----------|
+| search | [Search Module](architecture/search/search-module.md), [Search System](architecture/search/search-system.md) |
+| retrieval | [Retrieval System](architecture/retrieval/retrieval-system.md) |
+| knowledge_graph | [Knowledge Graph](architecture/knowledge_graph/knowledge-graph.md) |
+| memory | [Memory System](architecture/memory/memory-system.md) |
+| storage | [Storage Layer](architecture/storage/storage-layer.md) |
 
-> 尚未实现的未来计划，包含设计架构和技术调研
+### Infrastructure
 
-### 1. plans/architecture/ - 计划架构 (5份)
+| Module | Document |
+|--------|----------|
+| monitoring | [Monitoring System](architecture/monitoring/monitoring-system.md) |
+| evaluation | [Evaluation System](architecture/evaluation/evaluation-system.md) |
+| routing | [Routing System](architecture/routing/routing-system.md) |
+| intent | [Intent Router](architecture/intent/intent-router.md) |
+| citation | [Citation Module](architecture/citation/citation-module.md) |
+| tools | [Tools Module](architecture/tools/tools-module.md) |
+| skills | [Skills System](architecture/skills/skills-system.md) |
+| scheduler | [Scheduler System](architecture/scheduler/scheduler-system.md) |
+| personalization | [Personalization](architecture/personalization/personalization-system.md) |
+| multimodal | [Multimodal](architecture/multimodal/multimodal-system.md) |
+| state | [State Management](architecture/state/state-management.md) |
 
-| 文档 | 说明 |
-|------|------|
-| `论文Agent前沿开发报告.md` | 40+ Agent 框架调研、Harness 设计、开发路线图 |
-| `框架审查与修正报告.md` | 项目架构审计、问题分析、改进建议 |
-| `记忆系统与数据存储融合方案.md` | 记忆系统 v3.0 升级方案（PostgreSQL + Qdrant + Neo4j） |
-| `长期记忆写入短期记忆机制改进方案.md` | 记忆流转机制改进设计 |
-| `测试计划_PaperAgent.md` | 测试计划文档 |
+## API
 
-### 2. plans/research/ - 计划相关调研
+| Document | Description |
+|----------|-------------|
+| [API Reference](api/api-reference.md) | REST API endpoints |
+| [Logging](api/logging.md) | Loguru logging configuration |
 
-> 与未来开发计划相关的技术调研（预留）
+## Development
 
----
+| Document | Description |
+|----------|-------------|
+| [Development Guide](development/development-guide.md) | Main development doc |
+| [Troubleshooting](development/troubleshooting.md) | Error solutions |
+| [Roadmap](development/roadmap.md) | Module development roadmap |
+| [Testing](development/testing.md) | Test plan |
+| [Architecture Review](development/architecture-review.md) | Architecture audit report |
+| [Plans](development/plans/) | Per-module development plans |
 
-## 三、research/ - 技术调研
+## Research
 
-> 各种技术的深度调研报告，搜索与分析。与实现和计划无关，纯粹的技术探索。
+Technical research organized by topic.
 
-### 01-Agent协议与架构 (1份)
-
-| 文档 | 说明 |
-|------|------|
-| `Agent协议生态调研报告.md` | Agent 协议全景调研 |
-
-### 02-提示词工程 (2份)
-
-| 文档 | 说明 |
-|------|------|
-| `Agent提示词工程指南.md` | 项目提示词规范标准 |
-| `Complete_Prompt_Engineering_Guide.md` | 提示词工程通用理论（16 章） |
-
-### 03-Agent能力评估 (2份)
-
-| 文档 | 说明 |
-|------|------|
-| `COMPLETE_AGENT_EVALUATION_GUIDE.md` | Agent 评估完整指南（10 章） |
-| `Agent长程任务处理调研报告.md` | 长程任务处理调研 |
-
-### 04-PaperAgent技能 (2份)
-
-| 文档 | 说明 |
-|------|------|
-| `PaperAgent_Skill_调研报告.md` | Skill 生态调研 |
-| `PaperAgent_UI_调研报告.md` | UI/UX 设计调研 |
-
-### 05-学术搜索与解析 (2份)
-
-| 文档 | 说明 |
-|------|------|
-| `PDF解析技术调研报告.md` | PDF 解析技术方案对比 |
-| `学术论文搜索开发报告.md` | 学术搜索开发文档 |
-
-### 06-意图识别与路由 (2份)
-
-| 文档 | 说明 |
-|------|------|
-| `意图识别技术调研报告.md` | 意图识别技术调研 |
-| `智能问答Agent调研报告.md` | QA Agent 技术调研 |
-
-### 08-日志与监控 (2份)
-
-| 文档 | 说明 |
-|------|------|
-| `日志系统调研报告.md` | 日志系统选型调研 |
-| `搜索性能优化报告.md` | 搜索性能优化报告 |
-
-### 根目录调研文件 (5份)
-
-| 文档 | 说明 |
-|------|------|
-| `AI_Agent_记忆系统调研报告_Hermes_Hindsight_Obsidian.md` | 记忆系统深度调研（Mem0/Zep/Hermes/Hindsight/Obsidian） |
-| `长期记忆写入短期记忆机制调研报告.md` | 记忆机制调研 |
-| `arxiv_rate_limit_solutions.md` | arXiv 限流解决方案 |
-| `调研提示词.md` | 调研提示词模板 |
-| `质量评判标准.md` | 质量评估标准 |
-
----
-
-## 四、根目录文件
-
-| 文档 | 说明 |
-|------|------|
-| `agents_catalog.md` | 全部 Agent 清单与职责索引 |
-| `PROJECT_SUMMARY.md` | 项目完成报告 |
-| `README.md` | 本文件 |
-| `IMAGE_REGISTRY.md` | 镜像仓库使用指南 |
-| `RUN.md` | 运行指南 |
-| `RUNNING.md` | 详细运行文档 |
-
----
-
-## 五、test_results/ - 测试报告
-
-| 文档 | 说明 |
-|------|------|
-| `搜索系统性能测试报告.md` | 搜索性能测试 |
-| `parallel_optimization_report.md` | 并行优化报告 |
-| `query_rewrite_comparison_report.md` | 查询改写对比报告 |
-| `搜索系统性能测试报告.md` | 搜索系统性能测试 |
-
----
-
-## 文档统计
-
-| 目录 | 数量 | 说明 |
-|------|------|------|
-| **implemented/** | 13 份 | 当前代码库实现的架构 |
-| **plans/architecture/** | 5 份 | 未来开发的设计架构 |
-| **plans/research/** | 预留 | 计划相关调研 |
-| **research/** | 17 份 | 技术调研报告 |
-| **test_results/** | 4 份 | 测试报告 |
-| 根目录其他 | 9 份 | 索引、指南等 |
-| **总计** | **48 份** | |
-
----
-
-*最后更新: 2026-05-02*
+| Topic | Description |
+|-------|-------------|
+| [01-Agent Protocols](research/01-Agent协议与架构/) | MCP, A2A, Skills protocols |
+| [02-Prompt Engineering](research/02-提示词工程/) | Prompt engineering guides |
+| [03-Agent Evaluation](research/03-Agent能力评估/) | Agent evaluation frameworks |
+| [04-PaperAgent Skills](research/04-PaperAgent技能/) | Skill ecosystem research |
+| [05-Academic Search](research/05-学术搜索与解析/) | PDF parsing, academic search |
+| [06-Intent & Routing](research/06-意图识别与路由/) | Intent recognition research |
+| [07-Memory System](research/07-记忆系统/) | Memory system architecture |
+| [08-Logging & Monitoring](research/08-日志与监控/) | Logging system research |
+| [Academic QA Deep Dive](research/学术QA系统深度调研/) | QA system research |

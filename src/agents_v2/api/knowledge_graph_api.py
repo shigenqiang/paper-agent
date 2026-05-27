@@ -567,7 +567,7 @@ async def handle_detect_communities(request: web.Request) -> web.Response:
             })
 
         # 执行社区检测
-        from src.agents_v2.knowledge_graph.kg_community import (
+        from src.agents_v2.search.sources.knowledge_graph.kg_community import (
             detect_communities,
             CommunityAlgorithm
         )

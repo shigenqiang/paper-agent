@@ -23,12 +23,7 @@ Agent列表:
 
 推荐使用统一模块:
 - src.agents_v2.citation: 统一引用管理
-- src.agents_v2.reports: 统一报告生成
 """
-
-# 统一模块导入（推荐）
-# from src.agents_v2.citation import CitationFormatter, DOIVerifier
-# from src.agents_v2.reports import DailyReportGenerator, WeeklyReportGenerator
 
 from .literature_review import LiteratureReviewAgent
 from .outline_generator import OutlineGeneratorAgent

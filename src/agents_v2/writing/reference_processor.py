@@ -160,7 +160,7 @@ class ReferenceProcessorAgent(WritingAgentBase):
         try:
             response = await self._llm_call(prompt)
 
-            from src.agents_v2.unified.pydantic_validator import parse_json
+            from src.agents_v2.workflow.unified.pydantic_validator import parse_json
             data = parse_json(response)
 
             if data and "formatted" in data:
@@ -380,7 +380,7 @@ class ReferenceProcessorAgent(WritingAgentBase):
         try:
             response = await self._llm_call(prompt)
 
-            from src.agents_v2.unified.pydantic_validator import parse_json
+            from src.agents_v2.workflow.unified.pydantic_validator import parse_json
             data = parse_json(response)
 
             if data:

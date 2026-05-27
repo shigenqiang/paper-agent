@@ -14,7 +14,7 @@ import json
 import re
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
-from ..unified.pydantic_validator import parse_json
+from ..workflow.unified.pydantic_validator import parse_json
 
 logger = get_logging_logger(__name__)
 

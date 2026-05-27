@@ -15,7 +15,7 @@ import json
 import re
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
-from ..problem_oriented.base_problem_agent import AgentOutput
+from ..agents.problem.base_problem_agent import AgentOutput
 
 logger = get_logging_logger(__name__)
 

@@ -240,7 +240,7 @@ class APIGateway:
     async def _get_hitl_pending(self, request: APIRequest) -> Dict:
         """获取待处理的HITL请求"""
         try:
-            from ..unified.hitl_manager import get_hitl_manager
+            from ..workflow.unified.hitl_manager import get_hitl_manager
             hitl = get_hitl_manager()
             pending = hitl.get_pending_requests()
             return {
@@ -266,7 +266,7 @@ class APIGateway:
     async def _respond_hitl(self, request: APIRequest) -> Dict:
         """响应HITL请求"""
         try:
-            from ..unified.hitl_manager import get_hitl_manager
+            from ..workflow.unified.hitl_manager import get_hitl_manager
             hitl = get_hitl_manager()
             body = request.body or {}
             request_id = body.get("request_id", "")
@@ -290,7 +290,7 @@ class APIGateway:
     async def _get_hitl_history(self, request: APIRequest) -> Dict:
         """获取HITL干预历史"""
         try:
-            from ..unified.hitl_manager import get_hitl_manager
+            from ..workflow.unified.hitl_manager import get_hitl_manager
             hitl = get_hitl_manager()
             limit = int(request.params.get("limit", "50"))
             history = hitl.get_intervention_history(limit=limit)
@@ -314,7 +314,7 @@ class APIGateway:
     async def _get_hitl_stats(self, request: APIRequest) -> Dict:
         """获取HITL统计信息"""
         try:
-            from ..unified.hitl_manager import get_hitl_manager
+            from ..workflow.unified.hitl_manager import get_hitl_manager
             hitl = get_hitl_manager()
             return hitl.get_stats()
         except Exception as e:
@@ -324,7 +324,7 @@ class APIGateway:
     async def _cancel_hitl(self, request: APIRequest) -> Dict:
         """取消HITL请求"""
         try:
-            from ..unified.hitl_manager import get_hitl_manager
+            from ..workflow.unified.hitl_manager import get_hitl_manager
             hitl = get_hitl_manager()
             body = request.body or {}
             request_id = body.get("request_id")

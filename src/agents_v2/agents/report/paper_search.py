@@ -1,0 +1,904 @@
+"""论文搜索Agent - 从arXiv和PubMed搜索统计学论文"""
+from src.agents_v2.logging_config import get_logging_logger
+
+import asyncio
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta
+import json
+import xml.etree.ElementTree as ET
+
+from .base_qa_agent import BaseQAAgent
+from src.agents_v2.core.storage.paper_db import PaperDatabase, get_paper_db as get_db
+
+logger = get_logging_logger(__name__)
+
+
+@dataclass
+class Paper:
+    """论文数据结构"""
+    paper_id: str
+    title: str
+    authors: List[str]
+    year: int
+    abstract: str = ""
+    url: str = ""
+    source: str = ""  # arxiv, pubmed
+    citations: int = 0
+    keywords: List[str] = field(default_factory=list)
+    methodology: str = ""
+    key_contributions: List[str] = field(default_factory=list)
+    results: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "paper_id": self.paper_id,
+            "title": self.title,
+            "authors": self.authors,
+            "year": self.year,
+            "abstract": self.abstract,
+            "url": self.url,
+            "source": self.source,
+            "citations": self.citations,
+            "keywords": self.keywords,
+            "methodology": self.methodology,
+            "key_contributions": self.key_contributions,
+            "results": self.results
+        }
+
+
+@dataclass
+class SearchResult:
+    """搜索结果"""
+    papers: List[Paper]
+    total_count: int
+    search_time: float
+    query: str
+    filters_applied: Dict[str, Any] = field(default_factory=dict)
+    errors: List[str] = field(default_factory=list)
+
+
+class PaperSearchAgent(BaseQAAgent):
+    """
+    论文搜索Agent
+
+    支持的数据源:
+    - arXiv: 机器学习、统计理论
+    - PubMed: 生物统计、医学应用
+    - Semantic Scholar: AI学术搜索
+    - CrossRef: 学术元数据
+    - OpenAlex: 跨学科学术API（免费、无限制）
+
+    搜索策略:
+    1. 多关键词组合
+    2. 时间范围筛选
+    3. 相关性排序
+    4. 去重和过滤
+    """
+
+    def __init__(self):
+        super().__init__(
+            name="PaperSearchAgent",
+            description="论文搜索Agent - 从arXiv和PubMed搜索统计学论文"
+        )
+
+    async def execute(
+        self,
+        query: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        执行论文搜索
+
+        Args:
+            query: 搜索查询
+            context: 包含 source, time_range, max_results 等
+
+        Returns:
+            搜索结果字典
+        """
+        self.logger.debug(f"搜索论文: {query}")
+
+        context = context or {}
+        source = context.get("source", "all")  # all, arxiv, pubmed
+        time_range = context.get("time_range", 365)  # 天数
+        max_results = context.get("max_results", 10)
+        page = context.get("page", 1)
+
+        results = SearchResult(
+            papers=[],
+            total_count=0,
+            search_time=0.0,
+            query=query,
+            filters_applied={"source": source, "time_range": time_range, "page": page}
+        )
+
+        start_time = asyncio.get_event_loop().time()
+
+        # ===== 优化：先查本地数据库，避免重复搜索 =====
+        db = get_db()
+        cached_papers = []
+        search_queries_to_run = []
+
+        # 使用标题模糊匹配查找本地已有论文
+        try:
+            existing = db.find_by_title(query)
+            if existing:
+                self.logger.info(f"本地数据库找到相关论文: {existing.title[:50]}...")
+        except Exception as e:
+            self.logger.debug(f"本地查询跳过: {e}")
+
+        # ===== 原有搜索逻辑 =====
+        try:
+            # 根据source决定搜索哪些数据源
+            tasks = []
+
+            if source in ["all", "arxiv"]:
+                tasks.append(self._search_arxiv(query, time_range, max_results, page))
+
+            if source in ["all", "pubmed"]:
+                tasks.append(self._search_pubmed(query, time_range, max_results, page))
+
+            if source in ["all", "semantic_scholar"]:
+                tasks.append(self._search_semantic_scholar(query, max_results))
+
+            if source in ["all", "crossref"]:
+                tasks.append(self._search_crossref(query, max_results))
+
+            if source in ["all", "openalex"]:
+                tasks.append(self._search_openalex(query, max_results))
+
+            # 并行执行搜索
+            search_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 聚合结果
+            for i, result in enumerate(search_results):
+                if isinstance(result, Exception):
+                    self.logger.error(f"搜索出错: {result}")
+                    results.errors.append(str(result))
+                else:
+                    results.papers.extend(result)
+
+            # 去重
+            results.papers = self._deduplicate_papers(results.papers)
+
+            # 排序
+            results.papers = self._rank_papers(results.papers, query)
+
+            # 保存到数据库
+            db_save_result = None
+            try:
+                paper_db = get_db()
+                # 直接使用 SQLite 插入，绕过 Paper 类的字段限制
+                import hashlib
+                import uuid as uuid_module
+
+                saved_count = 0
+                skipped_count = 0
+                failed_count = 0
+
+                for p in results.papers:
+                    try:
+                        # 计算指纹用于去重
+                        authors_json = json.dumps(p.authors, ensure_ascii=False)
+                        fingerprint_content = f"{p.title.lower().strip()}|{p.year}|{authors_json.lower()}"
+                        fingerprint = hashlib.md5(fingerprint_content.encode()).hexdigest()
+
+                        # 检查是否已存在
+                        cursor = paper_db._conn.cursor()
+                        cursor.execute("SELECT paper_id FROM papers WHERE fingerprint = ?", (fingerprint,))
+                        existing = cursor.fetchone()
+                        if existing:
+                            skipped_count += 1
+                            continue
+
+                        # 生成 paper_id
+                        paper_id = str(uuid_module.uuid4())
+                        now = datetime.now().isoformat()
+
+                        # 插入 SQLite
+                        cursor.execute("""
+                            INSERT INTO papers (
+                                paper_id, title, authors, year, abstract, url, source,
+                                paper_external_id, doi, venue, citations, keywords,
+                                methodology, key_contributions, results, raw_data,
+                                fingerprint, embedding, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            paper_id,
+                            p.title,
+                            json.dumps(p.authors, ensure_ascii=False),
+                            p.year,
+                            p.abstract,
+                            p.url,
+                            p.source,
+                            p.paper_id,  # paper_external_id
+                            "",  # doi
+                            "",  # venue
+                            p.citations,
+                            json.dumps(p.keywords, ensure_ascii=False),
+                            p.methodology,
+                            json.dumps(p.key_contributions, ensure_ascii=False),
+                            p.results,
+                            json.dumps(p.to_dict(), ensure_ascii=False),  # raw_data
+                            fingerprint,
+                            json.dumps(p.embedding) if hasattr(p, 'embedding') and p.embedding else "[]",
+                            now,
+                            now,
+                        ))
+                        paper_db._conn.commit()
+                        saved_count += 1
+                    except Exception as e:
+                        if "UNIQUE constraint" in str(e):
+                            skipped_count += 1
+                        else:
+                            failed_count += 1
+                            self.logger.warning(f"保存论文失败: {p.title[:30]} - {e}")
+
+                db_save_result = {
+                    "saved": saved_count,
+                    "skipped": skipped_count,
+                    "failed": failed_count
+                }
+                self.logger.info(
+                    f"数据库保存: 新增{saved_count}篇, "
+                    f"跳过{skipped_count}篇(已存在), "
+                    f"失败{failed_count}篇"
+                )
+            except Exception as db_err:
+                self.logger.warning(f"数据库保存失败: {db_err}")
+
+            results.total_count = len(results.papers)
+            results.search_time = asyncio.get_event_loop().time() - start_time
+
+            self.logger.debug(f"找到 {results.total_count} 篇论文")
+
+            response = {
+                "success": True,
+                "papers": [p.to_dict() for p in results.papers],
+                "total_count": results.total_count,
+                "search_time": results.search_time,
+                "query": query,
+                "errors": results.errors
+            }
+
+            # 添加数据库保存结果
+            if db_save_result:
+                response["db_save"] = db_save_result
+
+            return response
+
+        except Exception as e:
+            self.logger.error(f"搜索失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "papers": [],
+                "total_count": 0
+            }
+
+    async def _search_arxiv(
+        self,
+        query: str,
+        time_range: int = 365,
+        max_results: int = 10,
+        page: int = 1
+    ) -> List[Paper]:
+        """搜索arXiv"""
+        try:
+            import urllib.request
+            import urllib.parse
+            import ssl
+            import time
+
+            # 创建SSL上下文（忽略证书验证）
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            # 优先使用HTTPS
+            base_url = "https://export.arxiv.org/api/query"
+            start = (page - 1) * max_results
+
+            # 尝试不同查询策略，从精确到宽泛
+            queries_to_try = []
+
+            # 策略1: 使用all字段搜索（最简单最稳定）
+            queries_to_try.append(f"all:{query}")
+
+            # 策略2: 简单的 abs 搜索
+            queries_to_try.append(f"abs:{query}")
+
+            # 策略3: 简单的 ti 搜索
+            queries_to_try.append(f"ti:{query}")
+
+            # 策略4: 带日期过滤的all字段搜索
+            start_date = datetime.now() - timedelta(days=time_range)
+            date_query = f"submittedDate:[{start_date.strftime('%Y%m%d')} TO NOW]"
+            queries_to_try.append(f"all:{query} AND {date_query}")
+
+            max_retries = 0  # 不重试，快速失败
+            timeout = 1  # arXiv在国内访问不可用，设置1秒超时快速失败
+            for idx, search_query_str in enumerate(queries_to_try):
+                for retry in range(max_retries):
+                    try:
+                        params = urllib.parse.urlencode({
+                            "search_query": search_query_str,
+                            "start": start,
+                            "max_results": max_results,
+                            "sortBy": "relevance"
+                        })
+                        url = f"{base_url}?{params}"
+                        self.logger.debug(f"arXiv请求 [{idx+1}/4]: query={search_query_str[:80]}...")
+
+                        with urllib.request.urlopen(url, timeout=timeout, context=ssl_context) as response:
+                            data = response.read().decode("utf-8")
+                            self.logger.debug(f"arXiv响应长度: {len(data)} bytes")
+
+                        papers = self._parse_arxiv_xml(data, query)
+                        if papers:
+                            self.logger.debug(f"arXiv找到 {len(papers)} 篇论文")
+                            return papers
+                        # 没有结果但没有报错，继续尝试下一个策略
+                        self.logger.warning(f"策略{idx+1}返回0结果，继续...")
+                        break
+                    except urllib.error.HTTPError as e:
+                        if e.code == 429:
+                            # Rate limiting，等待后重试（减少等待时间）
+                            wait_time = (retry + 1) * 2
+                            self.logger.warning(f"arXiv API限流，等待{wait_time}秒后重试...")
+                            time.sleep(wait_time)
+                            continue
+                        elif e.code == 500:
+                            # HTTP 500可能是查询格式问题，尝试简化
+                            self.logger.warning(f"arXiv查询策略{idx+1}失败 (HTTP 500): query={search_query_str[:80]}...")
+                            break
+                        else:
+                            self.logger.warning(f"arXiv查询策略{idx+1}失败 (HTTP {e.code}): query={search_query_str[:80]}...")
+                            break
+                    except Exception as e:
+                        self.logger.warning(f"arXiv查询策略{idx+1}失败: {type(e).__name__}: {e}")
+                        break
+
+            self.logger.warning(f"arXiv所有查询策略均未找到结果: {query}")
+            return []
+
+        except Exception as e:
+            self.logger.error(f"arXiv搜索失败: {e}")
+            return []
+
+    async def _search_pubmed(
+        self,
+        query: str,
+        time_range: int = 365,
+        max_results: int = 10,
+        page: int = 1
+    ) -> List[Paper]:
+        """搜索PubMed"""
+        try:
+            import urllib.request
+            import urllib.parse
+            import xml.etree.ElementTree as ET
+            import ssl
+
+            # 创建SSL上下文（忽略证书验证）
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            # PubMed E-utilities
+            base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+            search_url = f"{base_url}esearch.fcgi"
+
+            # 直接搜索标题和摘要，不添加额外限制
+            search_query = f"{query}[Title/Abstract]"
+
+            params = urllib.parse.urlencode({
+                "db": "pubmed",
+                "term": search_query,
+                "retmax": max_results,
+                "retstart": (page - 1) * max_results,
+                "retmode": "json",
+                "datetype": "pdat",
+                "reldate": time_range
+            })
+
+            url = f"{search_url}?{params}"
+            self.logger.debug(f"PubMed Search URL: {url}")
+
+            # 获取ID列表
+            with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
+                import json as json_lib
+                search_data = json_lib.loads(response.read().decode("utf-8"))
+
+            id_list = search_data.get("esearchresult", {}).get("idlist", [])
+            if not id_list:
+                return []
+
+            # 获取详情
+            summary_url = f"{base_url}esummary.fcgi"
+            summary_params = urllib.parse.urlencode({
+                "db": "pubmed",
+                "id": ",".join(id_list),
+                "retmode": "json"
+            })
+
+            with urllib.request.urlopen(f"{summary_url}?{summary_params}", timeout=30, context=ssl_context) as response:
+                summary_data = json_lib.loads(response.read().decode("utf-8"))
+
+            # 解析结果
+            papers = self._parse_pubmed_summary(summary_data, query)
+            self.logger.debug(f"PubMed找到 {len(papers)} 篇论文")
+            return papers
+
+        except Exception as e:
+            self.logger.error(f"PubMed搜索失败: {e}")
+            return []
+
+    async def _search_semantic_scholar(
+        self,
+        query: str,
+        max_results: int = 10
+    ) -> List[Paper]:
+        """搜索Semantic Scholar"""
+        try:
+            import urllib.request
+            import urllib.parse
+            import ssl
+
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+            params = urllib.parse.urlencode({
+                "query": query,
+                "limit": min(max_results, 20),
+                "fields": "paperId,title,abstract,authors,year,citationCount,venue,externalIds"
+            })
+
+            url = f"{base_url}?{params}"
+            self.logger.debug(f"Semantic Scholar URL: {url}")
+
+            with urllib.request.urlopen(url, timeout=30, context=ssl_context) as response:
+                import json as json_lib
+                data = json_lib.loads(response.read().decode("utf-8"))
+
+            papers = []
+            for item in data.get("data", []):
+                try:
+                    authors = [a.get("name", "") for a in item.get("authors", [])[:10]]
+                    external_ids = item.get("externalIds", {}) or {}
+                    doi = external_ids.get("DOI", "")
+
+                    paper = Paper(
+                        paper_id=item.get("paperId", ""),
+                        title=item.get("title", ""),
+                        authors=authors,
+                        year=item.get("year", 0) or 0,
+                        abstract=item.get("abstract", "") or "",
+                        url=f"https://www.semanticscholar.org/paper/{item.get('paperId', '')}",
+                        source="semantic_scholar",
+                        citations=item.get("citationCount", 0) or 0,
+                        methodology=self._extract_methodology(item.get("abstract", "")),
+                        key_contributions=self._extract_contributions(item.get("abstract", ""))
+                    )
+                    papers.append(paper)
+                except Exception as e:
+                    self.logger.warning(f"解析Semantic Scholar论文失败: {e}")
+                    continue
+
+            self.logger.debug(f"Semantic Scholar找到 {len(papers)} 篇论文")
+            return papers
+
+        except Exception as e:
+            self.logger.error(f"Semantic Scholar搜索失败: {e}")
+            return []
+
+    async def _search_crossref(
+        self,
+        query: str,
+        max_results: int = 10
+    ) -> List[Paper]:
+        """搜索CrossRef"""
+        try:
+            import urllib.request
+            import urllib.parse
+            import ssl
+            import re
+
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            base_url = "https://api.crossref.org/works"
+            params = urllib.parse.urlencode({
+                "query": query,
+                "rows": min(max_results, 20),
+                "sort": "relevance"
+            })
+
+            url = f"{base_url}?{params}"
+            self.logger.debug(f"CrossRef URL: {url}")
+
+            headers = {
+                "User-Agent": "Paper-Agent/1.0 (mailto:paper-agent@example.com)"
+            }
+
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
+                import json as json_lib
+                data = json_lib.loads(response.read().decode("utf-8"))
+
+            papers = []
+            items = data.get("message", {}).get("items", [])
+            for item in items:
+                try:
+                    # 提取作者
+                    authors = []
+                    for author in item.get("author", []):
+                        given = author.get("given", "")
+                        family = author.get("family", "")
+                        if given or family:
+                            authors.append(f"{given} {family}".strip())
+
+                    # 提取年份
+                    published = item.get("published-print") or item.get("published-online") or {}
+                    date_parts = published.get("date-parts", [[None]])
+                    year = date_parts[0][0] if date_parts and date_parts[0] else 0
+
+                    # 提取期刊
+                    container = item.get("container-title", [])
+                    venue = container[0] if container else ""
+
+                    # 提取DOI和URL
+                    doi = item.get("DOI", "")
+                    url = f"https://doi.org/{doi}" if doi else ""
+
+                    # 提取摘要
+                    abstract = item.get("abstract", "") or ""
+                    abstract = re.sub(r'<[^>]+>', '', abstract)
+
+                    paper = Paper(
+                        paper_id=doi,
+                        title=item.get("title", [""])[0] if item.get("title") else "",
+                        authors=authors,
+                        year=int(year) if year else 0,
+                        abstract=abstract,
+                        url=url,
+                        source="crossref",
+                        citations=item.get("is-referenced-by-count", 0) or 0,
+                        methodology=self._extract_methodology(abstract),
+                        key_contributions=self._extract_contributions(abstract)
+                    )
+                    papers.append(paper)
+                except Exception as e:
+                    self.logger.warning(f"解析CrossRef论文失败: {e}")
+                    continue
+
+            self.logger.debug(f"CrossRef找到 {len(papers)} 篇论文")
+            return papers
+
+        except Exception as e:
+            self.logger.error(f"CrossRef搜索失败: {e}")
+            return []
+
+    async def _search_openalex(
+        self,
+        query: str,
+        max_results: int = 10
+    ) -> List[Paper]:
+        """搜索OpenAlex - 开源跨学科学术API"""
+        try:
+            import urllib.request
+            import urllib.parse
+            import ssl
+            import json
+
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            base_url = "https://api.openalex.org/works"
+            params = urllib.parse.urlencode({
+                "search": query,
+                "per-page": min(max_results, 50),
+                "filter": "publication_year:2020-2026"
+            })
+
+            url = f"{base_url}?{params}"
+            self.logger.debug(f"OpenAlex URL: {url}")
+
+            headers = {
+                "User-Agent": "Paper-Agent/1.0 (mailto:paper-agent@example.com)"
+            }
+
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
+                data = json.loads(response.read().decode("utf-8"))
+
+            papers = []
+            for item in data.get("results", []):
+                try:
+                    # 提取作者
+                    authors = []
+                    for auth in item.get("authorships", [])[:10]:
+                        author = auth.get("author", {})
+                        if author:
+                            name = author.get("display_name", "")
+                            if name:
+                                authors.append(name)
+
+                    # 提取年份
+                    year = item.get("publication_year", 0) or 0
+
+                    # 提取期刊/会议
+                    primary_location = item.get("primary_location", {}) or {}
+                    source = primary_location.get("source", {}) or {}
+                    venue = source.get("display_name", "") or item.get("type", "")
+
+                    # 提取DOI和URL
+                    doi = item.get("doi", "") or ""
+                    if doi.startswith("https://doi.org/"):
+                        url = doi
+                    elif doi.startswith("10."):
+                        url = f"https://doi.org/{doi}"
+                    else:
+                        url = doi or item.get("id", "")
+
+                    # 提取摘要
+                    abstract_index = item.get("abstract_inverted_index")
+                    abstract = ""
+                    if abstract_index and isinstance(abstract_index, dict):
+                        try:
+                            words = []
+                            for word, positions in abstract_index.items():
+                                if isinstance(positions, list) and len(positions) > 0:
+                                    pos = positions[0]
+                                    if isinstance(pos, dict) and "EndOffset" in pos:
+                                        words.append((word, pos["EndOffset"]))
+                            words.sort(key=lambda x: x[1])
+                            abstract = " ".join(w[0] for w in words)
+                        except Exception:
+                            abstract = ""
+
+                    paper = Paper(
+                        paper_id=doi or item.get("id", "").split("/")[-1],
+                        title=item.get("title", "") or "",
+                        authors=authors,
+                        year=int(year) if year else 0,
+                        abstract=abstract,
+                        url=url or item.get("id", ""),
+                        source="openalex",
+                        citations=item.get("cited_by_count", 0) or 0,
+                        methodology=self._extract_methodology(abstract),
+                        key_contributions=self._extract_contributions(abstract)
+                    )
+                    papers.append(paper)
+                except Exception as e:
+                    self.logger.warning(f"解析OpenAlex论文失败: {e}")
+                    continue
+
+            self.logger.debug(f"OpenAlex找到 {len(papers)} 篇论文")
+            return papers
+
+        except Exception as e:
+            self.logger.error(f"OpenAlex搜索失败: {e}")
+            return []
+
+    def _parse_arxiv_xml(self, xml_data: str, query: str) -> List[Paper]:
+        """解析arXiv XML响应"""
+        papers = []
+        try:
+            root = ET.fromstring(xml_data)
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+
+            for entry in root.findall("atom:entry", ns):
+                try:
+                    paper_id = entry.find("atom:id", ns).text.split("/")[-1]
+
+                    title = entry.find("atom:title", ns).text or ""
+                    title = " ".join(title.split())  # 清理空白
+
+                    authors = [
+                        author.find("atom:name", ns).text
+                        for author in entry.findall("atom:author", ns)
+                        if author.find("atom:name", ns) is not None
+                    ]
+
+                    published = entry.find("atom:published", ns).text or ""
+                    year = int(published[:4]) if published else 2024
+
+                    abstract = entry.find("atom:summary", ns).text or ""
+                    abstract = " ".join(abstract.split())
+
+                    url = entry.find("atom:id", ns).text or ""
+
+                    # 提取关键词/类别
+                    categories = [
+                        cat.get("term")
+                        for cat in entry.findall("atom:category", ns)
+                    ]
+
+                    paper = Paper(
+                        paper_id=paper_id,
+                        title=title,
+                        authors=authors,
+                        year=year,
+                        abstract=abstract,
+                        url=url,
+                        source="arxiv",
+                        keywords=categories,
+                        methodology=self._extract_methodology(abstract),
+                        key_contributions=self._extract_contributions(abstract)
+                    )
+                    papers.append(paper)
+
+                except Exception as e:
+                    self.logger.warning(f"解析论文失败: {e}")
+                    continue
+
+        except Exception as e:
+            self.logger.error(f"XML解析失败: {e}")
+
+        return papers
+
+    def _parse_pubmed_summary(self, summary_data: Dict, query: str) -> List[Paper]:
+        """解析PubMed摘要响应"""
+        papers = []
+        try:
+            result = summary_data.get("result", {})
+            for pmid, info in result.items():
+                if pmid == "uids":
+                    continue
+
+                try:
+                    # 提取作者
+                    authors = []
+                    author_list = info.get("authors", [])
+                    for auth in author_list:
+                        if "name" in auth:
+                            authors.append(auth["name"])
+
+                    # 提取摘要（如果可用）
+                    abstract = info.get("abstract", "")
+
+                    try:
+                        pubdate = info.get("pubdate", "2024")
+                        year = int(pubdate[:4]) if pubdate else 2024
+                    except (ValueError, TypeError):
+                        year = 2024
+
+                    try:
+                        citations = int(info.get("pmcrefcount", 0) or 0)
+                    except (ValueError, TypeError):
+                        citations = 0
+
+                    paper = Paper(
+                        paper_id=pmid,
+                        title=info.get("title", ""),
+                        authors=authors,
+                        year=year,
+                        abstract=abstract,
+                        url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                        source="pubmed",
+                        citations=citations,
+                        methodology=self._extract_methodology(abstract),
+                        key_contributions=self._extract_contributions(abstract)
+                    )
+                    papers.append(paper)
+
+                except Exception as e:
+                    self.logger.warning(f"解析PubMed论文失败: {e}")
+                    continue
+
+        except Exception as e:
+            self.logger.error(f"PubMed摘要解析失败: {e}")
+
+        return papers
+
+    def _extract_methodology(self, text: str) -> str:
+        """从摘要中提取方法关键词"""
+        methods = []
+        method_keywords = [
+            "markov chain monte carlo", "mcmc", "bayesian", "neural network",
+            "deep learning", "regression", "classification", "clustering",
+            "hierarchical model", "mixed model", "survival analysis",
+            "causal inference", "propensity score", "bootstrap"
+        ]
+
+        text_lower = text.lower()
+        for method in method_keywords:
+            if method in text_lower:
+                methods.append(method)
+
+        return ", ".join(methods) if methods else "未明确说明"
+
+    def _extract_contributions(self, text: str) -> List[str]:
+        """从摘要中提取主要贡献"""
+        contributions = []
+
+        # 简单规则：提取包含"propose", "develop", "introduce"等的句子
+        sentences = text.split(". ")
+        for sent in sentences:
+            sent_lower = sent.lower()
+            if any(kw in sent_lower for kw in ["propose", "develop", "introduce", "present", "new"]):
+                contributions.append(sent.strip()[:200])  # 限制长度
+
+        return contributions[:3]  # 最多3个贡献
+
+    def _deduplicate_papers(self, papers: List[Paper]) -> List[Paper]:
+        """去除重复论文"""
+        seen_titles = set()
+        unique_papers = []
+
+        for paper in papers:
+            # 使用标题标准化后去重
+            normalized_title = paper.title.lower().strip()
+            if normalized_title not in seen_titles:
+                seen_titles.add(normalized_title)
+                unique_papers.append(paper)
+
+        return unique_papers
+
+    def _rank_papers(self, papers: List[Paper], query: str) -> List[Paper]:
+        """根据相关性排序"""
+        query_terms = set(query.lower().split())
+
+        def relevance_score(paper: Paper) -> float:
+            score = 0.0
+
+            # 标题匹配
+            title_lower = paper.title.lower()
+            for term in query_terms:
+                if term in title_lower:
+                    score += 3.0
+
+            # 摘要匹配
+            abstract_lower = paper.abstract.lower()
+            for term in query_terms:
+                if term in abstract_lower:
+                    score += 1.0
+
+            # 引用数（归一化）
+            try:
+                citations = int(paper.citations) if paper.citations else 0
+            except (ValueError, TypeError):
+                citations = 0
+            score += min(citations / 100, 2.0)
+
+            # 最新论文加分
+            if paper.year >= 2024:
+                score += 1.0
+            elif paper.year >= 2023:
+                score += 0.5
+
+            return score
+
+        return sorted(papers, key=relevance_score, reverse=True)
+
+    def search_by_keywords(
+        self,
+        keywords: List[str],
+        source: str = "all"
+    ) -> List[Paper]:
+        """
+        基于关键词列表搜索（同步方法）
+
+        适用于每日推送等场景
+        """
+        query = " ".join(keywords)
+        # 同步调用
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        result = loop.run_until_complete(
+            self.execute(query, {"source": source, "max_results": 20})
+        )
+
+        return [Paper(**p) for p in result.get("papers", [])]

@@ -18,8 +18,8 @@ import asyncio
 from datetime import datetime, timedelta
 
 from .base_writing_agent import WritingAgentBase, WritingOutput, LLMConfig
-from ..paper_search.paper_search import PaperSearchAgent
-from ..storage.paper_db import get_paper_db as get_db
+from ..agents.report.paper_search import PaperSearchAgent
+from ..core.storage.paper_db import get_paper_db as get_db
 
 logger = get_logging_logger(__name__)
 

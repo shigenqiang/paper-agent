@@ -18,7 +18,7 @@ from .core.base_agent import (
 )
 
 # 统一框架
-from .unified import (
+from .workflow.unified import (
     MasterSupervisor,
     PhaseSupervisor,
     PaperState,
@@ -32,7 +32,7 @@ from .unified import (
 )
 
 # 论文搜索和报告系统
-from .paper_search import (
+from .agents.report import (
     QueryRouter,
     PaperSearchAgent,
     ReportGenerator,
@@ -48,10 +48,10 @@ from .paper_search import (
 )
 
 # Agent Skills (SKILL.md standard)
-from .skills import SkillsLoader, SkillDefinition
+from .infra.skills import SkillsLoader, SkillDefinition
 
 # Claude Agent SDK-style framework
-from .sdk import (
+from .api.sdk import (
     tool,
     Agent,
     AgentConfig,

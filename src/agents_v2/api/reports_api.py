@@ -113,7 +113,7 @@ async def search_papers_for_digest(digest_type: str, date_range: Dict[str, str])
         for query in keywords:
             try:
                 # 根据用户选择的来源进行搜索
-                from src.agents_v2.search.search_factory import SearchFactory
+                from src.agents_v2.search.sources.search_factory import SearchFactory
                 search_results = []
                 for source in enabled_sources:
                     searcher = SearchFactory.get(source)
@@ -205,7 +205,7 @@ async def generate_digest_summary(papers: List[Dict], digest_type: str) -> str:
     # 使用 DigestReportAgent 生成报告
     try:
         from src.agents_v2.paper_agents import DigestReportAgent
-        from src.agents_v2.paper_agents.base_paper_agent import LLMConfig
+        from src.agents_v2.agents.paper.base_paper_agent import LLMConfig
 
         llm_config = LLMConfig(
             provider="openai",
