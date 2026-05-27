@@ -175,9 +175,6 @@ memory/
 *.log
 CLAUDE.md
 
-# === Docs (local only) ===
-docs/
-
 # === Large Model Files ===
 *.safetensors
 *.bin
