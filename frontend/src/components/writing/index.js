@@ -1,1 +1,0 @@
-export { UploadPaperModal } from './UploadPaperModal'
