@@ -320,6 +320,8 @@ src/agents_v2/
 
 ## 七、业界最新论文Agent技能（基于知识库调研）
 
+> **注**: 7.1-7.3 的工具对比与 [学术AI-Agent-Skills调研报告](学术AI-Agent-Skills调研报告.md) 第3节有重叠。Skills报告更侧重Agent Skills生态和MCP协议，本节侧重项目集成选型。
+
 ### 7.1 学术写作AI工具推荐
 
 | 工具名称 | 主要功能 | 推荐度 |
@@ -1073,6 +1075,8 @@ class MultiSourcePaperSearcher:
 
 > 补充时间: 2026-05-01
 > 基于最新调研补充 Claude Agent SDK、A2A 协议、DeepSeek 模型等
+>
+> **注**: 本节内容与 [论文Agent前沿开发报告](论文Agent前沿开发报告.md) 有部分重叠。前沿开发报告覆盖更全面的行业系统（20+系统架构、GitHub数据、性能对比），本节侧重项目落地选型。
 
 ### 9.1 Claude Agent SDK
 

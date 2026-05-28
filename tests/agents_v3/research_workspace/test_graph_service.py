@@ -41,54 +41,53 @@ def sample_evidence(service):
 
 
 class TestGraphService:
-    def test_build_empty_graph(self, service):
+    def test_build_empty_graph_returns_empty(self, service):
         graph = service.build_project_graph("empty")
         assert len(graph.nodes) == 0
         assert len(graph.edges) == 0
 
-    def test_build_graph_with_evidence(self, service, sample_evidence):
+    def test_build_graph_with_evidence_creates_nodes_and_edges(self, service, sample_evidence):
         graph = service.build_project_graph("proj1")
         assert len(graph.nodes) > 0
         assert len(graph.edges) > 0
 
-    def test_paper_nodes_created(self, service, sample_evidence):
+    def test_build_graph_creates_paper_nodes(self, service, sample_evidence):
         graph = service.build_project_graph("proj1")
         paper_nodes = [n for n in graph.nodes if n.node_type == NodeType.PAPER]
         assert len(paper_nodes) == 2
 
-    def test_topic_nodes_created(self, service, sample_evidence):
+    def test_build_graph_creates_topic_nodes(self, service, sample_evidence):
         graph = service.build_project_graph("proj1")
         topic_nodes = [n for n in graph.nodes if n.node_type == NodeType.TOPIC]
         assert len(topic_nodes) >= 1
 
-    def test_method_nodes_created(self, service, sample_evidence):
+    def test_build_graph_creates_method_nodes(self, service, sample_evidence):
         graph = service.build_project_graph("proj1")
         method_nodes = [n for n in graph.nodes if n.node_type == NodeType.METHOD]
         assert len(method_nodes) == 2
 
-    def test_get_graph(self, service, sample_evidence):
+    def test_get_graph_returns_saved_graph(self, service, sample_evidence):
         service.build_project_graph("proj1")
         graph = service.get_graph("proj1")
         assert graph.project_id == "proj1"
 
-    def test_get_node(self, service, sample_evidence):
+    def test_get_node_returns_matching_node(self, service, sample_evidence):
         service.build_project_graph("proj1")
         node = service.get_node("proj1", "paper:p1")
         assert node is not None
         assert node.node_type == NodeType.PAPER
 
-    def test_get_neighbors(self, service, sample_evidence):
+    def test_get_neighbors_returns_connected_nodes(self, service, sample_evidence):
         service.build_project_graph("proj1")
         result = service.get_neighbors("proj1", "paper:p1", hops=1)
         assert len(result["nodes"]) > 0
 
-    def test_get_subgraph(self, service, sample_evidence):
+    def test_get_subgraph_returns_filtered_graph(self, service, sample_evidence):
         service.build_project_graph("proj1")
         result = service.get_subgraph("proj1", ["paper:p1"], hops=1)
         assert len(result["nodes"]) > 0
 
-    def test_find_paths(self, service, sample_evidence):
+    def test_find_paths_discovers_connected_path(self, service, sample_evidence):
         service.build_project_graph("proj1")
         paths = service.find_paths("proj1", "paper:p1", "paper:p2", max_hops=3)
-        # Both papers connect to same topic, so path exists
         assert len(paths) > 0

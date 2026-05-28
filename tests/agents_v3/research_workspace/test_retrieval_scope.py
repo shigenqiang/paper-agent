@@ -19,7 +19,6 @@ def service(tmp_path, monkeypatch):
 @pytest.fixture
 def sample_data(service):
     storage = service.storage
-    # Papers
     storage.upsert_item("papers", "p1", {
         "paper_id": "p1", "project_id": "proj1", "year": 2023, "included": True,
     })
@@ -29,7 +28,6 @@ def sample_data(service):
     storage.upsert_item("papers", "p3", {
         "paper_id": "p3", "project_id": "proj1", "year": 2022, "included": False,
     })
-    # Evidence
     storage.upsert_item("evidence_records", "e1", {
         "evidence_id": "e1", "project_id": "proj1", "paper_id": "p1", "topic": "feedback",
     })
@@ -40,12 +38,12 @@ def sample_data(service):
 
 
 class TestRetrievalScopeService:
-    def test_resolve_all_project(self, service, sample_data):
+    def test_resolve_all_project_includes_only_included_papers(self, service, sample_data):
         scope = service.resolve("proj1", {"type": "all_project"})
         assert scope.scope_type == ScopeType.ALL_PROJECT
-        assert len(scope.paper_ids) == 2  # Only included papers
+        assert len(scope.paper_ids) == 2
 
-    def test_resolve_selected_papers(self, service, sample_data):
+    def test_resolve_selected_papers_returns_specified_ids(self, service, sample_data):
         scope = service.resolve("proj1", {
             "type": "selected_papers",
             "selected_paper_ids": ["p1"],
@@ -53,7 +51,7 @@ class TestRetrievalScopeService:
         assert scope.scope_type == ScopeType.SELECTED_PAPERS
         assert scope.paper_ids == ["p1"]
 
-    def test_resolve_topic_group(self, service, sample_data):
+    def test_resolve_topic_group_returns_related_papers(self, service, sample_data):
         scope = service.resolve("proj1", {
             "type": "topic_group",
             "selected_topic_ids": ["feedback"],
@@ -61,7 +59,7 @@ class TestRetrievalScopeService:
         assert scope.scope_type == ScopeType.TOPIC_GROUP
         assert len(scope.paper_ids) == 2
 
-    def test_resolve_year_range(self, service, sample_data):
+    def test_resolve_year_range_filters_by_year(self, service, sample_data):
         scope = service.resolve("proj1", {
             "type": "year_range",
             "time_range": ["2023", "2024"],
@@ -69,21 +67,21 @@ class TestRetrievalScopeService:
         assert scope.scope_type == ScopeType.YEAR_RANGE
         assert len(scope.paper_ids) == 2
 
-    def test_to_paper_ids(self, service, sample_data):
+    def test_to_paper_ids_returns_paper_list(self, service, sample_data):
         scope = service.resolve("proj1", {"type": "all_project"})
         paper_ids = service.to_paper_ids(scope)
         assert len(paper_ids) == 2
 
-    def test_to_evidence_records(self, service, sample_data):
+    def test_to_evidence_records_returns_matching_evidence(self, service, sample_data):
         scope = service.resolve("proj1", {"type": "all_project"})
         records = service.to_evidence_records(scope)
         assert len(records) == 2
 
-    def test_summarize_all_project(self, service, sample_data):
+    def test_summarize_all_project_mentions_all(self, service, sample_data):
         scope = service.resolve("proj1", {"type": "all_project"})
         assert "全项目" in scope.summary
 
-    def test_summarize_selected_papers(self, service, sample_data):
+    def test_summarize_selected_papers_mentions_count(self, service, sample_data):
         scope = service.resolve("proj1", {
             "type": "selected_papers",
             "selected_paper_ids": ["p1"],

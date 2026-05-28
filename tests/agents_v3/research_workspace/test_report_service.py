@@ -32,43 +32,43 @@ def sample_report(service):
 
 
 class TestReportService:
-    def test_save_report(self, service, sample_report):
+    def test_save_report_persists_to_storage(self, service, sample_report):
         found = service.get_report("r1")
         assert found is not None
         assert found.title == "Test Review"
 
-    def test_list_reports(self, service, sample_report):
+    def test_list_reports_returns_all_in_project(self, service, sample_report):
         reports = service.list_reports("proj1")
         assert len(reports) == 1
 
-    def test_list_reports_by_type(self, service, sample_report):
+    def test_list_reports_filters_by_type(self, service, sample_report):
         reports = service.list_reports("proj1", "literature_review")
         assert len(reports) == 1
         reports = service.list_reports("proj1", "innovation_report")
         assert len(reports) == 0
 
-    def test_get_nonexistent(self, service):
+    def test_get_nonexistent_returns_none(self, service):
         assert service.get_report("missing") is None
 
-    def test_create_version(self, service, sample_report):
+    def test_create_version_saves_version_content(self, service, sample_report):
         version = service.create_version("r1", "Updated content", "fix typos")
         assert version is not None
         assert version.content == "Updated content"
 
-    def test_version_updates_report(self, service, sample_report):
+    def test_create_version_increments_report_version(self, service, sample_report):
         service.create_version("r1", "V2 content", "update")
         report = service.get_report("r1")
         assert report.version == 2
         assert report.content == "V2 content"
 
-    def test_create_version_nonexistent(self, service):
+    def test_create_version_nonexistent_returns_none(self, service):
         assert service.create_version("missing", "content", "reason") is None
 
-    def test_export_markdown(self, service, sample_report):
+    def test_export_markdown_includes_content_and_metadata(self, service, sample_report):
         md = service.export_markdown("r1")
         assert "Review content" in md
         assert "报告ID" in md
         assert "论文数" in md
 
-    def test_export_nonexistent(self, service):
+    def test_export_nonexistent_returns_empty_string(self, service):
         assert service.export_markdown("missing") == ""

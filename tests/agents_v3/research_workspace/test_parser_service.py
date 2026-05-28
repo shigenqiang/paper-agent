@@ -34,40 +34,40 @@ def sample_paper(service, tmp_path):
 
 
 class TestParserService:
-    def test_parse_nonexistent_paper(self, service):
+    def test_parse_nonexistent_paper_returns_failure(self, service):
         result = service.parse_paper("missing")
         assert result["success"] is False
         assert "not found" in result["error"]
 
-    def test_parse_paper_no_pdf(self, service):
+    def test_parse_paper_without_pdf_returns_failure(self, service):
         service.storage.upsert_item("papers", "p1", {
             "paper_id": "p1", "project_id": "proj1", "pdf_path": ""
         })
         result = service.parse_paper("p1")
         assert result["success"] is False
 
-    def test_parse_paper_success(self, service, sample_paper):
+    def test_parse_paper_with_valid_pdf_returns_chunks(self, service, sample_paper):
         result = service.parse_paper("p1")
         assert result["success"] is True
         assert result["chunk_count"] > 0
 
-    def test_get_chunks(self, service, sample_paper):
+    def test_get_chunks_returns_parsed_chunks(self, service, sample_paper):
         service.parse_paper("p1")
         chunks = service.get_chunks("p1")
         assert len(chunks) > 0
         assert chunks[0].paper_id == "p1"
 
-    def test_parse_project_papers(self, service, sample_paper):
+    def test_parse_project_papers_parses_all_unparsed(self, service, sample_paper):
         result = service.parse_project_papers("proj1")
         assert result["success"] == 1
         assert result["failed"] == 0
 
-    def test_parse_project_skip_parsed(self, service, sample_paper):
+    def test_parse_project_skips_already_parsed(self, service, sample_paper):
         service.parse_paper("p1")
         result = service.parse_project_papers("proj1", only_unparsed=True)
         assert result["skipped"] == 1
 
-    def test_parse_missing_pdf_file(self, service):
+    def test_parse_missing_pdf_file_returns_failure(self, service):
         service.storage.upsert_item("papers", "p2", {
             "paper_id": "p2",
             "project_id": "proj1",

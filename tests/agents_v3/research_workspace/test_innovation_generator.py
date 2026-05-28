@@ -50,16 +50,16 @@ def sample_data(service):
 
 
 class TestInnovationReportGenerator:
-    def test_generate_report(self, service, sample_data):
+    def test_generate_returns_innovation_report(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
         assert report.type == ReportType.INNOVATION_REPORT
         assert report.content
 
-    def test_report_has_innovations(self, service, sample_data):
+    def test_generate_includes_innovation_points(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
         assert "创新点" in report.content or "创新方向" in report.content
 
-    def test_aggregate_limitations(self, service, sample_data):
+    def test_aggregate_limitations_counts_duplicates(self, service, sample_data):
         evidence = [
             EvidenceRecord(evidence_id="e1", project_id="p", paper_id="p1", limitation="A"),
             EvidenceRecord(evidence_id="e2", project_id="p", paper_id="p2", limitation="A"),
@@ -68,7 +68,7 @@ class TestInnovationReportGenerator:
         result = service.aggregate_limitations(evidence)
         assert result[0]["count"] == 2
 
-    def test_score_candidates(self, service):
+    def test_score_candidates_assigns_scores(self, service):
         from src.agents_v3.research_workspace.models import InnovationPoint
         candidates = [
             InnovationPoint(
@@ -82,10 +82,10 @@ class TestInnovationReportGenerator:
         assert len(scored) == 1
         assert scored[0].scores
 
-    def test_is_generic(self, service):
+    def test_is_generic_detects_generic_phrases(self, service):
         assert service._is_generic("使用深度学习") is True
         assert service._is_generic("改进反馈机制") is False
 
-    def test_report_paper_ids(self, service, sample_data):
+    def test_generate_includes_paper_ids(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
         assert len(report.paper_ids) > 0

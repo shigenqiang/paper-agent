@@ -46,38 +46,38 @@ def sample_data(service):
 
 
 class TestLiteratureReviewGenerator:
-    def test_generate_review(self, service, sample_data):
+    def test_generate_returns_review_report(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
         assert report.type == ReportType.LITERATURE_REVIEW
         assert report.content
         assert len(report.paper_ids) > 0
 
-    def test_review_has_scope_summary(self, service, sample_data):
+    def test_generate_includes_scope_summary(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
         assert "生成范围" in report.content
 
-    def test_review_has_paper_count(self, service, sample_data):
+    def test_generate_includes_paper_count(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
         assert "使用论文数量" in report.content
 
-    def test_review_has_sections(self, service, sample_data):
+    def test_generate_includes_standard_sections(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
         assert "研究背景" in report.content
         assert "主要研究方法" in report.content
         assert "主要发现" in report.content
 
-    def test_collect_materials(self, service, sample_data):
+    def test_collect_materials_returns_evidence_and_cards(self, service, sample_data):
         from src.agents_v3.research_workspace.models import RetrievalScope, ScopeType
         scope = RetrievalScope(scope_type=ScopeType.ALL_PROJECT, project_id="proj1", paper_ids=["p1"])
         materials = service.collect_materials(scope)
         assert materials["paper_count"] == 1
 
-    def test_validate_review(self, service, sample_data):
+    def test_validate_review_passes_with_valid_report(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
         result = service.validate_review(report)
         assert result["valid"] is True
 
-    def test_validate_review_missing_scope(self, service):
+    def test_validate_review_fails_without_scope(self, service):
         from src.agents_v3.research_workspace.models import Report
         report = Report(report_id="r1", project_id="proj1", type=ReportType.LITERATURE_REVIEW)
         result = service.validate_review(report)
