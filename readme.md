@@ -19,7 +19,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-  <img src="https://img.shields.io/badge/tests-130%20passed-brightgreen.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-166%20passed-brightgreen.svg" alt="Tests">
 </p>
 
 ---
@@ -156,7 +156,6 @@ qa.answer(project_id, "这个方向有什么创新空间？", {
 ### 安装
 
 ```bash
-# 克隆仓库
 git clone https://github.com/shigenqiang/paper-agent.git
 cd paper-agent
 
@@ -164,74 +163,162 @@ cd paper-agent
 pip install -e .
 
 # 或仅安装核心依赖
-pip install pydantic loguru pdfplumber
+pip install pydantic loguru pdfplumber fastapi uvicorn
 ```
 
-### 基本使用
+### 配置
 
-```python
-from src.agents_v3.research_workspace import *
+复制 `.env.example` 为 `.env`，填入 LLM API 密钥：
 
-# 创建项目
-ps = ProjectService()
-project = ps.create_project("我的研究方向")
-
-# 添加论文
-pls = PaperLibraryService()
-pls.add_paper_metadata(project.project_id, {
-    "title": "论文标题",
-    "authors": ["作者A", "作者B"],
-    "year": 2024,
-})
-
-# 后续步骤：解析 → 生成卡片 → 构建证据表 → 构建图谱 → QA → 生成报告
+```bash
+# MiMo API (Anthropic 兼容)
+ANTHROPIC_BASE_URL=https://your-api-endpoint
+ANTHROPIC_AUTH_TOKEN=your-token
+ANTHROPIC_MODEL=mimo-v2.5-pro
 ```
+
+### 启动服务
+
+```bash
+# 使用 Makefile（默认 anaconda Python，端口 8000）
+make service
+
+# 指定端口
+make service PORT=9000
+
+# 直接启动
+python -m src.service --port 8000
+```
+
+### Makefile 命令
+
+| 命令 | 说明 |
+|------|------|
+| `make service` | 启动服务（推荐） |
+| `make install` | 安装项目依赖 |
+| `make test` | 运行测试 |
+| `make lint` | 代码检查 |
+| `make clean` | 清理缓存和日志 |
+| `make migrate` | 迁移平铺 JSON 到项目目录隔离 |
+| `make docker-build` | 构建 Docker 镜像 |
+| `make help` | 查看所有命令 |
 
 ### 运行测试
 
 ```bash
-python -m pytest tests/agents_v3/research_workspace/ -v
+make test
+# 或
+python -m pytest tests/ -v
 ```
 
 ---
 
-## API
+## HTTP API
+
+服务启动后访问 `http://localhost:8000/docs` 查看 Swagger 文档。
 
 ### 项目管理
 
-```python
-ProjectService.create_project(name, description, ...)
-ProjectService.list_projects()
-ProjectService.get_project(project_id)
-ProjectService.get_project_stats(project_id)
-```
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/rw/projects` | 创建研究项目 |
+| `GET` | `/api/rw/projects` | 项目列表 |
+| `GET` | `/api/rw/projects/{ref}` | 项目详情（project_id 或 dir_name） |
+| `PATCH` | `/api/rw/projects/{ref}` | 更新项目（含改名） |
+| `GET` | `/api/rw/projects/{ref}/stats` | 项目统计 |
+| `DELETE` | `/api/rw/projects/{ref}` | 删除项目 |
 
 ### 论文库
 
-```python
-PaperLibraryService.add_uploaded_paper(project_id, file_path)
-PaperLibraryService.add_paper_metadata(project_id, metadata)
-PaperLibraryService.add_search_results(project_id, results)
-PaperLibraryService.import_doi_list(project_id, doi_list)
-PaperLibraryService.import_bibtex(project_id, bibtex_text)
-```
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/rw/projects/{ref}/papers/search` | 搜索候选论文 |
+| `POST` | `/api/rw/projects/{ref}/papers/search/commit` | 确认入库 |
+| `GET` | `/api/rw/projects/{ref}/papers` | 论文列表 |
+| `POST` | `/api/rw/projects/{ref}/papers/{paper_id}/include` | 标记纳入 |
+| `POST` | `/api/rw/projects/{ref}/papers/{paper_id}/exclude` | 标记排除 |
 
 ### 知识提取
 
-```python
-ParserService.parse_paper(paper_id)
-PaperCardGenerator.generate(paper_id)
-EvidenceTableService.build_for_project(project_id)
-GraphService.build_project_graph(project_id)
-```
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/rw/projects/{ref}/papers/parse` | 解析论文 |
+| `POST` | `/api/rw/projects/{ref}/cards` | 生成论文卡片 |
+| `POST` | `/api/rw/projects/{ref}/evidence/build` | 构建证据表 |
+
+### 知识图谱
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/rw/projects/{ref}/kg/build` | 构建知识图谱 |
+| `GET` | `/api/rw/projects/{ref}/kg` | 获取图谱 |
+| `GET` | `/api/rw/projects/{ref}/kg/stats` | 图谱统计 |
+| `POST` | `/api/rw/projects/{ref}/kg/subgraph` | 子图查询 |
+| `GET` | `/api/rw/projects/{ref}/kg/gaps` | 发现研究空白 |
 
 ### 分析与生成
 
-```python
-ScopeQAService.answer(project_id, question, scope)
-LiteratureReviewGenerator.generate(project_id, scope)
-InnovationReportGenerator.generate(project_id, scope)
-ReportService.export_markdown(report_id)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/rw/projects/{ref}/qa` | Scope QA |
+| `POST` | `/api/rw/projects/{ref}/reports/literature-review` | 文献综述 |
+| `POST` | `/api/rw/projects/{ref}/reports/innovation` | 创新点报告 |
+| `GET` | `/api/rw/projects/{ref}/reports/{report_id}/export/markdown` | 导出 Markdown |
+| `GET` | `/api/rw/projects/{ref}/reports/{report_id}/export/json` | 导出 JSON |
+
+### 使用示例
+
+```bash
+# 1. 创建项目
+curl -X POST http://localhost:8000/api/rw/projects \
+  -H "Content-Type: application/json" \
+  -d '{"name": "sparse functional data research"}'
+
+# 2. 搜索论文（用返回的 project_id）
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/papers/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "sparse functional data", "sources": ["openalex", "arxiv"], "limit": 10}'
+
+# 3. 确认入库（用返回的 session_id 和选中的 result_id）
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/papers/search/commit \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "...", "selected_result_ids": ["id1", "id2"]}'
+
+# 4. 解析 → 生成卡片 → 构建证据 → 构建图谱
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/papers/parse
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/cards
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/evidence/build
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/kg/build
+
+# 5. QA
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/qa \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What are the main methods?", "scope": {"type": "all_project"}}'
+
+# 6. 文献综述
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/reports/literature-review \
+  -H "Content-Type: application/json" \
+  -d '{"scope": {"type": "all_project"}}'
+
+# 7. 创新点报告
+curl -X POST http://localhost:8000/api/rw/projects/{project_id}/reports/innovation \
+  -H "Content-Type: application/json" \
+  -d '{"scope": {"type": "all_project"}}'
+```
+
+### 推荐工作流
+
+```
+① POST /api/rw/projects                         → 创建项目
+② POST /api/rw/projects/{ref}/papers/search      → 搜索候选论文
+③ POST /api/rw/projects/{ref}/papers/search/commit → 确认入库
+④ POST /api/rw/projects/{ref}/papers/parse        → 解析论文
+⑤ POST /api/rw/projects/{ref}/cards               → 生成论文卡片
+⑥ POST /api/rw/projects/{ref}/evidence/build      → 构建证据表
+⑦ POST /api/rw/projects/{ref}/kg/build            → 构建知识图谱
+⑧ POST /api/rw/projects/{ref}/qa                  → Scope QA
+⑨ POST /api/rw/projects/{ref}/reports/literature-review → 文献综述
+⑩ POST /api/rw/projects/{ref}/reports/innovation       → 创新点报告
 ```
 
 ---
@@ -239,21 +326,84 @@ ReportService.export_markdown(report_id)
 ## 项目结构
 
 ```
-src/agents_v3/research_workspace/
-├── models.py                 # 数据模型定义
-├── storage.py                # JSON 持久化层
-├── project_service.py        # 项目管理
-├── paper_library.py          # 论文库管理
-├── parser_service.py         # PDF 解析
-├── paper_card.py             # 论文卡片生成
-├── evidence_table.py         # 证据表构建
-├── graph_service.py          # 知识图谱
-├── scope.py                  # Scope 解析
-├── scope_qa.py               # Scope QA
-├── review_generator.py       # 文献综述生成
-├── innovation_generator.py   # 创新点报告生成
-└── report_service.py         # 报告管理
+src/
+├── service.py                         # 服务入口（启动 FastAPI）
+├── agents_v3/
+│   ├── cli.py                         # CLI 命令行工具
+│   └── research_workspace/
+│       ├── models.py                  # Pydantic 数据模型
+│       ├── storage.py                 # JSON 文件持久化（项目目录隔离）
+│       ├── project_service.py         # 项目管理
+│       ├── paper_library.py           # 论文库管理
+│       ├── parser_service.py          # PDF 解析
+│       ├── paper_card.py              # 论文卡片生成
+│       ├── evidence_table.py          # 证据表构建
+│       ├── graph_service.py           # 知识图谱
+│       ├── scope.py                   # Scope 解析
+│       ├── scope_qa.py                # Scope QA
+│       ├── review_generator.py        # 文献综述生成
+│       ├── innovation_generator.py    # 创新点报告生成
+│       ├── report_service.py          # 报告管理
+│       ├── llm/                       # LLM 服务层
+│       ├── search/                    # 多源搜索（arXiv/OpenAlex/CrossRef）
+│       ├── evaluation/                # 评估与质量门
+│       └── api/                       # FastAPI 路由
+scripts/
+├── migrate_storage.py                 # 存储迁移脚本（项目目录隔离）
+└── migrate_paper_model.py             # 论文模型迁移脚本（扁平→子模型）
 ```
+
+### 数据存储结构
+
+每个项目以名称命名独立目录，内含 `project.json` 存储元数据：
+
+```
+data/research_workspace/
+├── tasks.json                         # 全局：任务队列
+├── search_cache.json                  # 全局：搜索缓存
+└── projects/
+    ├── 我的研究项目/                   # 目录名 = 项目名称
+    │   ├── project.json               # 项目元数据（project_id, name, dir_name, ...）
+    │   ├── papers.json                # 项目论文（子模型结构）
+    │   ├── paper_cards.json           # 论文卡片
+    │   ├── evidence_records.json      # 证据记录
+    │   ├── reports.json               # 报告
+    │   ├── files/                     # PDF 文件
+    │   ├── graphs/                    # 图谱数据
+    │   └── chunks/                    # 文本分块
+    └── sparse_functional_data/
+        ├── project.json
+        └── ...
+```
+
+通过 `project_id` 或 `dir_name` 均可访问项目。
+
+### 论文数据模型
+
+论文采用子模型结构，支持 arXiv、CrossRef、OpenAlex、Semantic Scholar、PubMed 五个平台的统一元数据：
+
+```python
+class Paper(BaseModel):
+    paper_id: str
+    project_id: str
+    title: str
+    abstract: str
+
+    identifiers: PaperIdentifiers    # doi, arxiv_id, pubmed_id, openalex_id, ...
+    authors: list[Author]            # name, orcid, affiliations
+    dates: PaperDates                # year, published_date
+    source: PaperSource              # venue, volume, issue, pages
+    open_access: OpenAccessInfo      # is_oa, oa_status, pdf_url
+    classification: PaperClassification  # categories, concepts, keywords, mesh_terms
+    citation: CitationInfo           # citation_count, references
+
+    url: str
+    source_platform: str             # arxiv/crossref/openalex/upload/bibtex/doi
+    source_payload: dict             # 平台原始数据
+    status: PaperStatus              # imported/parsing/parsed/card_ready/...
+```
+
+搜索阶段使用轻量 `SearchResult` 模型，入库时自动转换为子模型结构。
 
 ---
 
@@ -262,12 +412,17 @@ src/agents_v3/research_workspace/
 | 组件 | 技术 | 说明 |
 |------|------|------|
 | 语言 | Python 3.11+ | 类型注解、现代语法 |
+| HTTP 服务 | FastAPI + Uvicorn | 异步 Web 框架，自动 Swagger 文档 |
+| LLM | LLMService（可配置） | 统一 LLM 调用接口 |
 | 数据模型 | Pydantic v2 | 强类型、自动验证 |
-| 存储 | JSON 文件 | 轻量、可读、易于调试 |
+| 存储 | JSON 文件（项目目录隔离） | 每个项目独立目录，轻量可读 |
+| 搜索 | arXiv / OpenAlex / CrossRef | 多源学术搜索 + 去重 + 排序 |
 | PDF 解析 | pdfplumber | 文本提取和分块 |
+| 知识图谱 | NetworkX | 实体关系图 + Gap 分析 |
 | 日志 | Loguru | 结构化日志 |
-| 测试 | pytest | 130 个测试用例 |
+| 测试 | pytest | 130+ 测试用例 |
 | 代码质量 | Ruff | 格式化和 lint |
+| 容器化 | Docker + GHCR | 多阶段构建 |
 
 ---
 

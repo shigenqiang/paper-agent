@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -122,6 +123,11 @@ class CrossRefClient(BaseSearchAdapter):
         venue_list = work.get("container-title", [])
         venue = venue_list[0] if venue_list else ""
 
+        # Abstract (CrossRef returns JATS XML)
+        abstract = (work.get("abstract") or "").strip()
+        if abstract:
+            abstract = re.sub(r"<[^>]+>", "", abstract).strip()
+
         # URL
         url = work.get("URL", "")
 
@@ -131,6 +137,7 @@ class CrossRefClient(BaseSearchAdapter):
             year=year,
             venue=venue,
             doi=doi,
+            abstract=abstract,
             url=url,
             source="crossref",
             source_payload={"crossref_doi": doi},

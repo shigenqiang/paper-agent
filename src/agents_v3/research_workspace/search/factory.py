@@ -6,7 +6,6 @@ from typing import Any
 
 from src.agents_v3.research_workspace.search.arxiv_client import ArxivClient
 from src.agents_v3.research_workspace.search.base import BaseSearchAdapter
-from src.agents_v3.research_workspace.search.crossref_client import CrossRefClient
 from src.agents_v3.research_workspace.search.openalex_client import OpenAlexClient
 
 
@@ -21,9 +20,6 @@ def create_default_adapters(config: dict[str, Any] | None = None) -> dict[str, B
     )
     adapters["arxiv"] = ArxivClient(
         min_interval=cfg.get("arxiv", {}).get("min_interval_seconds", 3.0),
-    )
-    adapters["crossref"] = CrossRefClient(
-        mailto=cfg.get("crossref", {}).get("mailto", ""),
     )
 
     return adapters

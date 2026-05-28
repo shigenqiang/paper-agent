@@ -109,8 +109,8 @@ class SearchOrchestrator:
         # Merge and dedup
         merged = self.merger.merge(all_results)
 
-        # Rank
-        ranked = self.ranking.rank(merged)
+        # Rank (pass query for relevance scoring)
+        ranked = self.ranking.rank(merged, query=query.query)
 
         total_elapsed = int((time.time() - start) * 1000)
 

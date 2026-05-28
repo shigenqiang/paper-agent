@@ -10,10 +10,46 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents_v3.research_workspace.models import Paper, PaperStatus
+from src.agents_v3.research_workspace.models import (
+    Author,
+    CitationInfo,
+    OpenAccessInfo,
+    Paper,
+    PaperClassification,
+    PaperDates,
+    PaperIdentifiers,
+    PaperSource,
+    PaperStatus,
+)
 from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchQuery, SearchResult, SearchSession
 from src.agents_v3.research_workspace.search.dedup import build_existing_keys, make_dedup_key
+from src.agents_v3.research_workspace.search.ranking import RankingService
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+
+
+def search_result_to_meta(r: SearchResult) -> dict[str, Any]:
+    """将 SearchResult 转换为 Paper 构造用的元数据 dict"""
+    return {
+        "title": r.title,
+        "authors": [{"name": a} for a in r.authors],
+        "dates": {"year": r.year},
+        "source": {"venue": r.venue},
+        "identifiers": {
+            "doi": r.doi,
+            "arxiv_id": r.arxiv_id,
+            "pubmed_id": r.pubmed_id,
+            "openalex_id": r.openalex_id,
+            "semantic_scholar_id": r.semantic_scholar_id,
+        },
+        "abstract": r.abstract,
+        "url": r.url,
+        "open_access": {"pdf_url": r.pdf_url},
+        "classification": {
+            "concepts": r.concepts,
+            "keywords": r.keywords,
+        },
+        "citation": {"citation_count": r.citations},
+    }
 
 
 class PaperLibraryService:
@@ -46,16 +82,25 @@ class PaperLibraryService:
         shutil.copy2(file_path, dest_path)
 
         meta = metadata or {}
+        authors_raw = meta.get("authors", [])
+        authors = [
+            Author(name=a) if isinstance(a, str) else Author(**a)
+            for a in authors_raw
+        ]
+
         paper = Paper(
             paper_id=paper_id,
             project_id=project_id,
             title=meta.get("title", path.stem),
-            authors=meta.get("authors", []),
-            year=meta.get("year"),
-            venue=meta.get("venue", ""),
-            doi=meta.get("doi", ""),
             abstract=meta.get("abstract", ""),
-            source="upload",
+            authors=authors,
+            dates=PaperDates(year=meta.get("year")),
+            source=PaperSource(venue=meta.get("venue", "")),
+            identifiers=PaperIdentifiers(
+                doi=meta.get("doi", ""),
+                arxiv_id=meta.get("arxiv_id", ""),
+            ),
+            source_platform="upload",
             status=PaperStatus.UPLOADED,
             pdf_path=str(dest_path),
         )
@@ -77,19 +122,97 @@ class PaperLibraryService:
             return None
 
         paper_id = f"paper_{uuid.uuid4().hex[:8]}"
+
+        # 兼容处理：authors 可能是 list[str] 或 list[Author] 或 list[dict]
+        authors_raw = metadata.get("authors", [])
+        authors = []
+        for a in authors_raw:
+            if isinstance(a, str):
+                authors.append(Author(name=a))
+            elif isinstance(a, dict):
+                authors.append(Author(**a))
+            elif isinstance(a, Author):
+                authors.append(a)
+            else:
+                authors.append(Author(name=str(a)))
+
+        # 兼容处理：identifiers 可能是 dict 或 PaperIdentifiers
+        ids_raw = metadata.get("identifiers")
+        if isinstance(ids_raw, PaperIdentifiers):
+            identifiers = ids_raw
+        elif isinstance(ids_raw, dict):
+            identifiers = PaperIdentifiers(**ids_raw)
+        else:
+            identifiers = PaperIdentifiers(
+                doi=metadata.get("doi", ""),
+                arxiv_id=metadata.get("arxiv_id", ""),
+                pubmed_id=metadata.get("pubmed_id", ""),
+                openalex_id=metadata.get("openalex_id", ""),
+                semantic_scholar_id=metadata.get("semantic_scholar_id", ""),
+            )
+
+        # 兼容处理：dates
+        dates_raw = metadata.get("dates")
+        if isinstance(dates_raw, PaperDates):
+            dates = dates_raw
+        elif isinstance(dates_raw, dict):
+            dates = PaperDates(**dates_raw)
+        else:
+            dates = PaperDates(year=metadata.get("year"))
+
+        # 兼容处理：source
+        source_raw = metadata.get("source_info") or metadata.get("source")
+        if isinstance(source_raw, PaperSource):
+            paper_source = source_raw
+        elif isinstance(source_raw, dict):
+            paper_source = PaperSource(**source_raw)
+        else:
+            paper_source = PaperSource(venue=metadata.get("venue", ""))
+
+        # 兼容处理：open_access
+        oa_raw = metadata.get("open_access")
+        if isinstance(oa_raw, OpenAccessInfo):
+            oa = oa_raw
+        elif isinstance(oa_raw, dict):
+            oa = OpenAccessInfo(**oa_raw)
+        else:
+            oa = OpenAccessInfo(pdf_url=metadata.get("pdf_url", ""))
+
+        # 兼容处理：classification
+        cls_raw = metadata.get("classification")
+        if isinstance(cls_raw, PaperClassification):
+            classification = cls_raw
+        elif isinstance(cls_raw, dict):
+            classification = PaperClassification(**cls_raw)
+        else:
+            classification = PaperClassification(
+                concepts=metadata.get("concepts", []),
+                keywords=metadata.get("keywords", []),
+            )
+
+        # 兼容处理：citation
+        cit_raw = metadata.get("citation")
+        if isinstance(cit_raw, CitationInfo):
+            citation = cit_raw
+        elif isinstance(cit_raw, dict):
+            citation = CitationInfo(**cit_raw)
+        else:
+            citation = CitationInfo(citation_count=metadata.get("citations"))
+
         paper = Paper(
             paper_id=paper_id,
             project_id=project_id,
             title=metadata.get("title", ""),
-            authors=metadata.get("authors", []),
-            year=metadata.get("year"),
-            venue=metadata.get("venue", ""),
-            doi=metadata.get("doi", ""),
-            arxiv_id=metadata.get("arxiv_id", ""),
             abstract=metadata.get("abstract", ""),
+            authors=authors,
+            identifiers=identifiers,
+            dates=dates,
+            source=paper_source,
+            open_access=oa,
+            classification=classification,
+            citation=citation,
             url=metadata.get("url", ""),
-            pdf_url=metadata.get("pdf_url", ""),
-            source=source,
+            source_platform=source if isinstance(source, str) else "",
             status=PaperStatus.IMPORTED,
         )
         self.storage.upsert_item("papers", paper_id, paper.model_dump())
@@ -131,17 +254,7 @@ class PaperLibraryService:
         results = self.search_papers(query)
         papers = []
         for r in results:
-            meta = {
-                "title": r.title,
-                "authors": r.authors,
-                "year": r.year,
-                "venue": r.venue,
-                "doi": r.doi,
-                "arxiv_id": r.arxiv_id,
-                "abstract": r.abstract,
-                "url": r.url,
-                "pdf_url": r.pdf_url,
-            }
+            meta = search_result_to_meta(r)
             paper = self.add_paper_metadata(project_id, meta, source=r.source)
             if paper:
                 papers.append(paper)
@@ -188,7 +301,7 @@ class PaperLibraryService:
         for doi in doi_list:
             paper = self.add_paper_metadata(
                 project_id,
-                {"doi": doi, "title": f"DOI: {doi}"},
+                {"title": f"DOI: {doi}", "identifiers": PaperIdentifiers(doi=doi)},
                 source="doi",
             )
             if paper:
@@ -245,6 +358,8 @@ class PaperLibraryService:
     ) -> SearchSession:
         """搜索并暂存结果（不入库），返回 SearchSession"""
         results = self.search_papers(query)
+        ranking = RankingService(query=query.query)
+        results = ranking.rank(results, query=query.query)
         session = SearchSession(
             project_id=project_id,
             query=query.model_dump(),
@@ -252,7 +367,9 @@ class PaperLibraryService:
             status="pending",
         )
         storage = self.storage
-        storage.upsert_item("search_sessions", session.session_id, session.model_dump())
+        session_data = session.model_dump()
+        session_data["results"] = [r.model_dump(exclude_defaults=True) for r in session.results]
+        storage.upsert_item("search_sessions", session.session_id, session_data)
         logger.info(f"Created search session {session.session_id}: {len(results)} results")
         return session
 
@@ -284,17 +401,7 @@ class PaperLibraryService:
             r = results_by_id.get(rid)
             if not r:
                 continue
-            meta = {
-                "title": r.title,
-                "authors": r.authors,
-                "year": r.year,
-                "venue": r.venue,
-                "doi": r.doi,
-                "arxiv_id": r.arxiv_id,
-                "abstract": r.abstract,
-                "url": r.url,
-                "pdf_url": r.pdf_url,
-            }
+            meta = search_result_to_meta(r)
             paper = self.add_paper_metadata(project_id, meta, source=r.source)
             if paper:
                 papers.append(paper)

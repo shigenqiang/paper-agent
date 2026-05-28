@@ -17,7 +17,7 @@
 ### 方法 1: 使用 `get_logging_logger()` (推荐)
 
 ```python
-from src.agents_v2.logging_config import get_logging_logger
+from loguru import logger
 
 # 在每个模块中创建 logger
 logger = get_logging_logger(__name__)
@@ -32,7 +32,7 @@ logger.error("Error occurred", code=500)
 ### 方法 2: 使用全局 `logger`
 
 ```python
-from src.agents_v2.logging_config import logger
+from loguru import logger
 
 logger.info("Message with extra info", user_id="123", action="login")
 ```
@@ -40,7 +40,7 @@ logger.info("Message with extra info", user_id="123", action="login")
 ### 方法 3: 在 main.py 中初始化
 
 ```python
-from src.agents_v2.logging_config import setup_logging
+from loguru import logger
 
 # 初始化日志系统
 setup_logging(
@@ -276,7 +276,7 @@ logger.add(
 # 按模块过滤
 logger.add(
     "logs/core.log",
-    filter="src.agents_v2.core"    # 只记录 core 模块的日志
+    filter="src.agents_v3"    # 只记录 agents_v3 模块的日志
 )
 
 # 多条件过滤
@@ -490,7 +490,7 @@ logging.getLogger().addHandler(handler)
 添加额外的日志 sink。
 
 ```python
-from src.agents_v2.logging_config import add_sink, logger
+from loguru import logger
 
 # 添加按模块过滤的文件输出
 sink_id = add_sink(
@@ -500,7 +500,7 @@ sink_id = add_sink(
 )
 
 # 移除 sink
-from src.agents_v2.logging_config import remove_sink
+from loguru import logger
 remove_sink(sink_id)
 ```
 
@@ -509,7 +509,7 @@ remove_sink(sink_id)
 创建绑定上下文的日志记录器。
 
 ```python
-from src.agents_v2.logging_config import logger, bind_context
+from loguru import logger, bind_context
 
 # 使用上下文管理器
 with bind_context(request_id="123", user_id="456"):
@@ -521,7 +521,7 @@ with bind_context(request_id="123", user_id="456"):
 获取全局 logger 实例。
 
 ```python
-from src.agents_v2.logging_config import get_logger
+from loguru import logger
 logger = get_logger()
 ```
 
@@ -530,7 +530,7 @@ logger = get_logger()
 获取兼容 logging 模块的 logger。
 
 ```python
-from src.agents_v2.logging_config import get_logging_logger
+from loguru import logger
 logger = get_logging_logger(__name__)
 ```
 
@@ -568,7 +568,7 @@ logger = get_logging_logger(__name__)
 
 ```python
 # my_module.py
-from src.agents_v2.logging_config import get_logging_logger
+from loguru import logger
 
 logger = get_logging_logger(__name__)
 
@@ -629,7 +629,7 @@ user_adapter = adapter.bind(user_id="123")
 user_adapter.info("User action")
 
 # 或使用上下文管理器
-from src.agents_v2.logging_config import bind_context
+from loguru import logger
 with bind_context(request_id="abc"):
     logger.info("Inside context")
 ```
@@ -637,7 +637,7 @@ with bind_context(request_id="abc"):
 ### 6. 装饰器捕获异常
 
 ```python
-from src.agents_v2.logging_config import logger
+from loguru import logger
 
 # 使用 @logger.catch 自动捕获异常
 @logger.catch
@@ -661,7 +661,7 @@ logger.info("Hello, %s", "world")
 
 **之后：**
 ```python
-from src.agents_v2.logging_config import get_logging_logger
+from loguru import logger
 
 logger = get_logging_logger(__name__)
 logger.info("Hello, %s", "world")  # 接口兼容
@@ -684,7 +684,7 @@ logger.info("User logged in", user_id=user_id)
 ## 文件结构
 
 ```
-src/agents_v2/
+src/agents_v3/
 ├── logging_config.py      # 日志配置模块
 ├── migrate_logging.py      # 迁移脚本
 └── ...
@@ -694,10 +694,10 @@ src/agents_v2/
 
 ## 示例项目文件
 
-### 在 `src/main.py` 中初始化
+### 在 `src/service.py` 中初始化
 
 ```python
-from src.agents_v2.logging_config import setup_logging, logger
+from loguru import logger, logger
 
 # 初始化日志系统
 setup_logging(
@@ -712,7 +712,7 @@ logger.info("Paper Agent 学术论文写作辅助系统启动")
 ### 在模块中使用
 
 ```python
-from src.agents_v2.logging_config import get_logging_logger
+from loguru import logger
 
 logger = get_logging_logger(__name__)
 

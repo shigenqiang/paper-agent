@@ -136,6 +136,11 @@ class GraphService:
                 continue
             pid = p["paper_id"]
             node_id = f"paper:{pid}"
+            identifiers = p.get("identifiers", {})
+            dates = p.get("dates", {})
+            source = p.get("source", {})
+            authors_raw = p.get("authors", [])
+            author_names = [a.get("name", "") if isinstance(a, dict) else str(a) for a in authors_raw]
             nodes[node_id] = GraphNode(
                 node_id=node_id,
                 node_type=NodeType.PAPER,
@@ -144,10 +149,10 @@ class GraphService:
                     "paper_ids": [pid],
                     "evidence_ids": [],
                     "title": p.get("title", ""),
-                    "authors": p.get("authors", []),
-                    "year": p.get("year"),
-                    "doi": p.get("doi", ""),
-                    "venue": p.get("venue", ""),
+                    "authors": author_names,
+                    "year": dates.get("year"),
+                    "doi": identifiers.get("doi", ""),
+                    "venue": source.get("venue", ""),
                     "included": True,
                 },
             )

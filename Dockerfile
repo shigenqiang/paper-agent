@@ -67,8 +67,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# 默认启动命令 - 使用 src.main 入口
-CMD ["python", "-m", "src.main"]
+# 默认启动命令 - 使用 src.service 入口
+CMD ["python", "-m", "src.service"]
 
 
 # ============================================
@@ -126,8 +126,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# GPU启动命令 - 使用 src.main 入口
-CMD ["python", "-m", "src.main"]
+# GPU启动命令 - 使用 src.service 入口
+CMD ["python", "-m", "src.service"]
 
 
 # ============================================
@@ -158,4 +158,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["python", "-m", "src.main"]
+CMD ["python", "-m", "src.service"]

@@ -399,10 +399,15 @@ class LiteratureReviewGenerator:
         for p in papers_meta:
             pid = p.get("paper_id", "")
             title = p.get("title", "N/A")
-            authors = ", ".join(p.get("authors", [])[:3])
-            year = p.get("year", "")
-            venue = p.get("venue", "")
-            doi = p.get("doi", "")
+            identifiers = p.get("identifiers", {})
+            dates = p.get("dates", {})
+            source = p.get("source", {})
+            authors_raw = p.get("authors", [])
+            author_names = [a.get("name", "") if isinstance(a, dict) else str(a) for a in authors_raw]
+            authors = ", ".join(author_names[:3])
+            year = dates.get("year", "")
+            venue = source.get("venue", "")
+            doi = identifiers.get("doi", "")
             ref = f"- [{pid}] {authors} ({year}). {title}."
             if venue:
                 ref += f" {venue}."

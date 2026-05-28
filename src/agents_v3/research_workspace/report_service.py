@@ -170,13 +170,18 @@ class ReportService:
                 for sid, sdata in report.section_sources.items():
                     if pid in sdata.get("paper_ids", []):
                         used_in.append(sid)
+                identifiers = p.get("identifiers", {})
+                dates = p.get("dates", {})
+                source = p.get("source", {})
+                authors_raw = p.get("authors", [])
+                author_names = [a.get("name", "") if isinstance(a, dict) else str(a) for a in authors_raw]
                 paper_sources.append({
                     "paper_id": pid,
                     "title": p.get("title", ""),
-                    "authors": p.get("authors", []),
-                    "year": p.get("year"),
-                    "venue": p.get("venue", ""),
-                    "doi": p.get("doi", ""),
+                    "authors": author_names,
+                    "year": dates.get("year"),
+                    "venue": source.get("venue", ""),
+                    "doi": identifiers.get("doi", ""),
                     "url": p.get("url", ""),
                     "citation_key": pid,
                     "used_in_sections": used_in,

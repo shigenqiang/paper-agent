@@ -13,7 +13,7 @@ PaperAgent 是一个基于多 Agent 协作架构的智能学术论文研究助�
 ## 技术架构
 
 ### 后端 (Python aiohttp)
-- **位置**: `src/agents_v2/`
+- **位置**: `src/agents_v3/`
 - **核心框架**: asyncio + aiohttp
 - **Agent 数量**: 40+ 个专业 Agent
 - **Python 文件**: 311 个
@@ -37,11 +37,11 @@ PaperAgent 是一个基于多 Agent 协作架构的智能学术论文研究助�
 
 | 基类 | 文件 | 用途 |
 |-----|------|-----|
-| `BaseAgent` | `src/agents_v2/base_agent.py` | 核心 Agent 接口，能力注册 |
-| `PaperAgentBase` | `src/agents_v2/paper_agents/base_paper_agent.py` | 论文写作流程 Agent 基类 |
-| `WritingAgentBase` | `src/agents_v2/writing/base_writing_agent.py` | 完整论文写作 Agent 基类 |
-| `ProblemAgentBase` | `src/agents_v2/problem_oriented/base_problem_agent.py` | 问题诊断 Agent 基类 |
-| `BaseQAAgent` | `src/agents_v2/paper_search/base_qa_agent.py` | 问答 Agent 基类 |
+| `ProjectService` | `src/agents_v3/research_workspace/project_service.py` | 项目管理 |
+| `PaperLibraryService` | `src/agents_v3/research_workspace/paper_library.py` | 论文库管理 |
+| `ScopeQAService` | `src/agents_v3/research_workspace/scope_qa.py` | Scope QA |
+| `LiteratureReviewGenerator` | `src/agents_v3/research_workspace/review_generator.py` | 文献综述生成 |
+| `InnovationReportGenerator` | `src/agents_v3/research_workspace/innovation_generator.py` | 创新点报告生成 |
 
 ---
 
@@ -217,9 +217,8 @@ MasterSupervisor
 
 ```
 D:\pycharmprojects\pythonProject1\
-├── src/agents_v2/                  # 后端 Agent 系统 (311 Python 文件)
+├── src/agents_v3/                  # 核心业务模块
 │   ├── api_server.py               # aiohttp HTTP 服务入口
-│   ├── main.py                     # 入口: python -m src.main
 │   ├── logging_config.py           # Loguru 日志配置
 │   │
 │   ├── core/                       # 核心基础层

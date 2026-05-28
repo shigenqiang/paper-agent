@@ -1,10 +1,9 @@
 # ============================================
-# Paper Agent Docker Compose - 精简版 (2026-05-03)
+# Paper Agent Docker Compose
 # ============================================
-# 基于 docs/implemented/architecture 分析:
-# - Storage: SQLite + ChromaDB (本地文件)
-# - Knowledge Graph: deprecated (代码在 src/agents_v2/knowledge_graph/deprecated/)
-# - Monitoring: 内置模块，无外部依赖
+# - Storage: JSON 文件 (data/research_workspace/)
+# - API: FastAPI + Uvicorn
+# - LLM: 可配置 (LLMService)
 # ============================================
 
 version: '3.8'

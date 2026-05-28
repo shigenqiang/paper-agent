@@ -21,17 +21,17 @@ STRATEGIES: dict[str, SearchStrategy] = {
     ),
     "literature_review": SearchStrategy(
         name="literature_review",
-        sources=["openalex", "arxiv", "crossref"],
+        sources=["openalex", "arxiv"],
         limit=50,
     ),
     "doi_import": SearchStrategy(
         name="doi_import",
-        sources=["crossref", "openalex"],
+        sources=["openalex"],
         limit=10,
     ),
     "precise": SearchStrategy(
         name="precise",
-        sources=["crossref", "openalex"],
+        sources=["openalex", "arxiv"],
         limit=20,
     ),
 }

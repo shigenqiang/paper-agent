@@ -83,6 +83,7 @@ class EdgeType(str, Enum):
 class Project(BaseModel):
     project_id: str
     name: str
+    dir_name: str = ""  # 文件系统安全的目录名
     description: str = ""
     discipline: str = ""
     education_level: str = ""
@@ -92,6 +93,66 @@ class Project(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+# ── 论文子模型 ─────────────────────────────────────────
+
+
+class Author(BaseModel):
+    """论文作者"""
+    name: str = ""
+    given_name: str = ""
+    family_name: str = ""
+    orcid: str = ""
+    affiliations: list[str] = Field(default_factory=list)
+
+
+class PaperIdentifiers(BaseModel):
+    """论文标识符集合"""
+    doi: str = ""
+    arxiv_id: str = ""
+    pubmed_id: str = ""
+    openalex_id: str = ""
+    semantic_scholar_id: str = ""
+
+
+class PaperDates(BaseModel):
+    """论文日期信息"""
+    year: int | None = None
+    published_date: str = ""
+
+
+class PaperSource(BaseModel):
+    """论文来源 (期刊/会议/预印本)"""
+    venue: str = ""
+    volume: str = ""
+    issue: str = ""
+    pages: str = ""
+
+
+class OpenAccessInfo(BaseModel):
+    """开放获取信息"""
+    is_oa: bool = False
+    oa_status: str = ""
+    pdf_url: str = ""
+    license: str = ""
+
+
+class PaperClassification(BaseModel):
+    """论文分类信息"""
+    categories: list[str] = Field(default_factory=list)
+    concepts: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    fields_of_study: list[str] = Field(default_factory=list)
+    mesh_terms: list[str] = Field(default_factory=list)
+
+
+class CitationInfo(BaseModel):
+    """引用信息"""
+    citation_count: int | None = None
+    influential_citation_count: int | None = None
+    reference_count: int | None = None
+    references: list[str] = Field(default_factory=list)
+
+
 # ── 论文 ──────────────────────────────────────────────
 
 
@@ -99,15 +160,22 @@ class Paper(BaseModel):
     paper_id: str
     project_id: str
     title: str = ""
-    authors: list[str] = Field(default_factory=list)
-    year: int | None = None
-    venue: str = ""
-    doi: str = ""
-    arxiv_id: str = ""
     abstract: str = ""
+    language: str = ""
+    publication_type: str = ""
+
+    identifiers: PaperIdentifiers = Field(default_factory=PaperIdentifiers)
+    authors: list[Author] = Field(default_factory=list)
+    dates: PaperDates = Field(default_factory=PaperDates)
+    source: PaperSource = Field(default_factory=PaperSource)
+    open_access: OpenAccessInfo = Field(default_factory=OpenAccessInfo)
+    classification: PaperClassification = Field(default_factory=PaperClassification)
+    citation: CitationInfo = Field(default_factory=CitationInfo)
+
     url: str = ""
-    pdf_url: str = ""
-    source: str = ""
+    source_platform: str = ""  # arxiv/crossref/openalex/upload/bibtex/doi
+    source_payload: dict[str, Any] = Field(default_factory=dict)
+
     status: PaperStatus = PaperStatus.IMPORTED
     pdf_path: str = ""
     error_message: str = ""

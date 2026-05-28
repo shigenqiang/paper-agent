@@ -268,9 +268,12 @@ class PaperCardGenerator:
         """LLM 抽取或 fallback"""
         # 构建带 chunk_id 标记的输入
         chunks_text = self._build_chunks_text(chunks)
+        authors_raw = paper_data.get('authors', [])
+        author_names = [a.get('name', '') if isinstance(a, dict) else str(a) for a in authors_raw]
+        dates = paper_data.get('dates', {})
         user_prompt = f"""论文标题：{paper_data.get('title', '未知')}
-作者：{', '.join(paper_data.get('authors', []))}
-年份：{paper_data.get('year', '未知')}
+作者：{', '.join(author_names)}
+年份：{dates.get('year', '未知')}
 
 Chunks:
 {chunks_text}

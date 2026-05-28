@@ -26,7 +26,11 @@ from src.agents_v3.research_workspace.models import (
 )
 
 # ── 存储 ──────────────────────────────────────────
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import (
+    JSONStorage, get_storage, get_project_storage,
+    sanitize_dirname, unique_dirname, load_all_projects, resolve_project_ref,
+    list_project_dirs, remove_project_storage, rename_project_storage,
+)
 
 # ── 核心业务服务 ──────────────────────────────────
 from src.agents_v3.research_workspace.project_service import ProjectService
@@ -65,5 +69,5 @@ __all__ = [
     "Report", "ReportService", "ReportType", "ReportVersion",
     "RetrievalScope", "RetrievalScopeService", "ScopeQAService", "ScopeType",
     "SearchQuery", "SearchResult", "TaskService", "app", "create_app",
-    "get_llm_service", "get_prompt_registry", "get_storage", "reset_llm_service",
+    "get_llm_service", "get_project_storage", "get_prompt_registry", "get_storage", "reset_llm_service",
 ]

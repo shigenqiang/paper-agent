@@ -14,16 +14,16 @@ docs/
 
 | Document | Description |
 |----------|-------------|
+| [Quick Start](getting-started/quickstart.md) | 安装、配置、启动、API 端点一览 |
+| [Framework](getting-started/framework.md) | 框架架构与各模块实现情况 |
 | [Project Overview](getting-started/project-overview.md) | Architecture, tech stack, module overview |
-| [Quick Start](getting-started/quickstart.md) | How to run the project |
-| [Running Guide](getting-started/running.md) | Detailed startup instructions |
-| [Frontend Overview](getting-started/frontend-overview.md) | Frontend pages and features |
 | [Docker Registry](getting-started/docker-registry.md) | Container image registry |
 
 ## API
 
 | Document | Description |
 |----------|-------------|
+| [Quick Start - HTTP API](getting-started/quickstart.md#http-api-一览) | 完整 HTTP API 端点和使用示例 |
 | [Logging](api/logging.md) | Loguru logging configuration |
 
 ## Development

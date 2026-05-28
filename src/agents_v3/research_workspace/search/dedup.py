@@ -64,19 +64,42 @@ def first_author_key(authors: list[str]) -> str:
 # ── 去重 Key 生成 ──────────────────────────────────────
 
 
+def _safe_get(obj, key, default=""):
+    """兼容 dict 和 Pydantic 模型的安全取值"""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 def make_dedup_key(paper: dict[str, Any]) -> str | None:
     """生成去重 key。优先级：DOI > arXiv ID > 标准化标题+年份"""
-    doi = normalize_doi(paper.get("doi", ""))
+    identifiers = _safe_get(paper, "identifiers", {})
+    dates = _safe_get(paper, "dates", {})
+
+    # 兼容新旧格式
+    doi = normalize_doi(_safe_get(identifiers, "doi") or _safe_get(paper, "doi"))
     if doi:
         return f"doi:{doi}"
 
-    arxiv_id = normalize_arxiv_id(paper.get("arxiv_id", ""))
+    arxiv_id = normalize_arxiv_id(_safe_get(identifiers, "arxiv_id") or _safe_get(paper, "arxiv_id"))
     if arxiv_id:
         return f"arxiv:{arxiv_id}"
 
     title = normalize_title(paper.get("title", ""))
-    year = paper.get("year")
-    fa = first_author_key(paper.get("authors", []))
+    year = _safe_get(dates, "year") or paper.get("year")
+    authors_raw = paper.get("authors", [])
+    # 兼容 list[str] 和 list[dict/Author]
+    if authors_raw:
+        first = authors_raw[0]
+        if isinstance(first, dict):
+            author_names = [a.get("name", "") for a in authors_raw]
+        elif hasattr(first, "name"):
+            author_names = [a.name for a in authors_raw]
+        else:
+            author_names = authors_raw
+    else:
+        author_names = []
+    fa = first_author_key(author_names)
     if title and year and fa:
         return f"tya:{title}|{year}|{fa}"
     if title and year:

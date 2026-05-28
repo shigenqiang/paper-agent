@@ -315,8 +315,8 @@ class RetrievalScopeService:
         return sorted(
             p["paper_id"] for p in papers
             if p.get("paper_id") in included_ids
-            and p.get("year")
-            and min_year <= p["year"] <= max_year
+            and (p.get("dates") or {}).get("year")
+            and min_year <= p["dates"]["year"] <= max_year
         )
 
     # ── 交叉过滤 ──────────────────────────────────
@@ -359,7 +359,8 @@ class RetrievalScopeService:
         result = []
         for pid in paper_ids:
             paper = self.storage.get_item("papers", pid)
-            if paper and paper.get("year") and min_year <= paper["year"] <= max_year:
+            year = (paper.get("dates") or {}).get("year")
+            if paper and year and min_year <= year <= max_year:
                 result.append(pid)
         return result
 
@@ -506,7 +507,7 @@ class RetrievalScopeService:
 
         # Papers
         papers = [
-            {"id": p["paper_id"], "title": p.get("title", ""), "year": p.get("year"), "included": True}
+            {"id": p["paper_id"], "title": p.get("title", ""), "year": (p.get("dates") or {}).get("year"), "included": True}
             for p in included
         ]
 
@@ -547,7 +548,7 @@ class RetrievalScopeService:
         # Years
         year_counts: dict[int, int] = {}
         for p in included:
-            y = p.get("year")
+            y = (p.get("dates") or {}).get("year")
             if y:
                 year_counts[y] = year_counts.get(y, 0) + 1
         years = [{"year": y, "paper_count": c} for y, c in sorted(year_counts.items())]
