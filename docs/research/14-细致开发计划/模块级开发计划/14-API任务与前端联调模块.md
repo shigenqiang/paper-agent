@@ -2,6 +2,61 @@
 
 更新时间：2026-05-28
 
+## 实现状态
+
+P0 全部完成（2026-05-28）。
+
+### 已完成
+
+```text
+api.py: FastAPI app + CORS + request_id 中间件 + 统一错误处理 ✅
+api_models.py: 所有 request/response DTO ✅
+api_errors.py: APIError/NotFoundError/ValidationError/ScopeEmptyError + 异常处理器 ✅
+api_deps.py: 所有 service 依赖注入函数 ✅
+task_service.py: 任务状态持久化（create/get/update/list/add_event） ✅
+storage.py: tasks collection 映射 ✅
+```
+
+### API 端点
+
+```text
+GET  /api/health ✅
+POST /api/rw/projects ✅
+GET  /api/rw/projects ✅
+GET  /api/rw/projects/{id} ✅
+GET  /api/rw/projects/{id}/stats ✅
+DELETE /api/rw/projects/{id} ✅
+GET  /api/rw/projects/{id}/papers ✅
+POST /api/rw/projects/{id}/papers/import/doi ✅
+POST /api/rw/projects/{id}/papers/import/bibtex ✅
+GET  /api/rw/papers/{id} ✅
+PATCH /api/rw/papers/{id} ✅
+POST /api/rw/papers/{id}/include ✅
+POST /api/rw/papers/{id}/exclude ✅
+POST /api/rw/projects/{id}/papers/search ✅
+POST /api/rw/projects/{id}/papers/search/commit ✅
+POST /api/rw/papers/{id}/parse ✅
+POST /api/rw/projects/{id}/papers/parse ✅
+POST /api/rw/projects/{id}/cards ✅
+POST /api/rw/projects/{id}/evidence/build ✅
+POST /api/rw/projects/{id}/kg/build ✅
+GET  /api/rw/projects/{id}/kg ✅
+GET  /api/rw/projects/{id}/kg/stats ✅
+POST /api/rw/projects/{id}/kg/subgraph ✅
+GET  /api/rw/projects/{id}/kg/gaps ✅
+POST /api/rw/projects/{id}/scope/resolve ✅
+GET  /api/rw/projects/{id}/scope/filters ✅
+POST /api/rw/projects/{id}/qa ✅
+GET  /api/rw/projects/{id}/reports ✅
+GET  /api/rw/reports/{id} ✅
+POST /api/rw/projects/{id}/reports/literature-review ✅
+POST /api/rw/projects/{id}/reports/innovation ✅
+GET  /api/rw/reports/{id}/export/markdown ✅
+GET  /api/rw/reports/{id}/export/json ✅
+GET  /api/rw/tasks/{id} ✅
+GET  /api/rw/tasks ✅
+```
+
 API 任务与前端联调模块负责把 v3 `research_workspace` 的 service 能力暴露为稳定、可测试、可前端集成的本地 API，同时补齐长任务状态、任务事件、统一错误结构、演示 pipeline、OpenAPI 契约和前端页面数据流。它不是把 service 方法简单套一层 HTTP，而是后端 service 与前端研究工作台之间的产品契约层。
 
 对应现有代码：

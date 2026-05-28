@@ -96,6 +96,7 @@ class JSONStorage:
             "parse_results": "parse_id",
             "graphs": "graph_id",
             "qa_history": "qa_id",
+            "tasks": "task_id",
             "search_sessions": "session_id",
             "search_cache": "cache_key",
         }
