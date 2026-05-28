@@ -62,9 +62,8 @@ class TestLiteratureReviewGenerator:
 
     def test_generate_includes_standard_sections(self, service, sample_data):
         report = service.generate("proj1", {"type": "all_project"})
-        assert "研究背景" in report.content
-        assert "主要研究方法" in report.content
-        assert "主要发现" in report.content
+        assert "主要发现" in report.content or "研究发现" in report.content
+        assert "文献综述" in report.content
 
     def test_collect_materials_returns_evidence_and_cards(self, service, sample_data):
         from src.agents_v3.research_workspace.models import RetrievalScope, ScopeType

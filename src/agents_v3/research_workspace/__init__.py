@@ -1,5 +1,6 @@
 """研究工作空间模块 - 论文知识库分析 Agent 核心"""
 
+from src.agents_v3.research_workspace.llm_service import LLMConfig, LLMService, get_llm_service
 from src.agents_v3.research_workspace.models import (
     EvidenceRecord,
     GraphEdge,
@@ -35,6 +36,8 @@ from src.agents_v3.research_workspace.innovation_generator import InnovationRepo
 from src.agents_v3.research_workspace.report_service import ReportService
 
 __all__ = [
+    "LLMConfig",
+    "LLMService",
     "EvidenceRecord",
     "EvidenceTableService",
     "GraphEdge",
