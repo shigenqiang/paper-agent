@@ -7,7 +7,7 @@ docs/
 ├── getting-started/     # Quick start, setup, project overview
 ├── architecture/        # System architecture (per-module docs)
 ├── api/                 # API reference
-├── development/         # Development guide, plans, testing
+├── development/         # Development guide, plans, testing, code standards
 └── research/            # Technical research notes
 ```
 
@@ -98,9 +98,8 @@ System architecture docs organized by module.
 | Document | Description |
 |----------|-------------|
 | [Development Guide](development/development-guide.md) | Main development doc |
-| [Troubleshooting](development/troubleshooting.md) | Error solutions |
-| [Roadmap](development/roadmap.md) | Module development roadmap |
-| [Testing](development/testing.md) | Test plan |
+| [Code Standards](development/代码规范.md) | Code conventions and style guide |
+| [Project Standards](development/项目规范.md) | Project structure and conventions |
 | [Architecture Review](development/architecture-review.md) | Architecture audit report |
 | [Plans](development/plans/) | Per-module development plans |
 
@@ -110,6 +109,7 @@ Technical research organized by topic.
 
 | Topic | Description |
 |-------|-------------|
+| [00-General Research](research/00-综合调研报告/) | Cross-cutting research and guides |
 | [01-Agent Protocols](research/01-Agent协议与架构/) | MCP, A2A, Skills protocols |
 | [02-Prompt Engineering](research/02-提示词工程/) | Prompt engineering guides |
 | [03-Agent Evaluation](research/03-Agent能力评估/) | Agent evaluation frameworks |
@@ -118,4 +118,8 @@ Technical research organized by topic.
 | [06-Intent & Routing](research/06-意图识别与路由/) | Intent recognition research |
 | [07-Memory System](research/07-记忆系统/) | Memory system architecture |
 | [08-Logging & Monitoring](research/08-日志与监控/) | Logging system research |
-| [Academic QA Deep Dive](research/学术QA系统深度调研/) | QA system research |
+| [10-Academic QA](research/10-学术QA系统/) | QA system research |
+| [10-Knowledge Graph](research/10-知识图谱/) | Knowledge graph research |
+| [11-Product & Dev](research/11-产品方案与开发/) | Product plans and dev specs |
+| [12-Optimization](research/12-优化方案/) | Performance optimization |
+| [13-Mixed Research](research/13-综合调研/) |综合调研报告 |
