@@ -3,15 +3,15 @@
 import pytest
 import json
 
-from src.agents_v3.research_workspace.llm_service import (
+from src.agents_v3.research_workspace.llm.service import (
     LLMConfig, LLMCallResult, FakeLLMService,
 )
-from src.agents_v3.research_workspace.llm_json import extract_json, _try_fix_json
-from src.agents_v3.research_workspace.llm_errors import (
+from src.agents_v3.research_workspace.llm.json_utils import extract_json, _try_fix_json
+from src.agents_v3.research_workspace.llm.errors import (
     LLMServiceError, JsonExtractionError, StructuredOutputError,
 )
-from src.agents_v3.research_workspace.llm_logging import redact_text, hash_text
-from src.agents_v3.research_workspace.prompt_registry import (
+from src.agents_v3.research_workspace.llm.logging import redact_text, hash_text
+from src.agents_v3.research_workspace.llm.prompts import (
     PromptRegistry, PromptTemplateSpec, get_prompt_registry,
 )
 

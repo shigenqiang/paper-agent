@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from src.agents_v3.research_workspace.api_models import ApiErrorBody
+from src.agents_v3.research_workspace.api.models import ApiErrorBody
 
 
 class APIError(Exception):

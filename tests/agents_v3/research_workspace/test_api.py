@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from src.agents_v3.research_workspace.api import create_app
+from src.agents_v3.research_workspace.api.app import create_app
 from src.agents_v3.research_workspace.storage import JSONStorage
 
 
@@ -13,7 +13,7 @@ def client(tmp_path, monkeypatch):
     storage = JSONStorage(data_dir=tmp_path)
     # Patch get_storage to return our test storage
     monkeypatch.setattr(
-        "src.agents_v3.research_workspace.api_deps.get_storage",
+        "src.agents_v3.research_workspace.api.deps.get_storage",
         lambda: storage,
     )
     # Also patch all service-level get_storage calls
@@ -21,12 +21,16 @@ def client(tmp_path, monkeypatch):
         "paper_library", "parser_service", "paper_card",
         "evidence_table", "graph_service", "scope",
         "scope_qa", "review_generator", "innovation_generator",
-        "report_service", "task_service", "project_service",
+        "report_service", "project_service",
     ]:
         monkeypatch.setattr(
             f"src.agents_v3.research_workspace.{module}.get_storage",
             lambda: storage,
         )
+    monkeypatch.setattr(
+        "src.agents_v3.research_workspace.api.tasks.get_storage",
+        lambda: storage,
+    )
     app = create_app(storage=storage)
     return TestClient(app)
 

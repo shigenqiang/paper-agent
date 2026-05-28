@@ -9,7 +9,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents_v3.research_workspace.llm_service import LLMService, get_llm_service
+from src.agents_v3.research_workspace.llm.service import LLMService, get_llm_service
 from src.agents_v3.research_workspace.models import (
     CardQualityReport,
     ExtractedClaim,

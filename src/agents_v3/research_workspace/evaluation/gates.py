@@ -6,11 +6,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.agents_v3.research_workspace.evaluation import EvaluationResult
+from src.agents_v3.research_workspace.evaluation.evaluator import EvaluationResult
 
 
 class QualityGateResult(BaseModel):
-    """质量门禁结果"""
     gate_name: str
     passed: bool
     required: bool = True
@@ -22,7 +21,6 @@ class QualityGateResult(BaseModel):
 
 
 class QualityGateSummary(BaseModel):
-    """质量门禁总览"""
     passed: bool
     total_gates: int
     passed_gates: int
@@ -32,14 +30,10 @@ class QualityGateSummary(BaseModel):
 
 
 def check_gate(
-    name: str,
-    metric_name: str,
-    actual: float | bool | str,
-    expected: float | bool | str,
-    operator: str = ">=",
-    required: bool = True,
+    name: str, metric_name: str,
+    actual: float | bool | str, expected: float | bool | str,
+    operator: str = ">=", required: bool = True,
 ) -> QualityGateResult:
-    """检查单个门禁"""
     if operator == ">=":
         passed = actual >= expected
     elif operator == "<=":
@@ -54,22 +48,15 @@ def check_gate(
         passed = False
 
     return QualityGateResult(
-        gate_name=name,
-        passed=passed,
-        required=required,
-        metric_name=metric_name,
-        actual=actual,
-        expected=expected,
+        gate_name=name, passed=passed, required=required,
+        metric_name=metric_name, actual=actual, expected=expected,
         operator=operator,
         failures=[] if passed else [f"{metric_name}: {actual} {operator} {expected} failed"],
     )
 
 
 def run_quality_gates(evaluations: list[EvaluationResult]) -> QualityGateSummary:
-    """从评估结果运行质量门禁"""
     gates = []
-
-    # 核心门禁
     gate_specs = [
         ("scope_guard", "scope_guard", 1.0, "==", True),
         ("citation_coverage", "citation_coverage", 0.8, ">=", True),
@@ -84,35 +71,18 @@ def run_quality_gates(evaluations: list[EvaluationResult]) -> QualityGateSummary
     for gate_name, metric_name, expected, operator, required in gate_specs:
         ev = eval_map.get(metric_name)
         if ev and ev.score is not None:
-            gate = check_gate(
-                name=gate_name,
-                metric_name=metric_name,
-                actual=ev.score,
-                expected=expected,
-                operator=operator,
-                required=required,
-            )
+            gate = check_gate(gate_name, metric_name, ev.score, expected, operator, required)
         elif ev:
             gate = QualityGateResult(
-                gate_name=gate_name,
-                passed=ev.passed,
-                required=required,
-                metric_name=metric_name,
-                actual=ev.passed,
-                expected=True,
-                operator="==",
-                failures=ev.failures,
+                gate_name=gate_name, passed=ev.passed, required=required,
+                metric_name=metric_name, actual=ev.passed, expected=True,
+                operator="==", failures=ev.failures,
             )
         else:
             gate = QualityGateResult(
-                gate_name=gate_name,
-                passed=not required,
-                required=required,
-                metric_name=metric_name,
-                actual="missing",
-                expected=expected,
-                operator=operator,
-                failures=[f"evaluation '{metric_name}' not found"],
+                gate_name=gate_name, passed=not required, required=required,
+                metric_name=metric_name, actual="missing", expected=expected,
+                operator=operator, failures=[f"evaluation '{metric_name}' not found"],
             )
         gates.append(gate)
 
@@ -121,9 +91,6 @@ def run_quality_gates(evaluations: list[EvaluationResult]) -> QualityGateSummary
 
     return QualityGateSummary(
         passed=len(required_failures) == 0,
-        total_gates=len(gates),
-        passed_gates=len(gates) - len(failed),
-        failed_gates=len(failed),
-        required_failures=len(required_failures),
-        gates=gates,
+        total_gates=len(gates), passed_gates=len(gates) - len(failed),
+        failed_gates=len(failed), required_failures=len(required_failures), gates=gates,
     )

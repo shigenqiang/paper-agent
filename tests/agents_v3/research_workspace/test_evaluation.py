@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.agents_v3.research_workspace.evaluation import (
+from src.agents_v3.research_workspace.evaluation.evaluator import (
     EvaluationResult,
     scope_guard_check,
     citation_coverage_check,
@@ -13,13 +13,13 @@ from src.agents_v3.research_workspace.evaluation import (
     e2e_smoke_check,
     refusal_correctness_check,
 )
-from src.agents_v3.research_workspace.quality_gates import (
+from src.agents_v3.research_workspace.evaluation.gates import (
     QualityGateResult,
     QualityGateSummary,
     check_gate,
     run_quality_gates,
 )
-from src.agents_v3.research_workspace.logging_utils import (
+from src.agents_v3.research_workspace.evaluation.logging_utils import (
     redact_text,
     hash_text,
     truncate_text,
@@ -28,11 +28,11 @@ from src.agents_v3.research_workspace.logging_utils import (
     get_context,
     clear_context,
 )
-from src.agents_v3.research_workspace.metrics_collector import (
+from src.agents_v3.research_workspace.evaluation.metrics import (
     MetricRecord,
     MetricsCollector,
 )
-from src.agents_v3.research_workspace.golden_loader import (
+from src.agents_v3.research_workspace.evaluation.golden import (
     GoldenCase,
     DEFAULT_GOLDEN_CASES,
 )
