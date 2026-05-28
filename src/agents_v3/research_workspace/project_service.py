@@ -9,14 +9,14 @@ from typing import Any
 from loguru import logger
 
 from src.agents_v3.research_workspace.models import Project
-from src.agents_v3.research_workspace.storage import get_storage
+from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
 
 
 class ProjectService:
     """研究项目 CRUD"""
 
-    def __init__(self):
-        self.storage = get_storage()
+    def __init__(self, storage: JSONStorage | None = None):
+        self.storage = storage or get_storage()
 
     def create_project(
         self,

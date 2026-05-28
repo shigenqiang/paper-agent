@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -20,6 +21,22 @@ class PaperStatus(str, Enum):
     CARD_READY = "card_ready"
     EVIDENCE_READY = "evidence_ready"
     FAILED = "failed"
+
+
+class ChunkType(str, Enum):
+    TITLE = "title"
+    ABSTRACT = "abstract"
+    BODY = "body"
+    METHOD = "method"
+    RESULT = "result"
+    DISCUSSION = "discussion"
+    LIMITATION = "limitation"
+    CONCLUSION = "conclusion"
+    REFERENCE = "reference"
+    TABLE = "table"
+    FIGURE_CAPTION = "figure_caption"
+    APPENDIX = "appendix"
+    UNKNOWN = "unknown"
 
 
 class ReportType(str, Enum):
@@ -86,8 +103,10 @@ class Paper(BaseModel):
     year: int | None = None
     venue: str = ""
     doi: str = ""
+    arxiv_id: str = ""
     abstract: str = ""
     url: str = ""
+    pdf_url: str = ""
     source: str = ""
     status: PaperStatus = PaperStatus.IMPORTED
     pdf_path: str = ""
@@ -102,11 +121,36 @@ class Paper(BaseModel):
 class PaperChunk(BaseModel):
     chunk_id: str
     paper_id: str
+    chunk_index: int = 0
     section_title: str = ""
+    section_type: str = ""  # abstract/method/result/discussion/conclusion/reference/...
+    chunk_type: str = "body"  # body/reference/table/figure_caption/title/abstract
     text: str = ""
     start_char: int = 0
     end_char: int = 0
+    page_start: int = 0
+    page_end: int = 0
     token_count: int = 0
+    parser_name: str = "pdfplumber"
+    quality_flags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ParseResult(BaseModel):
+    parse_id: str = Field(default_factory=lambda: f"parse_{uuid.uuid4().hex[:8]}")
+    paper_id: str
+    project_id: str = ""
+    parser_name: str = "pdfplumber"
+    status: str = "pending"  # pending/parsing/success/failed/partial
+    page_count: int = 0
+    section_count: int = 0
+    chunk_count: int = 0
+    body_chunk_count: int = 0
+    reference_count: int = 0
+    quality_flags: list[str] = Field(default_factory=list)
+    error_message: str = ""
+    started_at: str = ""
+    finished_at: str = ""
 
 
 # ── 论文卡片 ──────────────────────────────────────────
@@ -116,12 +160,35 @@ class SourceSpan(BaseModel):
     field: str
     chunk_id: str
     quote: str = ""
+    section_type: str = ""
+
+
+class ExtractedClaim(BaseModel):
+    text: str
+    quote: str = ""
+    chunk_id: str = ""
+    section_type: str = ""
+
+
+class PaperCardExtractionResult(BaseModel):
+    research_question: str = "unknown"
+    method: str = "unknown"
+    data_or_sample: str = "unknown"
+    key_findings: list[ExtractedClaim] = Field(default_factory=list)
+    limitations: list[ExtractedClaim] = Field(default_factory=list)
+    future_work: list[ExtractedClaim] = Field(default_factory=list)
+    topics: list[str] = Field(default_factory=list)
+    possible_gaps: list[ExtractedClaim] = Field(default_factory=list)
+    confidence: float = 0.5
 
 
 class PaperCard(BaseModel):
     card_id: str
     paper_id: str
     project_id: str
+    version: int = 1
+    active: bool = True
+
     research_question: str = "unknown"
     method: str = "unknown"
     data_or_sample: str = "unknown"
@@ -130,9 +197,33 @@ class PaperCard(BaseModel):
     future_work: list[str] = Field(default_factory=list)
     topics: list[str] = Field(default_factory=list)
     possible_gaps: list[str] = Field(default_factory=list)
+
     source_spans: list[SourceSpan] = Field(default_factory=list)
+    input_chunk_ids: list[str] = Field(default_factory=list)
+
+    extraction_method: str = "llm"  # llm / fallback / manual / imported
+    model_name: str = ""
+    prompt_version: str = "paper_card_v1"
     confidence: float = 0.0
+    quality_score: float = 0.0
+    quality_flags: list[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+class CardQualityReport(BaseModel):
+    card_id: str
+    paper_id: str
+    completeness: float = 0.0
+    traceability: float = 0.0
+    specificity: float = 0.0
+    quote_match_rate: float = 0.0
+    missing_fields: list[str] = Field(default_factory=list)
+    weak_fields: list[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+    recommended_action: str = ""
 
 
 # ── 证据记录 ──────────────────────────────────────────
@@ -195,6 +286,7 @@ class RetrievalScope(BaseModel):
     method_ids: list[str] = Field(default_factory=list)
     time_range: list[str] = Field(default_factory=list)
     summary: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── QA ────────────────────────────────────────────────
@@ -214,6 +306,9 @@ class QAResponse(BaseModel):
     graph_paths: list[list[str]] = Field(default_factory=list)
     uncertainty: str = ""
     suggested_actions: list[str] = Field(default_factory=list)
+    validation_warnings: list[str] = Field(default_factory=list)
+    retrieval_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = 0.0
 
 
 # ── 报告 ──────────────────────────────────────────────
@@ -244,6 +339,11 @@ class Report(BaseModel):
     paper_ids: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     graph_node_ids: list[str] = Field(default_factory=list)
+    status: str = "draft"  # draft / final / archived
+    section_sources: dict[str, Any] = Field(default_factory=dict)
+    validation_result: dict[str, Any] = Field(default_factory=dict)
+    exported_formats: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     version: int = 1
@@ -252,6 +352,12 @@ class Report(BaseModel):
 class ReportVersion(BaseModel):
     version_id: str
     report_id: str
+    version_number: int = 1
     content: str
     reason: str = ""
+    scope_snapshot: dict[str, Any] = Field(default_factory=dict)
+    source_snapshot: dict[str, Any] = Field(default_factory=dict)
+    paper_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    validation_result: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())

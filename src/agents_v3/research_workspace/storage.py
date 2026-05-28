@@ -92,6 +92,12 @@ class JSONStorage:
             "report_versions": "version_id",
             "graphs": "project_id",
             "chunks": "paper_id",
+            "paper_chunks": "chunk_id",
+            "parse_results": "parse_id",
+            "graphs": "graph_id",
+            "qa_history": "qa_id",
+            "search_sessions": "session_id",
+            "search_cache": "cache_key",
         }
         return mapping.get(name, "id")
 

@@ -1,8 +1,22 @@
 """研究工作空间模块 - 论文知识库分析 Agent 核心"""
 
-from src.agents_v3.research_workspace.llm_service import LLMConfig, LLMService, get_llm_service
+from src.agents_v3.research_workspace.llm_service import LLMConfig, LLMService, LLMCallResult, FakeLLMService, get_llm_service
+from src.agents_v3.research_workspace.llm_errors import (
+    LLMServiceError, LLMProviderError, LLMTimeoutError, LLMRateLimitError,
+    EmptyLLMResponseError, JsonExtractionError, StructuredOutputError, JsonRepairError,
+)
+from src.agents_v3.research_workspace.prompt_registry import PromptRegistry, PromptTemplateSpec, get_prompt_registry
+from src.agents_v3.research_workspace.search import (
+    ArxivClient,
+    BaseSearchAdapter,
+    SearchQuery,
+    SearchResult,
+)
 from src.agents_v3.research_workspace.models import (
+    CardQualityReport,
+    ChunkType,
     EvidenceRecord,
+    ExtractedClaim,
     GraphEdge,
     GraphNode,
     InnovationPoint,
@@ -11,8 +25,10 @@ from src.agents_v3.research_workspace.models import (
     EdgeType,
     Paper,
     PaperCard,
+    PaperCardExtractionResult,
     PaperChunk,
     PaperStatus,
+    ParseResult,
     Project,
     QARequest,
     QAResponse,
@@ -36,6 +52,7 @@ from src.agents_v3.research_workspace.innovation_generator import InnovationRepo
 from src.agents_v3.research_workspace.report_service import ReportService
 
 __all__ = [
+    "ChunkType",
     "LLMConfig",
     "LLMService",
     "EvidenceRecord",
@@ -56,6 +73,7 @@ __all__ = [
     "PaperChunk",
     "PaperLibraryService",
     "PaperStatus",
+    "ParseResult",
     "ParserService",
     "Project",
     "ProjectService",

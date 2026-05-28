@@ -76,8 +76,8 @@ class TestScopeQAService:
     def test_classify_intent_innovation_returns_innovation_generation(self, service):
         assert service.classify_intent("有什么创新点？") == "innovation_generation"
 
-    def test_classify_intent_comparison_returns_comparison(self, service):
-        assert service.classify_intent("比较这些论文") == "comparison"
+    def test_classify_intent_comparison_returns_method_compare(self, service):
+        assert service.classify_intent("比较这些论文") == "method_compare"
 
     def test_classify_intent_default_returns_summary(self, service):
         assert service.classify_intent("这些论文讲了什么？") == "summary"
@@ -109,7 +109,7 @@ class TestScopeQAService:
     def test_answer_innovation_suggests_report_generation(self, service, sample_data):
         response = service.answer("proj1", "有什么创新点？", {
             "type": "selected_papers",
-            "selected_paper_ids": ["p1"],
+            "selected_paper_ids": ["p1", "p2"],
         })
         assert "generate_innovation_report" in response.suggested_actions
 
