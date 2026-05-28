@@ -1545,6 +1545,13 @@ entropy = -sum(p(c) * log(p(c)) for c in clusters)
 - 支持多跳引用的链式追踪
 - 可视化展示实体关系
 
+#### 11.3.1 Medical-Graph-RAG
+
+专门针对医疗领域的RAG系统：
+- 处理临床文本
+- 支持医学实体识别
+- 提供专业术语处理
+
 ### 11.4 学术引用标准
 
 #### 11.4.1 GB/T 7714-2015
@@ -1755,7 +1762,66 @@ def calculate_faithfulness(question, answer, context):
     return faithfulness
 ```
 
-### 14.2 TruLens: RAG三元组评估
+#### 14.1.3 RAGAs使用示例
+
+```python
+from ragas import evaluate
+from ragas.metrics import (
+    faithfulness,
+    answer_relevancy,
+    context_precision
+)
+
+# 准备数据
+eval_data = {
+    "question": ["中国的首都是什么？"],
+    "answer": ["中国的首都是北京。"],
+    "contexts": [["北京是中国的首都,位于华北地区。"]]
+}
+
+# 运行评估
+results = evaluate(eval_data, metrics=[
+    faithfulness,
+    answer_relevancy,
+    context_precision
+])
+
+print(results)
+```
+
+#### 14.1.4 LlamaIndex评估集成
+
+LlamaIndex提供与RAGAs的深度集成：
+
+```python
+from llama_index.core.evaluation import RAGASAEvaluator
+
+evaluator = RAGASAEvaluator()
+result = await evaluator.aevaluate(predicted_answer, reference_answer,
+                                    retrieved_contexts, query)
+```
+
+### 14.2 ARES: 自动化RAG评估系统
+
+**ARES**使用**Prediction-Powered Inference（PPI）**技术提升评估准确性。
+
+#### 14.2.1 核心思想
+
+- 结合少量人工标注和大规模无标签数据
+- 提供统计上严格的置信区间
+- 降低评估成本的同时保证准确性
+
+#### 14.2.2 评估流程
+
+```
+查询 → RAG系统 → 答案
+    ↓              ↓
+人工标注    LLM评估
+    ↓         ↓
+校准数据 → PPI推断 → 最终评估
+```
+
+### 14.3 TruLens: RAG三元组评估
 
 **TruLens**提出RAG评估的三元组框架：
 
@@ -1786,7 +1852,14 @@ def calculate_faithfulness(question, answer, context):
 - 信息整合
 - 反事实鲁棒性
 
-### 14.4 评估工具对比
+#### 14.3.2 RAG-RewardBench
+
+专门评估RAG奖励模型的基准（arXiv:2412.13746）：
+- 测试与人类偏好的对齐程度
+- 覆盖多种RAG场景
+- 促进奖励模型优化
+
+### 14.5 评估工具对比
 
 | 工具 | 特点 | 适用场景 |
 |-----|------|---------|

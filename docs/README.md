@@ -5,9 +5,8 @@
 ```
 docs/
 ├── getting-started/     # Quick start, setup, project overview
-├── architecture/        # System architecture (per-module docs)
 ├── api/                 # API reference
-├── development/         # Development guide, plans, testing, code standards
+├── development/         # Code and project standards
 └── research/            # Technical research notes
 ```
 
@@ -21,87 +20,18 @@ docs/
 | [Frontend Overview](getting-started/frontend-overview.md) | Frontend pages and features |
 | [Docker Registry](getting-started/docker-registry.md) | Container image registry |
 
-## Architecture
-
-System architecture docs organized by module.
-
-| Document | Description |
-|----------|-------------|
-| [Architecture Diagram](architecture/architecture-diagram.md) | Full system architecture |
-| [Execution Paths](architecture/execution-paths.md) | Execution flow and tracing |
-| [Agents Catalog](architecture/agents-catalog.md) | Complete agent inventory |
-
-### Core
-
-| Module | Document |
-|--------|----------|
-| core | [Base Agent](architecture/core/base-agent.md) |
-| unified | [Circuit Breaker](architecture/unified/circuit-breaker.md), [Intent Router](architecture/unified/intent-router.md), [Multi-Agent](architecture/unified/multi-agent.md) |
-| config | [Config Module](architecture/config/config-module.md) |
-| security | [Security Module](architecture/security/security-module.md) |
-| validation | [Validation Module](architecture/validation/validation-module.md) |
-
-### Workflow & API
-
-| Module | Document |
-|--------|----------|
-| langgraph_workflow | [LangGraph Workflow](architecture/langgraph_workflow/langgraph-workflow.md) |
-| api | [API Gateway](architecture/api/api-gateway.md) |
-| server | [Server Module](architecture/server/server-module.md) |
-| sdk | [SDK Module](architecture/sdk/sdk-module.md) |
-
-### Agents
-
-| Module | Document |
-|--------|----------|
-| paper_agents | [Paper Agents](architecture/paper_agents/paper-agents.md) |
-| paper_search | [Paper Search](architecture/paper_search/paper-search-module.md) |
-| writing | [Writing Module](architecture/writing/writing-module.md) |
-| academic_qa | [Academic QA](architecture/academic_qa/academic-qa-system.md) |
-| problem_oriented | [Problem Oriented](architecture/problem_oriented/problem-oriented-module.md) |
-
-### Data & Retrieval
-
-| Module | Document |
-|--------|----------|
-| search | [Search Module](architecture/search/search-module.md), [Search System](architecture/search/search-system.md) |
-| retrieval | [Retrieval System](architecture/retrieval/retrieval-system.md) |
-| knowledge_graph | [Knowledge Graph](architecture/knowledge_graph/knowledge-graph.md) |
-| memory | [Memory System](architecture/memory/memory-system.md) |
-| storage | [Storage Layer](architecture/storage/storage-layer.md) |
-
-### Infrastructure
-
-| Module | Document |
-|--------|----------|
-| monitoring | [Monitoring System](architecture/monitoring/monitoring-system.md) |
-| evaluation | [Evaluation System](architecture/evaluation/evaluation-system.md) |
-| routing | [Routing System](architecture/routing/routing-system.md) |
-| intent | [Intent Router](architecture/intent/intent-router.md) |
-| citation | [Citation Module](architecture/citation/citation-module.md) |
-| tools | [Tools Module](architecture/tools/tools-module.md) |
-| skills | [Skills System](architecture/skills/skills-system.md) |
-| scheduler | [Scheduler System](architecture/scheduler/scheduler-system.md) |
-| personalization | [Personalization](architecture/personalization/personalization-system.md) |
-| multimodal | [Multimodal](architecture/multimodal/multimodal-system.md) |
-| state | [State Management](architecture/state/state-management.md) |
-
 ## API
 
 | Document | Description |
 |----------|-------------|
-| [API Reference](api/api-reference.md) | REST API endpoints |
 | [Logging](api/logging.md) | Loguru logging configuration |
 
 ## Development
 
 | Document | Description |
 |----------|-------------|
-| [Development Guide](development/development-guide.md) | Main development doc |
 | [Code Standards](development/代码规范.md) | Code conventions and style guide |
 | [Project Standards](development/项目规范.md) | Project structure and conventions |
-| [Architecture Review](development/architecture-review.md) | Architecture audit report |
-| [Plans](development/plans/) | Per-module development plans |
 
 ## Research
 
@@ -122,4 +52,4 @@ Technical research organized by topic.
 | [10-Knowledge Graph](research/10-知识图谱/) | Knowledge graph research |
 | [11-Product & Dev](research/11-产品方案与开发/) | Product plans and dev specs |
 | [12-Optimization](research/12-优化方案/) | Performance optimization |
-| [13-Mixed Research](research/13-综合调研/) |综合调研报告 |
+| [13-Mixed Research](research/13-综合调研/) | General research reports |
