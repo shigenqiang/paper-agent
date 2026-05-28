@@ -6,7 +6,6 @@ Paper Agent 主入口
 
 启动后访问 http://localhost:8000
 """
-import sys
 import os
 
 # 加载环境变量（最早执行）
@@ -15,9 +14,6 @@ try:
     load_dotenv()
 except ImportError:
     pass
-
-# 确保 src 目录在 path 中
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 设置日志系统
 from src.agents_v2.logging_config import setup_logging, logger
@@ -60,7 +56,7 @@ def main():
     logger.info("=" * 60)
 
     # 导入并启动 api_server
-    from src.agents_v2.server.api_server import main as api_main
+    from src.agents_v2.api.api_server import main as api_main
     api_main()
 
 

@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件（优先利用缓存）
-COPY requirements.txt .
+COPY pyproject.toml requirements.txt ./
 
 # 安装Python依赖到虚拟环境
 RUN python -m venv /opt/venv
@@ -97,7 +97,7 @@ RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # 复制并安装依赖
-COPY requirements.txt .
+COPY pyproject.toml requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -141,7 +141,7 @@ WORKDIR /app
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-COPY requirements.txt .
+COPY pyproject.toml requirements.txt ./
 
 # 只安装核心依赖
 RUN pip install --no-cache-dir --upgrade pip && \
