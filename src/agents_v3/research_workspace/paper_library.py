@@ -43,6 +43,8 @@ def search_result_to_meta(r: SearchResult) -> dict[str, Any]:
             "semantic_scholar_id": r.semantic_scholar_id,
         },
         "abstract": r.abstract,
+        "language": r.language,
+        "publication_type": r.publication_type,
         "url": r.url,
         "open_access": {"pdf_url": r.pdf_url},
         "classification": {
@@ -205,6 +207,8 @@ class PaperLibraryService:
             project_id=project_id,
             title=metadata.get("title", ""),
             abstract=metadata.get("abstract", ""),
+            language=metadata.get("language", ""),
+            publication_type=metadata.get("publication_type", ""),
             authors=authors,
             identifiers=identifiers,
             dates=dates,

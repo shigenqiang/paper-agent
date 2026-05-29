@@ -128,6 +128,10 @@ class OpenAlexClient(BaseSearchAdapter):
         # OpenAlex ID
         openalex_id = (work.get("id") or "").replace("https://openalex.org/", "")
 
+        # Language & type
+        language = work.get("language", "") or ""
+        publication_type = work.get("type", "") or ""
+
         return SearchResult(
             title=title,
             authors=authors,
@@ -140,6 +144,8 @@ class OpenAlexClient(BaseSearchAdapter):
             pdf_url=pdf_url,
             citations=citations,
             concepts=concepts,
+            language=language,
+            publication_type=publication_type,
             source="openalex",
             source_payload={"openalex_id": openalex_id},
         )

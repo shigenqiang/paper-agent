@@ -41,6 +41,8 @@ class SearchResult(BaseModel):
     citations: int | None = None
     concepts: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+    language: str = ""
+    publication_type: str = ""
     source_payload: dict[str, Any] = Field(default_factory=dict)
     dedup_key: str = ""
     relevance_score: float = 0.0

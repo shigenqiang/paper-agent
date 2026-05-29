@@ -131,6 +131,8 @@ class ArxivClient(BaseSearchAdapter):
                     arxiv_id=arxiv_id,
                     url=entry_id,
                     pdf_url=pdf_url,
+                    language="en",
+                    publication_type="article",
                     source="arxiv",
                     venue=venue,
                     source_payload={"entry_id": entry_id, "primary_category": venue},

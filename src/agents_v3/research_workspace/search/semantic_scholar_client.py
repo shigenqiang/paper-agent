@@ -13,7 +13,7 @@ from loguru import logger
 from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchQuery, SearchResult
 
 S2_API_URL = "https://api.semanticscholar.org/graph/v1"
-S2_FIELDS = "title,abstract,authors,year,venue,citationCount,influentialCitationCount,fieldsOfStudy,openAccessPdf,externalIds,tldr"
+S2_FIELDS = "title,abstract,authors,year,venue,citationCount,influentialCitationCount,fieldsOfStudy,openAccessPdf,externalIds,tldr,publicationTypes,language"
 
 
 class SemanticScholarClient(BaseSearchAdapter):
@@ -136,6 +136,11 @@ class SemanticScholarClient(BaseSearchAdapter):
         tldr_data = paper.get("tldr") or {}
         tldr = tldr_data.get("text", "") or ""
 
+        # Language & publication type
+        language = paper.get("language", "") or ""
+        pub_types = paper.get("publicationTypes") or []
+        publication_type = pub_types[0] if pub_types else ""
+
         return SearchResult(
             title=title,
             authors=authors,
@@ -150,6 +155,8 @@ class SemanticScholarClient(BaseSearchAdapter):
             pdf_url=pdf_url,
             citations=citations,
             concepts=concepts,
+            language=language,
+            publication_type=publication_type,
             source="semantic_scholar",
             source_payload={
                 "s2_id": s2_id,
