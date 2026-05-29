@@ -85,11 +85,12 @@ class PaperImportBibtexRequest(BaseModel):
 
 class SearchPapersRequest(BaseModel):
     query: str
-    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv"])
+    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv", "semantic_scholar"])
     limit: int = 20
     year_from: int | None = None
     year_to: int | None = None
     use_cache: bool = True
+    force_refresh: bool = False
 
 
 class SearchCommitRequest(BaseModel):

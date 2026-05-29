@@ -30,6 +30,7 @@ from src.agents_v3.research_workspace.search.openalex_client import OpenAlexClie
 from src.agents_v3.research_workspace.search.orchestrator import SearchOrchestrator
 from src.agents_v3.research_workspace.search.rate_limit import RateManager, SourceConfig
 from src.agents_v3.research_workspace.search.ranking import RankingService
+from src.agents_v3.research_workspace.search.semantic_scholar_client import SemanticScholarClient
 from src.agents_v3.research_workspace.search.strategies import SearchStrategy, get_strategy
 
 __all__ = [
@@ -52,6 +53,7 @@ __all__ = [
     "SearchResultMerger",
     "SearchSession",
     "SearchStrategy",
+    "SemanticScholarClient",
     "SourceConfig",
     "build_existing_keys",
     "create_default_adapters",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from datetime import datetime
@@ -245,6 +246,49 @@ class PaperLibraryService:
                 logger.error(f"Search adapter {adapter.source_name} failed: {e}")
         return all_results
 
+    # ── 搜索缓存 ──────────────────────────────────────
+
+    @staticmethod
+    def _make_cache_key(query: SearchQuery) -> str:
+        """根据查询参数生成缓存 key"""
+        parts = [
+            query.query.strip().lower(),
+            ",".join(sorted(query.sources)),
+            str(query.year_from or ""),
+            str(query.year_to or ""),
+            str(query.limit),
+        ]
+        raw = "|".join(parts)
+        return hashlib.md5(raw.encode()).hexdigest()
+
+    def _check_cache(self, cache_key: str) -> list[SearchResult] | None:
+        """查找缓存的搜索结果"""
+        items = self.storage.load_collection("search_cache")
+        for item in items:
+            if item.get("cache_key") == cache_key:
+                results = [SearchResult(**r) for r in item.get("results", [])]
+                logger.info(f"Search cache hit: {cache_key} ({len(results)} results)")
+                return results
+        return None
+
+    def _store_cache(self, cache_key: str, query: SearchQuery, results: list[SearchResult]) -> None:
+        """存储搜索结果到缓存"""
+        items = self.storage.load_collection("search_cache")
+        # 移除旧缓存
+        items = [i for i in items if i.get("cache_key") != cache_key]
+        items.append({
+            "cache_key": cache_key,
+            "query": query.model_dump(),
+            "results": [r.model_dump(exclude_defaults=True) for r in results],
+            "cached_at": datetime.now().isoformat(),
+            "result_count": len(results),
+        })
+        # 只保留最近 50 条缓存
+        if len(items) > 50:
+            items = items[-50:]
+        self.storage.save_collection("search_cache", items)
+        logger.info(f"Cached search results: {cache_key} ({len(results)} results)")
+
     def search_and_import(
         self,
         project_id: str,
@@ -356,10 +400,33 @@ class PaperLibraryService:
         project_id: str,
         query: SearchQuery,
     ) -> SearchSession:
-        """搜索并暂存结果（不入库），返回 SearchSession"""
+        """搜索并暂存结果（不入库），返回 SearchSession。支持缓存。"""
+        cache_key = self._make_cache_key(query)
+
+        # 尝试缓存
+        if query.use_cache and not query.force_refresh:
+            cached = self._check_cache(cache_key)
+            if cached is not None:
+                session = SearchSession(
+                    project_id=project_id,
+                    query=query.model_dump(),
+                    results=cached,
+                    status="pending",
+                )
+                storage = self.storage
+                session_data = session.model_dump()
+                session_data["results"] = [r.model_dump(exclude_defaults=True) for r in session.results]
+                storage.upsert_item("search_sessions", session.session_id, session_data)
+                logger.info(f"Created search session {session.session_id} from cache: {len(cached)} results")
+                return session
+
+        # 缓存未命中，调用 API
         results = self.search_papers(query)
         ranking = RankingService(query=query.query)
         results = ranking.rank(results, query=query.query)
+
+        # 存入缓存
+        self._store_cache(cache_key, query, results)
         session = SearchSession(
             project_id=project_id,
             query=query.model_dump(),

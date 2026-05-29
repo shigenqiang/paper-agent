@@ -230,7 +230,8 @@ def create_app(storage=None) -> FastAPI:
         svc = get_paper_library(project_ref)
         query = SearchQuery(
             query=req.query, sources=req.sources, limit=req.limit,
-            year_from=req.year_from, year_to=req.year_to, use_cache=req.use_cache,
+            year_from=req.year_from, year_to=req.year_to,
+            use_cache=req.use_cache, force_refresh=req.force_refresh,
         )
         session = svc.search_candidates(project.project_id, query)
         return ApiResponse(data={
@@ -245,6 +246,21 @@ def create_app(storage=None) -> FastAPI:
         svc = get_paper_library(project_ref)
         papers = svc.commit_search_results(project.project_id, req.session_id, req.selected_result_ids)
         return ApiResponse(data=[p.model_dump() for p in papers])
+
+    # ── PDF 下载 ──
+
+    @app.post("/api/rw/projects/{project_ref}/papers/download")
+    def download_pdfs(project_ref: str):
+        project = _resolve_project(project_ref)
+        svc = get_parser_service(project_ref)
+        result = svc.download_all_pdfs(project.project_id)
+        return ApiResponse(data=result)
+
+    @app.post("/api/rw/projects/{project_ref}/papers/{paper_id}/download")
+    def download_pdf(project_ref: str, paper_id: str):
+        svc = get_parser_service(project_ref)
+        result = svc.download_pdf(paper_id)
+        return ApiResponse(data=result)
 
     # ── 解析 ──
 

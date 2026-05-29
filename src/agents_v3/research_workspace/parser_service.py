@@ -63,6 +63,78 @@ class ParserService:
     def __init__(self, storage: JSONStorage | None = None):
         self.storage = storage or get_storage()
 
+    def download_pdf(self, paper_id: str) -> dict[str, Any]:
+        """下载论文 PDF 到本地"""
+        import urllib.request
+        from pathlib import Path
+
+        item = self.storage.get_item("papers", paper_id)
+        if not item:
+            return {"success": False, "error": "Paper not found"}
+
+        paper = Paper(**item)
+        pdf_url = paper.open_access.pdf_url if paper.open_access else ""
+        if not pdf_url:
+            return {"success": False, "error": "No PDF URL"}
+
+        # 目标路径
+        project_id = paper.project_id
+        dest_dir = self.storage.data_dir / "files" / project_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / f"{paper_id}.pdf"
+
+        if dest_path.exists():
+            # 已下载，更新路径
+            self._update_pdf_path(paper_id, str(dest_path))
+            return {"success": True, "pdf_path": str(dest_path), "skipped": True}
+
+        try:
+            logger.info(f"Downloading PDF: {pdf_url}")
+            headers = {"User-Agent": "PaperAgent/1.0 (research-tool)"}
+            req = urllib.request.Request(pdf_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                with open(dest_path, "wb") as f:
+                    f.write(resp.read())
+            self._update_pdf_path(paper_id, str(dest_path))
+            logger.info(f"Downloaded PDF: {dest_path}")
+            return {"success": True, "pdf_path": str(dest_path)}
+        except Exception as e:
+            logger.error(f"PDF download failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    def download_all_pdfs(self, project_id: str) -> dict[str, Any]:
+        """下载项目中所有有 PDF URL 但没有本地文件的论文"""
+        items = self.storage.query("papers", {"project_id": project_id})
+        results = {"total": 0, "downloaded": 0, "skipped": 0, "failed": 0}
+
+        for item in items:
+            paper = Paper(**item)
+            pdf_url = paper.open_access.pdf_url if paper.open_access else ""
+            if not pdf_url:
+                continue
+            if paper.pdf_path and Path(paper.pdf_path).exists():
+                results["skipped"] += 1
+                continue
+
+            results["total"] += 1
+            result = self.download_pdf(paper.paper_id)
+            if result.get("success"):
+                if result.get("skipped"):
+                    results["skipped"] += 1
+                else:
+                    results["downloaded"] += 1
+            else:
+                results["failed"] += 1
+
+        return results
+
+    def _update_pdf_path(self, paper_id: str, pdf_path: str) -> None:
+        """更新论文的 pdf_path"""
+        item = self.storage.get_item("papers", paper_id)
+        if item:
+            item["pdf_path"] = pdf_path
+            self.storage.upsert_item("papers", paper_id, item)
+
     def parse_paper(self, paper_id: str) -> dict[str, Any]:
         item = self.storage.get_item("papers", paper_id)
         if not item:

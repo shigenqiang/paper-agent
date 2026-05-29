@@ -25,7 +25,7 @@ class MockSearchAdapter(BaseSearchAdapter):
 @pytest.fixture
 def service(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "src.agents_v3.research_workspace.storage._storage", None
+        "src.agents_v3.research_workspace.storage._global_storage", None
     )
     monkeypatch.setattr(
         "src.agents_v3.research_workspace.paper_library.get_storage",

@@ -7,6 +7,7 @@ from typing import Any
 from src.agents_v3.research_workspace.search.arxiv_client import ArxivClient
 from src.agents_v3.research_workspace.search.base import BaseSearchAdapter
 from src.agents_v3.research_workspace.search.openalex_client import OpenAlexClient
+from src.agents_v3.research_workspace.search.semantic_scholar_client import SemanticScholarClient
 
 
 def create_default_adapters(config: dict[str, Any] | None = None) -> dict[str, BaseSearchAdapter]:
@@ -20,6 +21,10 @@ def create_default_adapters(config: dict[str, Any] | None = None) -> dict[str, B
     )
     adapters["arxiv"] = ArxivClient(
         min_interval=cfg.get("arxiv", {}).get("min_interval_seconds", 3.0),
+    )
+    adapters["semantic_scholar"] = SemanticScholarClient(
+        api_key=cfg.get("semantic_scholar", {}).get("api_key", ""),
+        min_interval=cfg.get("semantic_scholar", {}).get("min_interval_seconds", 3.0),
     )
 
     return adapters

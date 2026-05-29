@@ -19,7 +19,7 @@ class SourceConfig:
 _DEFAULT_CONFIGS: dict[str, SourceConfig] = {
     "arxiv": SourceConfig(min_interval=3.0, max_retries=3),
     "openalex": SourceConfig(min_interval=0.5, max_retries=3),
-    "semantic_scholar": SourceConfig(min_interval=0.2, max_retries=3),
+    "semantic_scholar": SourceConfig(min_interval=1.0, max_retries=3),
     "pubmed": SourceConfig(min_interval=0.34, max_retries=3),
 }
 

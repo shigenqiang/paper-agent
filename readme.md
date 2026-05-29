@@ -149,6 +149,64 @@ qa.answer(project_id, "这个方向有什么创新空间？", {
 ✓ "将 X 方法迁移到 Y 领域" → 有 3 篇论文支撑图谱 Gap，被接受
 ```
 
+### 搜索排序算法
+
+搜索结果使用 **BM25 相关性 + 多维质量评分** 进行排序。
+
+#### 相关性（BM25）
+
+使用 Okapi BM25 算法计算查询与论文的文本相关性，替代简单的关键词匹配：
+
+```
+score(D, Q) = Σ IDF(qi) × [f(qi,D) × (k1+1)] / [f(qi,D) + k1 × (1 - b + b × |D|/avgdl)]
+```
+
+- **k1 = 1.5**：词频饱和度（学术术语重复出现的意义递减）
+- **b = 0.4**：文档长度归一化（学术摘要较短，用较小值减少长度惩罚）
+- **IDF**：逆文档频率，自动降权常见词
+
+各字段按权重拼接为 BM25 文档：
+
+| 字段 | 权重 | 说明 |
+|------|------|------|
+| title | 3.0 | 标题最能反映论文主题 |
+| abstract | 1.5 | 摘要是核心内容 |
+| keywords | 2.0 | 关键词高度相关 |
+| concepts | 1.0 | OpenAlex 概念标签 |
+| venue | 0.5 | 期刊/会议名 |
+
+#### 质量评分
+
+质量分衡量论文学术影响力，归一化到 [0, 1]：
+
+```
+quality = 0.50 × citation + 0.25 × velocity + 0.20 × completeness + 0.05 × recency
+```
+
+| 维度 | 权重 | 计算方式 |
+|------|------|----------|
+| 引用数 | 50% | `log(1+citations) / log(1+max_citations)`，语料库内相对归一化 |
+| 引用速度 | 25% | `log(1 + citations/age) / log(1+max_citations)`，年均引用数 |
+| 元数据完整度 | 20% | 7 个字段（title/abstract/authors/doi/year/venue/pdf_url）的填充率 |
+| 新近性 | 5% | `e^(-0.15 × age)`，指数衰减，微调 |
+
+引用数是最强质量信号；引用速度反映论文持续影响力（高引用但年均低的老论文不会被过度惩罚）。
+
+#### 最终分数
+
+```
+final = 0.40 × relevance + 0.20 × citation + 0.15 × recency
+      + 0.15 × completeness + 0.10 × source
+```
+
+| 维度 | 权重 | 说明 |
+|------|------|------|
+| BM25 相关性 | 40% | 查询与论文的文本匹配度 |
+| 引用数 | 20% | 学术影响力 |
+| 新近性 | 15% | `e^(-0.15 × age)`，指数衰减 |
+| 元数据完整度 | 15% | 字段填充率 |
+| 来源优先级 | 10% | 数据源可信度 |
+
 ---
 
 ## 快速开始
@@ -175,6 +233,10 @@ pip install pydantic loguru pdfplumber fastapi uvicorn
 ANTHROPIC_BASE_URL=https://your-api-endpoint
 ANTHROPIC_AUTH_TOKEN=your-token
 ANTHROPIC_MODEL=mimo-v2.5-pro
+
+# Semantic Scholar API Key（可选，提升搜索限额）
+# 免费申请：https://www.semanticscholar.org/product/api#api-key-form
+S2_API_KEY=your-semantic-scholar-api-key
 ```
 
 ### 启动服务
@@ -416,7 +478,7 @@ class Paper(BaseModel):
 | LLM | LLMService（可配置） | 统一 LLM 调用接口 |
 | 数据模型 | Pydantic v2 | 强类型、自动验证 |
 | 存储 | JSON 文件（项目目录隔离） | 每个项目独立目录，轻量可读 |
-| 搜索 | arXiv / OpenAlex / CrossRef | 多源学术搜索 + 去重 + 排序 |
+| 搜索 | OpenAlex / arXiv / Semantic Scholar | 多源学术搜索 + BM25 排序 + 去重 |
 | PDF 解析 | pdfplumber | 文本提取和分块 |
 | 知识图谱 | NetworkX | 实体关系图 + Gap 分析 |
 | 日志 | Loguru | 结构化日志 |

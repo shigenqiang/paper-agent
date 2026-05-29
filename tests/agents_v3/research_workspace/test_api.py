@@ -9,7 +9,7 @@ from src.agents_v3.research_workspace.storage import JSONStorage
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.agents_v3.research_workspace.storage._storage", None)
+    monkeypatch.setattr("src.agents_v3.research_workspace.storage._global_storage", None)
     storage = JSONStorage(data_dir=tmp_path)
     # Patch get_storage to return our test storage
     monkeypatch.setattr(

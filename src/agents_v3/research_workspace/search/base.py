@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 class SearchQuery(BaseModel):
     query: str
     project_id: str | None = None
-    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv"])
+    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv", "semantic_scholar"])
     limit: int = 20
     year_from: int | None = None
     year_to: int | None = None
