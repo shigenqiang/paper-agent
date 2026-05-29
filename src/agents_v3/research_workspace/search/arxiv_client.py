@@ -10,7 +10,14 @@ import xml.etree.ElementTree as ET
 
 from loguru import logger
 
-from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchQuery, SearchResult
+from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchField, SearchQuery, SearchResult
+
+ARXIV_FIELD_PREFIX = {
+    SearchField.ALL: "all",
+    SearchField.TITLE: "ti",
+    SearchField.AUTHOR: "au",
+    SearchField.ABSTRACT: "abs",
+}
 
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
@@ -27,6 +34,10 @@ class ArxivClient(BaseSearchAdapter):
     @property
     def source_name(self) -> str:
         return "arxiv"
+
+    @property
+    def supported_fields(self) -> set[SearchField]:
+        return {SearchField.ALL, SearchField.TITLE, SearchField.AUTHOR, SearchField.ABSTRACT}
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         self._rate_limit()
@@ -64,9 +75,14 @@ class ArxivClient(BaseSearchAdapter):
         self._last_request_time = time.time()
 
     def _build_params(self, query: SearchQuery) -> str:
-        q = urllib.parse.quote(f"all:{query.query}")
+        field = self._resolve_field(query.field)
+        prefix = ARXIV_FIELD_PREFIX[field]
+        q_body = query.query.strip()
+        if " " in q_body:
+            q_body = f'"{q_body}"'
+        q = urllib.parse.quote(f"{prefix}:{q_body}", safe=':"')
         limit = min(query.limit, self.max_results)
-        return f"search_query={q}&start=0&max_results={limit}&sortBy=relevance&sortOrder=descending"
+        return f"search_query={q}&start={query.offset}&max_results={limit}&sortBy=relevance&sortOrder=descending"
 
     def _filter_by_year(
         self, results: list[SearchResult], year_from: int | None, year_to: int | None

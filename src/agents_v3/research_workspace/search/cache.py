@@ -32,12 +32,14 @@ class SearchCache:
         year_from: int | None = None,
         year_to: int | None = None,
         field: str = "all",
+        offset: int = 0,
     ) -> str:
         """生成缓存 key"""
         parts = [
             query.lower().strip(),
             ",".join(sorted(sources)),
             str(limit),
+            str(offset),
             str(year_from or ""),
             str(year_to or ""),
             field,

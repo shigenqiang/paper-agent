@@ -62,9 +62,72 @@ class PaperLibraryService:
         self,
         storage: JSONStorage | None = None,
         search_adapters: list[BaseSearchAdapter] | None = None,
+        global_storage: JSONStorage | None = None,
     ):
         self.storage = storage or get_storage()
         self.search_adapters = search_adapters or []
+        self.global_storage = global_storage or get_storage()
+
+    # ── 论文池操作 ──────────────────────────────────────
+
+    def add_to_pool(self, result: SearchResult) -> str:
+        """将搜索结果存入全局论文池（无搜索分数），返回 paper_id"""
+        # 用 DOI/arXiv ID/OpenAlex ID 生成稳定的 paper_id
+        paper_id = self._make_pool_paper_id(result)
+        existing = self.global_storage.load_from_folder("papers_pool", paper_id)
+        if existing:
+            logger.debug(f"Paper already in pool: {paper_id}")
+            return paper_id
+
+        pool_data = {
+            "paper_id": paper_id,
+            "title": result.title,
+            "abstract": result.abstract,
+            "authors": [{"name": a} for a in result.authors],
+            "year": result.year,
+            "venue": result.venue,
+            "doi": result.doi,
+            "arxiv_id": result.arxiv_id,
+            "pubmed_id": result.pubmed_id,
+            "openalex_id": result.openalex_id,
+            "semantic_scholar_id": result.semantic_scholar_id,
+            "url": result.url,
+            "pdf_url": result.pdf_url,
+            "citations": result.citations,
+            "concepts": result.concepts,
+            "keywords": result.keywords,
+            "language": result.language,
+            "publication_type": result.publication_type,
+            "source": result.source,
+            "source_payload": result.source_payload,
+            "added_at": __import__("datetime").datetime.now().isoformat(),
+        }
+        self.global_storage.save_to_folder("papers_pool", paper_id, pool_data)
+        logger.info(f"Added to pool: {paper_id} - {result.title[:50]}")
+        return paper_id
+
+    def get_from_pool(self, paper_id: str) -> dict[str, Any] | None:
+        """从全局论文池读取论文元数据"""
+        return self.global_storage.load_from_folder("papers_pool", paper_id)
+
+    def list_pool(self) -> list[dict[str, Any]]:
+        """列出论文池中的所有论文"""
+        return self.global_storage.list_folder("papers_pool")
+
+    def _make_pool_paper_id(self, result: SearchResult) -> str:
+        """生成稳定的 paper_id（基于标识符）"""
+        if result.doi:
+            return f"doi_{result.doi.replace('/', '_').replace('.', '_')}"
+        if result.arxiv_id:
+            return f"arxiv_{result.arxiv_id}"
+        if result.openalex_id:
+            return f"oa_{result.openalex_id}"
+        if result.semantic_scholar_id:
+            return f"s2_{result.semantic_scholar_id}"
+        # fallback: 用标题生成
+        import hashlib
+        title_hash = hashlib.md5(result.title.lower().strip().encode()).hexdigest()[:12]
+        return f"title_{title_hash}"
 
     def add_uploaded_paper(
         self,
@@ -240,7 +303,10 @@ class PaperLibraryService:
         self,
         query: SearchQuery,
     ) -> list[SearchResult]:
-        """调用已注册的搜索适配器，返回结果（不去重，不入库）"""
+        """调用已注册的搜索适配器，返回结果（去重，存入论文池）"""
+        from src.agents_v3.research_workspace.search.merger import SearchResultMerger
+        merger = SearchResultMerger()
+
         all_results: list[SearchResult] = []
         for adapter in self.search_adapters:
             try:
@@ -248,7 +314,16 @@ class PaperLibraryService:
                 all_results.extend(results)
             except Exception as e:
                 logger.error(f"Search adapter {adapter.source_name} failed: {e}")
-        return all_results
+
+        # 去重合并
+        merged = merger.merge(all_results)
+
+        # 存入论文池
+        for r in merged:
+            paper_id = self.add_to_pool(r)
+            r.source_payload["pool_paper_id"] = paper_id
+
+        return merged
 
     # ── 搜索缓存 ──────────────────────────────────────
 
@@ -267,30 +342,28 @@ class PaperLibraryService:
 
     def _check_cache(self, cache_key: str) -> list[SearchResult] | None:
         """查找缓存的搜索结果"""
-        items = self.storage.load_collection("search_cache")
-        for item in items:
-            if item.get("cache_key") == cache_key:
-                results = [SearchResult(**r) for r in item.get("results", [])]
-                logger.info(f"Search cache hit: {cache_key} ({len(results)} results)")
-                return results
+        item = self.storage.get_item("search_cache", cache_key)
+        if item:
+            # 兼容两种格式：直接存储或包装在 data 字段中
+            cache_data = item.get("data", item)
+            results = [SearchResult(**r) for r in cache_data.get("results", [])]
+            logger.info(f"Search cache hit: {cache_key} ({len(results)} results)")
+            return results
         return None
 
     def _store_cache(self, cache_key: str, query: SearchQuery, results: list[SearchResult]) -> None:
         """存储搜索结果到缓存"""
-        items = self.storage.load_collection("search_cache")
-        # 移除旧缓存
-        items = [i for i in items if i.get("cache_key") != cache_key]
-        items.append({
-            "cache_key": cache_key,
+        cache_data = {
             "query": query.model_dump(),
             "results": [r.model_dump(exclude_defaults=True) for r in results],
             "cached_at": datetime.now().isoformat(),
             "result_count": len(results),
+        }
+        self.storage.upsert_item("search_cache", cache_key, {
+            "cache_key": cache_key,
+            "data": cache_data,
+            "expires_at": (datetime.now().timestamp() + 86400),  # 24 小时
         })
-        # 只保留最近 50 条缓存
-        if len(items) > 50:
-            items = items[-50:]
-        self.storage.save_collection("search_cache", items)
         logger.info(f"Cached search results: {cache_key} ({len(results)} results)")
 
     def search_and_import(
@@ -460,7 +533,7 @@ class PaperLibraryService:
         session_id: str,
         result_ids: list[str],
     ) -> list[Paper]:
-        """将选中的搜索结果提交入库"""
+        """将选中的搜索结果提交入库（从论文池读取元数据）"""
         session = self.get_search_session(session_id)
         if not session:
             logger.error(f"Search session not found: {session_id}")
@@ -472,6 +545,19 @@ class PaperLibraryService:
             r = results_by_id.get(rid)
             if not r:
                 continue
+
+            # 从论文池读取元数据
+            pool_paper_id = r.source_payload.get("pool_paper_id")
+            if pool_paper_id:
+                pool_data = self.get_from_pool(pool_paper_id)
+                if pool_data:
+                    meta = self._pool_data_to_meta(pool_data)
+                    paper = self.add_paper_metadata(project_id, meta, source=r.source)
+                    if paper:
+                        papers.append(paper)
+                    continue
+
+            # fallback: 直接用搜索结果
             meta = search_result_to_meta(r)
             paper = self.add_paper_metadata(project_id, meta, source=r.source)
             if paper:
@@ -484,3 +570,25 @@ class PaperLibraryService:
 
         logger.info(f"Committed {len(papers)} papers from session {session_id}")
         return papers
+
+    def _pool_data_to_meta(self, pool_data: dict[str, Any]) -> dict[str, Any]:
+        """将论文池数据转换为入库元数据格式"""
+        return {
+            "title": pool_data.get("title", ""),
+            "authors": pool_data.get("authors", []),
+            "abstract": pool_data.get("abstract", ""),
+            "year": pool_data.get("year"),
+            "venue": pool_data.get("venue", ""),
+            "doi": pool_data.get("doi", ""),
+            "arxiv_id": pool_data.get("arxiv_id", ""),
+            "pubmed_id": pool_data.get("pubmed_id", ""),
+            "openalex_id": pool_data.get("openalex_id", ""),
+            "semantic_scholar_id": pool_data.get("semantic_scholar_id", ""),
+            "url": pool_data.get("url", ""),
+            "pdf_url": pool_data.get("pdf_url", ""),
+            "citations": pool_data.get("citations"),
+            "concepts": pool_data.get("concepts", []),
+            "keywords": pool_data.get("keywords", []),
+            "language": pool_data.get("language", ""),
+            "publication_type": pool_data.get("publication_type", ""),
+        }

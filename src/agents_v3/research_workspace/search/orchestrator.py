@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from loguru import logger
@@ -37,6 +38,49 @@ class SearchOrchestrator:
         self.merger = merger or SearchResultMerger()
         self.ranking = ranking or RankingService()
 
+    def _search_single_source(
+        self, source_name: str, adapter: BaseSearchAdapter, query: SearchQuery
+    ) -> tuple[list[SearchResult], SearchErrorInfo | None, dict[str, dict[str, Any]]]:
+        """搜索单个源（线程安全）"""
+        source_start = time.time()
+
+        if not self.rate_manager.is_available(source_name):
+            return (
+                [],
+                SearchErrorInfo(
+                    source=source_name,
+                    category="RATE_LIMIT",
+                    message=f"Source {source_name} is temporarily unavailable",
+                    retryable=True,
+                ),
+                {source_name: {"success": False, "count": 0, "error": "rate_limited"}},
+            )
+
+        try:
+            self.rate_manager.acquire(source_name)
+            results = adapter.search(query)
+            self.rate_manager.record_success(source_name)
+            elapsed = int((time.time() - source_start) * 1000)
+            return (
+                results,
+                None,
+                {source_name: {"success": True, "count": len(results), "elapsed_ms": elapsed}},
+            )
+        except Exception as e:
+            self.rate_manager.record_error(source_name)
+            elapsed = int((time.time() - source_start) * 1000)
+            logger.error(f"Source {source_name} failed: {e}")
+            return (
+                [],
+                SearchErrorInfo(
+                    source=source_name,
+                    category="NETWORK_ERROR",
+                    message=str(e),
+                    retryable=True,
+                ),
+                {source_name: {"success": False, "count": 0, "elapsed_ms": elapsed, "error": str(e)}},
+            )
+
     def search(self, query: SearchQuery) -> SearchResponse:
         """执行多源搜索"""
         start = time.time()
@@ -48,6 +92,7 @@ class SearchOrchestrator:
             cache_key = SearchCache.make_key(
                 query.query, query.sources, query.limit,
                 query.year_from, query.year_to, query.field,
+                query.offset,
             )
             cached = self.cache.get(cache_key)
             if cached:
@@ -69,42 +114,19 @@ class SearchOrchestrator:
             ))
             return SearchResponse(query=query, errors=errors)
 
-        # Search each source
+        # Search each source in parallel
         all_results: list[SearchResult] = []
-        for source_name, adapter in active_adapters.items():
-            source_start = time.time()
-
-            # Rate limit
-            if not self.rate_manager.is_available(source_name):
-                errors.append(SearchErrorInfo(
-                    source=source_name,
-                    category="RATE_LIMIT",
-                    message=f"Source {source_name} is temporarily unavailable",
-                    retryable=True,
-                ))
-                source_stats[source_name] = {"success": False, "count": 0, "error": "rate_limited"}
-                continue
-
-            try:
-                self.rate_manager.acquire(source_name)
-                results = adapter.search(query)
-                self.rate_manager.record_success(source_name)
-
-                elapsed = int((time.time() - source_start) * 1000)
-                source_stats[source_name] = {"success": True, "count": len(results), "elapsed_ms": elapsed}
-                all_results.extend(results)
-
-            except Exception as e:
-                self.rate_manager.record_error(source_name)
-                elapsed = int((time.time() - source_start) * 1000)
-                errors.append(SearchErrorInfo(
-                    source=source_name,
-                    category="NETWORK_ERROR",
-                    message=str(e),
-                    retryable=True,
-                ))
-                source_stats[source_name] = {"success": False, "count": 0, "elapsed_ms": elapsed, "error": str(e)}
-                logger.error(f"Source {source_name} failed: {e}")
+        with ThreadPoolExecutor(max_workers=len(active_adapters)) as executor:
+            futures = {
+                executor.submit(self._search_single_source, name, adapter, query): name
+                for name, adapter in active_adapters.items()
+            }
+            for future in as_completed(futures):
+                src_results, error, stats = future.result()
+                all_results.extend(src_results)
+                if error:
+                    errors.append(error)
+                source_stats.update(stats)
 
         # Merge and dedup
         merged = self.merger.merge(all_results)
@@ -128,6 +150,7 @@ class SearchOrchestrator:
             cache_key = SearchCache.make_key(
                 query.query, query.sources, query.limit,
                 query.year_from, query.year_to, query.field,
+                query.offset,
             )
             ttl = SearchCache.get_ttl_for_query(query.query, query.sources)
             self.cache.set(cache_key, response.model_dump(), ttl=ttl)

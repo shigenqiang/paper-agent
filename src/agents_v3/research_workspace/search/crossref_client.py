@@ -10,7 +10,13 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchQuery, SearchResult
+from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchField, SearchQuery, SearchResult
+
+CROSSREF_FIELD_PARAM = {
+    SearchField.ALL: "query",
+    SearchField.TITLE: "query.title",
+    SearchField.AUTHOR: "query.author",
+}
 
 CROSSREF_API_URL = "https://api.crossref.org/works"
 
@@ -24,6 +30,10 @@ class CrossRefClient(BaseSearchAdapter):
     @property
     def source_name(self) -> str:
         return "crossref"
+
+    @property
+    def supported_fields(self) -> set[SearchField]:
+        return {SearchField.ALL, SearchField.TITLE, SearchField.AUTHOR}
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         params = self._build_params(query)
@@ -65,7 +75,9 @@ class CrossRefClient(BaseSearchAdapter):
         return headers
 
     def _build_params(self, query: SearchQuery) -> str:
-        parts = [f"query={urllib.parse.quote(query.query)}"]
+        field = self._resolve_field(query.field)
+        param = CROSSREF_FIELD_PARAM[field]
+        parts = [f"{param}={urllib.parse.quote(query.query)}"]
         parts.append(f"rows={min(query.limit, 50)}")
 
         if query.year_from or query.year_to:

@@ -87,8 +87,10 @@ class SearchPapersRequest(BaseModel):
     query: str
     sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv", "semantic_scholar"])
     limit: int = 20
+    offset: int = 0
     year_from: int | None = None
     year_to: int | None = None
+    field: str = "all"
     use_cache: bool = True
     force_refresh: bool = False
 

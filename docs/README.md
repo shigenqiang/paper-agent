@@ -26,6 +26,13 @@ docs/
 | [Quick Start - HTTP API](getting-started/quickstart.md#http-api-一览) | 完整 HTTP API 端点和使用示例 |
 | [Logging](api/logging.md) | Loguru logging configuration |
 
+## Modules
+
+| Document | Description |
+|----------|-------------|
+| [Search Module](search-module.md) | 搜索源、搜索模式、排序算法、去重合并 |
+| [Search Token Report](search-stage-token-report.md) | 搜索阶段 Token 消耗分析 |
+
 ## Development
 
 | Document | Description |

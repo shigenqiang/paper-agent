@@ -50,10 +50,62 @@ from src.agents_v3.research_workspace.api.models import (
 from src.agents_v3.research_workspace.search.base import SearchQuery
 
 
+def _init_storage_backends() -> None:
+    """启动时初始化存储后端（表不存在则创建，存在则跳过）"""
+    import yaml
+    from pathlib import Path
+
+    config_path = Path("config.yaml")
+    config = {}
+    if config_path.exists():
+        with open(config_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+
+    db_config = config.get("database", {})
+
+    # PostgreSQL 初始化
+    pg_config = db_config.get("postgres", {})
+    if pg_config.get("enabled", False):
+        try:
+            from src.agents_v3.research_workspace.postgres_storage import PostgresStorage
+            dsn = pg_config.get("dsn")
+            if dsn:
+                storage = PostgresStorage(dsn=dsn)
+            else:
+                storage = PostgresStorage(
+                    host=pg_config.get("host", "localhost"),
+                    port=pg_config.get("port", 5432),
+                    database=pg_config.get("database", "paper_agent"),
+                    user=pg_config.get("user", "postgres"),
+                    password=pg_config.get("password", ""),
+                )
+            storage.close()
+            logger.info("PostgreSQL storage initialized (tables ensured)")
+        except Exception as e:
+            logger.error(f"PostgreSQL initialization failed: {e}")
+    else:
+        logger.info("PostgreSQL disabled, using JSON storage")
+
+    # ChromaDB 初始化
+    chroma_config = db_config.get("chromadb", {})
+    if chroma_config.get("enabled", False):
+        try:
+            from src.agents_v3.research_workspace.vector_storage import VectorStorage
+            path = chroma_config.get("path", "data/chromadb")
+            vs = VectorStorage(path=path)
+            collections = vs.list_collections()
+            logger.info(f"ChromaDB initialized at {path}, collections: {collections}")
+        except Exception as e:
+            logger.error(f"ChromaDB initialization failed: {e}")
+    else:
+        logger.info("ChromaDB disabled")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """服务生命周期管理"""
     logger.info("Service starting up")
+    _init_storage_backends()
     yield
     # ── 关闭时清理 ──
     from src.agents_v3.research_workspace.storage import _global_storage, _project_storages
@@ -230,7 +282,9 @@ def create_app(storage=None) -> FastAPI:
         svc = get_paper_library(project_ref)
         query = SearchQuery(
             query=req.query, sources=req.sources, limit=req.limit,
+            offset=req.offset,
             year_from=req.year_from, year_to=req.year_to,
+            field=req.field,
             use_cache=req.use_cache, force_refresh=req.force_refresh,
         )
         session = svc.search_candidates(project.project_id, query)

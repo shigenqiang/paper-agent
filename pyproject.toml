@@ -24,6 +24,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "orjson>=3.8",
     "loguru>=0.7",
+    "psycopg2-binary>=2.9",
+    "chromadb>=0.4",
 ]
 
 [project.optional-dependencies]

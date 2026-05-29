@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class SearchField(str, Enum):
+    """搜索字段模式"""
+    ALL = "all"
+    TITLE = "title"
+    AUTHOR = "author"
+    ABSTRACT = "abstract"
 
 
 class SearchQuery(BaseModel):
@@ -14,9 +23,10 @@ class SearchQuery(BaseModel):
     project_id: str | None = None
     sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv", "semantic_scholar"])
     limit: int = 20
+    offset: int = 0
     year_from: int | None = None
     year_to: int | None = None
-    field: str = "all"  # all/title/author/abstract
+    field: SearchField = SearchField.ALL
     require_pdf: bool = False
     use_cache: bool = True
     force_refresh: bool = False
@@ -84,6 +94,17 @@ class BaseSearchAdapter(ABC):
     @abstractmethod
     def source_name(self) -> str:
         ...
+
+    @property
+    def supported_fields(self) -> set[SearchField]:
+        """该 adapter 支持的搜索字段模式，默认只支持 ALL"""
+        return {SearchField.ALL}
+
+    def _resolve_field(self, field: SearchField) -> SearchField:
+        """如果 adapter 不支持请求的 field，降级为 ALL"""
+        if field in self.supported_fields:
+            return field
+        return SearchField.ALL
 
     @abstractmethod
     def search(self, query: SearchQuery) -> list[SearchResult]:

@@ -9,7 +9,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchQuery, SearchResult
+from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchField, SearchQuery, SearchResult
 
 OPENALEX_API_URL = "https://api.openalex.org/works"
 
@@ -24,6 +24,10 @@ class OpenAlexClient(BaseSearchAdapter):
     @property
     def source_name(self) -> str:
         return "openalex"
+
+    @property
+    def supported_fields(self) -> set[SearchField]:
+        return {SearchField.ALL, SearchField.TITLE}
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         params = self._build_params(query)
@@ -57,7 +61,12 @@ class OpenAlexClient(BaseSearchAdapter):
             return None
 
     def _build_params(self, query: SearchQuery) -> str:
-        parts = [f"search={urllib.parse.quote(query.query)}"]
+        field = self._resolve_field(query.field)
+        if field == SearchField.TITLE:
+            parts = [f"filter=title.search:{urllib.parse.quote(query.query)}"]
+        else:
+            # OpenAlex author filter 不可靠，ALL 和 AUTHOR 都用 search= 全文搜索
+            parts = [f"search={urllib.parse.quote(query.query)}"]
 
         if query.year_from or query.year_to:
             year_filter = ""
@@ -70,6 +79,9 @@ class OpenAlexClient(BaseSearchAdapter):
             parts.append(f"filter={year_filter}")
 
         parts.append(f"per_page={min(query.limit, 50)}")
+        if query.offset > 0:
+            page = query.offset // query.limit + 1
+            parts.append(f"page={page}")
         parts.append("sort=relevance_score:desc")
 
         if self.email:

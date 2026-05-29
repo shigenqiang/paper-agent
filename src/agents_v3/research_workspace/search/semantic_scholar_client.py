@@ -10,7 +10,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchQuery, SearchResult
+from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchField, SearchQuery, SearchResult
 
 S2_API_URL = "https://api.semanticscholar.org/graph/v1"
 S2_FIELDS = "title,abstract,authors,year,venue,citationCount,influentialCitationCount,fieldsOfStudy,openAccessPdf,externalIds,tldr,publicationTypes,language"
@@ -27,6 +27,10 @@ class SemanticScholarClient(BaseSearchAdapter):
     @property
     def source_name(self) -> str:
         return "semantic_scholar"
+
+    @property
+    def supported_fields(self) -> set[SearchField]:
+        return {SearchField.ALL}
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         self._rate_limit()
@@ -66,6 +70,8 @@ class SemanticScholarClient(BaseSearchAdapter):
     def _build_params(self, query: SearchQuery) -> str:
         parts = [f"query={urllib.parse.quote(query.query)}"]
         parts.append(f"limit={min(query.limit, 100)}")
+        if query.offset > 0:
+            parts.append(f"offset={query.offset}")
         parts.append(f"fields={S2_FIELDS}")
 
         if query.year_from or query.year_to:

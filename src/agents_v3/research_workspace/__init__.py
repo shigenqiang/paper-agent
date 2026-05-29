@@ -31,6 +31,9 @@ from src.agents_v3.research_workspace.storage import (
     sanitize_dirname, unique_dirname, load_all_projects, resolve_project_ref,
     list_project_dirs, remove_project_storage, rename_project_storage,
 )
+from src.agents_v3.research_workspace.storage_backend import StorageBackend
+from src.agents_v3.research_workspace.postgres_storage import PostgresStorage, get_postgres_storage
+from src.agents_v3.research_workspace.vector_storage import VectorStorage, get_vector_storage
 
 # ── 核心业务服务 ──────────────────────────────────
 from src.agents_v3.research_workspace.project_service import ProjectService
@@ -64,10 +67,12 @@ __all__ = [
     "MetricsCollector", "NodeType", "EdgeType", "Paper", "PaperCard",
     "PaperCardExtractionResult", "PaperCardGenerator", "PaperChunk",
     "PaperLibraryService", "PaperStatus", "ParseResult", "ParserService",
-    "Project", "ProjectService", "PromptRegistry", "PromptTemplateSpec",
+    "PostgresStorage", "Project", "ProjectService", "PromptRegistry", "PromptTemplateSpec",
     "QARequest", "QAResponse", "QualityGateResult", "QualityGateSummary",
     "Report", "ReportService", "ReportType", "ReportVersion",
     "RetrievalScope", "RetrievalScopeService", "ScopeQAService", "ScopeType",
-    "SearchQuery", "SearchResult", "TaskService", "app", "create_app",
-    "get_llm_service", "get_project_storage", "get_prompt_registry", "get_storage", "reset_llm_service",
+    "SearchQuery", "SearchResult", "StorageBackend", "TaskService",
+    "VectorStorage", "app", "create_app", "get_llm_service", "get_postgres_storage",
+    "get_project_storage", "get_prompt_registry", "get_storage", "get_vector_storage",
+    "reset_llm_service",
 ]

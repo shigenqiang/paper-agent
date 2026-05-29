@@ -176,13 +176,31 @@ class SearchResultMerger:
 
                 sim = _jaccard_similarity(title_i, title_j)
                 if sim >= 0.95:
-                    # Keep the one with higher source priority
-                    pi = _SOURCE_PRIORITY.get(results[i].source, 0)
-                    pj = _SOURCE_PRIORITY.get(results[j].source, 0)
-                    if pj > pi:
-                        keep[i] = False
+                    # 优先保留：来源优先级 > 年份更新 > 引用数更高
+                    ri, rj = results[i], results[j]
+                    pi = _SOURCE_PRIORITY.get(ri.source, 0)
+                    pj = _SOURCE_PRIORITY.get(rj.source, 0)
+                    if pj != pi:
+                        if pj > pi:
+                            keep[i] = False
+                        else:
+                            keep[j] = False
                     else:
-                        keep[j] = False
+                        # 同源：保留更新的版本
+                        yi = ri.year or 0
+                        yj = rj.year or 0
+                        if yj > yi:
+                            keep[i] = False
+                        elif yi > yj:
+                            keep[j] = False
+                        else:
+                            # 同年：保留引用更高的
+                            ci = ri.citations or 0
+                            cj = rj.citations or 0
+                            if cj > ci:
+                                keep[i] = False
+                            else:
+                                keep[j] = False
                     logger.debug(f"Title dedup: {sim:.2f} between '{results[i].title[:30]}' and '{results[j].title[:30]}'")
 
         return [r for r, k in zip(results, keep) if k]

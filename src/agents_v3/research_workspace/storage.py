@@ -21,7 +21,7 @@ from loguru import logger
 DEFAULT_DATA_DIR = Path("data/research_workspace")
 
 # 全局集合（不按项目隔离）
-GLOBAL_COLLECTIONS = {"tasks", "search_cache"}
+GLOBAL_COLLECTIONS = {"tasks", "search_cache", "papers_pool"}
 
 
 # ── 工具函数 ──────────────────────────────────────────
@@ -185,6 +185,7 @@ class JSONStorage:
         mapping = {
             "projects": "project_id",
             "papers": "paper_id",
+            "papers_pool": "paper_id",
             "paper_cards": "card_id",
             "evidence_records": "evidence_id",
             "reports": "report_id",
@@ -205,8 +206,62 @@ class JSONStorage:
             for subdir in ["files", "graphs", "chunks"]:
                 (self._project_dir / subdir).mkdir(parents=True, exist_ok=True)
         else:
-            for subdir in ["files", "graphs", "chunks"]:
+            for subdir in ["files", "graphs", "chunks", "papers_pool"]:
                 (self.data_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+    # ── 文件夹存储（papers_pool） ──
+
+    def _folder_path(self, name: str) -> Path:
+        """获取文件夹存储路径"""
+        return self.data_dir / name
+
+    def save_to_folder(self, folder: str, item_id: str, item: dict[str, Any]) -> None:
+        """将单个 item 保存为独立 JSON 文件"""
+        folder_path = self._folder_path(folder)
+        folder_path.mkdir(parents=True, exist_ok=True)
+        # 清理文件名中的特殊字符
+        safe_id = item_id.replace("/", "_").replace("\\", "_").replace(":", "_")
+        file_path = folder_path / f"{safe_id}.json"
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(item, f, ensure_ascii=False, indent=2)
+
+    def load_from_folder(self, folder: str, item_id: str) -> dict[str, Any] | None:
+        """从文件夹加载单个 item"""
+        folder_path = self._folder_path(folder)
+        safe_id = item_id.replace("/", "_").replace("\\", "_").replace(":", "_")
+        file_path = folder_path / f"{safe_id}.json"
+        if not file_path.exists():
+            return None
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to load {file_path}: {e}")
+            return None
+
+    def list_folder(self, folder: str) -> list[dict[str, Any]]:
+        """列出文件夹中的所有 item"""
+        folder_path = self._folder_path(folder)
+        if not folder_path.exists():
+            return []
+        items = []
+        for file_path in folder_path.glob("*.json"):
+            try:
+                with open(file_path, encoding="utf-8") as f:
+                    items.append(json.load(f))
+            except (json.JSONDecodeError, OSError) as e:
+                logger.error(f"Failed to load {file_path}: {e}")
+        return items
+
+    def delete_from_folder(self, folder: str, item_id: str) -> bool:
+        """从文件夹删除单个 item"""
+        folder_path = self._folder_path(folder)
+        safe_id = item_id.replace("/", "_").replace("\\", "_").replace(":", "_")
+        file_path = folder_path / f"{safe_id}.json"
+        if file_path.exists():
+            file_path.unlink()
+            return True
+        return False
 
     # ── 项目元数据 ──
 

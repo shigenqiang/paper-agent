@@ -4,6 +4,7 @@ from src.agents_v3.research_workspace.search.arxiv_client import ArxivClient
 from src.agents_v3.research_workspace.search.base import (
     BaseSearchAdapter,
     SearchErrorInfo,
+    SearchField,
     SearchQuery,
     SearchResponse,
     SearchResult,
@@ -46,6 +47,7 @@ __all__ = [
     "SearchError",
     "SearchErrorCategory",
     "SearchErrorInfo",
+    "SearchField",
     "SearchOrchestrator",
     "SearchQuery",
     "SearchResponse",

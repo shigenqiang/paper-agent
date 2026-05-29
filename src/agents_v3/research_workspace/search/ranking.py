@@ -30,13 +30,11 @@ _FIELD_WEIGHTS = {
     "venue": 0.5,
 }
 
-# 最终权重
+# 最终权重（质量优先，适合"挑好论文"场景）
 _FINAL_WEIGHTS = {
-    "relevance": 0.40,
-    "citation": 0.20,
-    "recency": 0.15,
-    "metadata_completeness": 0.15,
-    "source_priority": 0.10,
+    "relevance": 0.35,
+    "quality": 0.50,
+    "source_priority": 0.15,
 }
 
 _RRF_K = 60
@@ -114,8 +112,9 @@ class RankingService:
         if not results:
             return results
 
-        # 用于 citation 归一化
+        # 预计算引用数百分位（用于更好的区分度）
         self._max_citations = max((r.citations or 0) for r in results) or 1
+        self._citation_percentiles = self._compute_citation_percentiles(results)
 
         # 构建 BM25 语料（将各字段按权重拼接为词列表）
         corpus = [self._build_document(r) for r in results]
@@ -162,23 +161,20 @@ class RankingService:
         return tokens
 
     def _compute_quality(self, r: SearchResult) -> float:
-        """质量分：引用数 50% + 引用速度 25% + 完整度 20% + 新近性 5%
+        """质量分：引用数 75% + 引用速度 10% + 新近性 15%
 
-        引用数：学术影响力的核心指标，log 归一化
-        引用速度：年均引用数，反映论文持续影响力
-        完整度：元数据填充率
-        新近性：微调，避免完全忽略
+        引用数：学术影响力核心指标，百分位归一化
+        引用速度：年均引用数，微调
+        新近性：微调，避免完全忽略新论文
         """
         citation = self._citation_norm(r.citations)
         velocity = self._citation_velocity(r)
-        completeness = self._metadata_completeness(r)
         recency = self._recency_score(r.year)
 
         return (
-            0.50 * citation
-            + 0.25 * velocity
-            + 0.20 * completeness
-            + 0.05 * recency
+            0.75 * citation
+            + 0.10 * velocity
+            + 0.15 * recency
         )
 
     def _citation_velocity(self, r: SearchResult) -> float:
@@ -189,32 +185,42 @@ class RankingService:
             return self._citation_norm(r.citations)
         age = max(1, datetime.now().year - r.year)
         velocity = r.citations / age
-        # 用 log 压缩，与 citation_norm 一致
+        # 用 log 压缩，限制在 [0, 1]
         return min(1.0, math.log(1 + velocity) / math.log(1 + self._max_citations))
 
     def _compute_final(self, r: SearchResult) -> float:
-        """最终分 = BM25相关性 + 引用 + 新近性 + 完整度 + 来源"""
+        """最终分 = 相关性 + 质量分 + 来源优先级"""
         return (
             _FINAL_WEIGHTS["relevance"] * r.relevance_score
-            + _FINAL_WEIGHTS["citation"] * self._citation_norm(r.citations)
-            + _FINAL_WEIGHTS["recency"] * self._recency_score(r.year)
-            + _FINAL_WEIGHTS["metadata_completeness"] * self._metadata_completeness(r)
+            + _FINAL_WEIGHTS["quality"] * r.quality_score
             + _FINAL_WEIGHTS["source_priority"] * _SOURCE_PRIORITY.get(r.source, 0.5)
         )
 
     def _citation_norm(self, citations: int | None) -> float:
-        """引用数归一化（log 压缩 + 语料库内归一化）"""
+        """引用数归一化（平方根，高引用论文区分度更好）"""
         if not citations or citations <= 0:
             return 0.0
-        return math.log(1 + citations) / math.log(1 + self._max_citations)
+        return math.sqrt(citations) / math.sqrt(self._max_citations)
+
+    @staticmethod
+    def _compute_citation_percentiles(results: list[SearchResult]) -> dict[int, float]:
+        """计算引用数的百分位排名，返回 {citations: percentile} 映射"""
+        citation_values = sorted(set(r.citations or 0 for r in results))
+        n = len(citation_values)
+        if n <= 1:
+            return {citation_values[0]: 1.0} if n == 1 else {}
+        percentile_map = {}
+        for i, val in enumerate(citation_values):
+            percentile_map[val] = i / (n - 1)
+        return percentile_map
 
     @staticmethod
     def _recency_score(year: int | None) -> float:
-        """新近性：指数衰减 e^(-0.15 * age)"""
+        """新近性：指数衰减 e^(-0.08 * age)，对经典论文更宽容"""
         if not year:
             return 0.3
         age = max(0, datetime.now().year - year)
-        return math.exp(-0.15 * age)
+        return math.exp(-0.08 * age)
 
     @staticmethod
     def _metadata_completeness(r: SearchResult) -> float:
