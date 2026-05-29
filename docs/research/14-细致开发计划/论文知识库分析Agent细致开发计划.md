@@ -1,6 +1,6 @@
 # 论文知识库分析 Agent 细致开发计划
 
-更新日期：2026-05-28
+更新日期：2026-05-29
 
 本文档基于 `docs/research` 调研结果和当前 `src/agents_v3/research_workspace` 实现状态生成，用于指导下一阶段开发。本文只规划“开发计划中必须落地的部分”，不扩展到论文代写、润色降重、复杂协作、重型图数据库等非 MVP 能力。
 
@@ -51,9 +51,9 @@ tests/agents_v3/research_workspace/
 | 模块 | 当前状态 | 后续重点 |
 | --- | --- | --- |
 | `models.py` | 已有核心 Pydantic 模型 | 补充任务状态、搜索源、引用、评估字段。 |
-| `storage.py` | 已有 JSON 文件存储 | 修正全局 singleton 注入问题，补齐并发写保护和集合命名规范。 |
+| `storage.py` / `storage_backend.py` / `postgres_storage.py` / `vector_storage.py` | 已有 JSON、PostgreSQL 和 ChromaDB 后端雏形 | 收敛后端语义，补齐并发写保护、集合命名、健康检查和降级策略。 |
 | `project_service.py` | 已有项目 CRUD 和统计 | 补齐删除级联、项目状态、演示项目初始化。 |
-| `paper_library.py` | 已有上传、元数据导入、BibTeX 初版 | 补齐真实搜索源、去重、导入解析、上传校验。 |
+| `paper_library.py` / `search/` | 已有上传、元数据导入、BibTeX、论文池、多源搜索、缓存、限流、去重和 session | 让 API 主链路复用 SearchOrchestrator，暴露搜索诊断，补齐 DOI 元数据增强。 |
 | `parser_service.py` | 已有 pdfplumber 解析和简单分块 | 补齐章节识别、参考文献、元数据、失败重试。 |
 | `paper_card.py` | 已有 LLM + fallback 卡片生成 | 补齐 JSON schema 校验、来源片段覆盖率、质量评分。 |
 | `evidence_table.py` | 已有卡片转证据 | 补齐证据强度、过滤、排序和来源一致性检查。 |
@@ -63,16 +63,18 @@ tests/agents_v3/research_workspace/
 | `review_generator.py` | 已有综述生成和校验 | 补齐批处理、引用格式、结构完整性检查。 |
 | `innovation_generator.py` | 已有 gap 信号、候选创新点和评分 | 补齐反证、可行性约束、泛化建议过滤。 |
 | `report_service.py` | 已有保存、版本、Markdown 导出 | 补齐报告版本差异、导出元数据和来源索引。 |
-| `llm_service.py` | 已有 LLM 调用和 JSON 调用 | 补齐重试、超时、模型配置、token 统计和日志脱敏。 |
+| `llm/` | 已有 LLM 调用、JSON 提取、结构化输出、错误类型、prompt registry 和 FakeLLM | 让业务模块统一使用 invoke_structured，打通 metrics、prompt version 和日志脱敏。 |
+| `api/` | 已有 FastAPI app、DTO、错误处理、依赖注入和 TaskService | 收敛路径契约、长任务边界、后端健康检查和 OpenAPI examples。 |
+| `evaluation/` | 已有 evaluator、quality gates、golden、logging_utils、metrics | 接入 smoke、报告生成和本地质量门禁。 |
 
 当前最大缺口：
 
 ```text
-1. 缺少真实多源学术搜索接入。
-2. PDF 解析仍偏简化，章节、参考文献和来源定位不够稳定。
-3. QA 和报告生成已有雏形，但检索、证据约束和质量门禁还不够严格。
-4. API 和前端联调尚未形成完整演示闭环。
-5. 监控、评估、任务状态和长任务进度还缺少统一机制。
+1. 存储后端已经扩展到 PostgreSQL/ChromaDB，但 JSON/PostgreSQL 的 service 语义仍需收敛。
+2. 搜索已具备多源雏形，但 API 响应还未完整暴露 source_stats/errors/cache_hit/elapsed_ms。
+3. PDF 解析仍偏简化，章节、参考文献和来源定位不够稳定。
+4. QA 和报告生成已有雏形，但 ScopeGuard、证据约束和质量门禁还需要贯穿保存前流程。
+5. API 和前端联调尚未形成完整演示闭环，长任务进度和错误阶段需要产品化。
 ```
 
 ## 3. 开发原则

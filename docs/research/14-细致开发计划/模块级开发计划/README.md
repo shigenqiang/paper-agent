@@ -1,8 +1,8 @@
 # 模块级开发计划
 
-更新时间：2026-05-28
+更新时间：2026-05-29
 
-本目录是 `paper-agent` 论文知识库分析 Agent 的模块级专项开发计划入口，覆盖 `src/agents_v3/research_workspace` 已有模块和后续必须新增的 API、任务、评估、日志、监控能力。
+本目录是 `paper-agent` 论文知识库分析 Agent 的模块级专项开发计划入口，覆盖 `src/agents_v3/research_workspace` 已有模块和后续必须收敛的 API、任务、存储后端、评估、日志、监控能力。
 
 这些文档的用途不是泛泛描述产品，而是把“论文搜索、PDF 解析、论文卡片、证据表、知识图谱、Scope QA、综述、创新点报告、导出、前端联调、质量门禁”拆成可开发、可测试、可验收的工程任务。
 
@@ -33,9 +33,39 @@ tests/agents_v3/research_workspace/
 ```text
 scripts/evaluate_research_workspace.py
 tests/fixtures/research_workspace/
-src/agents_v3/research_workspace/logging_utils.py
-src/agents_v3/research_workspace/evaluation.py
-src/agents_v3/research_workspace/quality_gates.py
+src/agents_v3/research_workspace/evaluation/
+```
+
+当前已经存在：
+
+```text
+src/agents_v3/research_workspace/api/
+src/agents_v3/research_workspace/llm/
+src/agents_v3/research_workspace/evaluation/
+src/agents_v3/research_workspace/storage_backend.py
+src/agents_v3/research_workspace/postgres_storage.py
+src/agents_v3/research_workspace/vector_storage.py
+```
+
+## 当前代码对齐深化（2026-05-29）
+
+本目录下 `00-15` 每个模块文件都已补充同名章节，用于把 2026-05-29 的真实代码状态、下一步深化任务、验收证据和风险收束到模块级开发计划中。后续开发时优先阅读各模块末尾的“当前代码对齐深化（2026-05-29）”，再回看前文的原始设计。
+
+当前深化的统一方向：
+
+```text
+1. 存储后端收敛：JSONStorage、StorageBackend、PostgresStorage、VectorStorage 的边界和测试契约统一。
+2. 搜索产品化：SearchField、SearchOrchestrator、papers_pool、搜索诊断、排序质量信号进入 API 和前端契约。
+3. 证据可信链：PaperChunk、SourceSpan、PaperCard、EvidenceRecord、Graph、Report source_index 全链路可追踪。
+4. 生成质量门禁：QA、综述、创新点报告统一接入 ScopeGuard、citation coverage、traceability 和 specificity 检查。
+5. API/任务联调：/api/rw、TaskService、统一错误码、长任务 progress/events 成为前端主集成面。
+6. 评估可观测：evaluation/ 子包的 metrics、golden、gates、logging_utils 写回任务和报告 validation_result。
+```
+
+本轮深化的总控入口：
+
+```text
+docs/research/14-细致开发计划/当前项目模块深化开发计划.md
 ```
 
 ## 2. 编写依据
@@ -90,9 +120,9 @@ FastAPI / Pydantic 契约化接口
 | 10 | `10-综述生成模块.md` | 文献综述 | `review_generator.py` |
 | 11 | `11-创新点报告模块.md` | 创新点报告 | `innovation_generator.py` |
 | 12 | `12-报告版本与导出模块.md` | 报告版本与导出 | `report_service.py` |
-| 13 | `13-LLM提示词与结构化输出模块.md` | LLM、提示词、结构化输出 | `llm_service.py`、prompt schema |
-| 14 | `14-API任务与前端联调模块.md` | API、任务、前端联调 | FastAPI router、TaskService、frontend contract |
-| 15 | `15-评估日志监控模块.md` | 评估、日志、监控 | `evaluation.py`、`logging_utils.py`、quality gates |
+| 13 | `13-LLM提示词与结构化输出模块.md` | LLM、提示词、结构化输出 | `llm/`、prompt schema |
+| 14 | `14-API任务与前端联调模块.md` | API、任务、前端联调 | `api/`、TaskService、frontend contract |
+| 15 | `15-评估日志监控模块.md` | 评估、日志、监控 | `evaluation/`、quality gates |
 
 ## 4. 模块分层
 
@@ -255,14 +285,14 @@ scope 外 paper/evidence 不进入答案。
 
 ## 7. 当前深化状态
 
-截至 2026-05-28，本目录中 `00` 到 `15` 均已完成专项开发计划深化。
+截至 2026-05-29，本目录中 `00` 到 `15` 均已有专项开发计划；当前新增 `../当前项目模块深化开发计划.md` 作为按现有代码状态推进下一轮开发的执行入口。
 
 | 文件 | 状态 |
 | --- | --- |
 | `00-模块总览与依赖关系.md` | 已完成，全局入口 |
 | `01-核心模型与存储模块.md` | 已完成 |
 | `02-项目服务模块.md` | 已完成 |
-| `03-论文库搜索导入模块.md` | 已完成，并已重点深化搜索模块 |
+| `03-论文库搜索导入模块.md` | 已完成，并已按当前搜索实现和平台选型深化 |
 | `04-PDF解析与分块模块.md` | 已完成 |
 | `05-论文卡片生成模块.md` | 已完成 |
 | `06-证据表模块.md` | 已完成 |
@@ -272,9 +302,9 @@ scope 外 paper/evidence 不进入答案。
 | `10-综述生成模块.md` | 已完成 |
 | `11-创新点报告模块.md` | 已完成 |
 | `12-报告版本与导出模块.md` | 已完成 |
-| `13-LLM提示词与结构化输出模块.md` | 已完成 |
-| `14-API任务与前端联调模块.md` | 已完成 |
-| `15-评估日志监控模块.md` | 已完成 |
+| `13-LLM提示词与结构化输出模块.md` | 已完成，需以后续代码为准维护 `llm/` 子包路径 |
+| `14-API任务与前端联调模块.md` | 已完成，需以后续代码为准维护 `api/` 子包路径 |
+| `15-评估日志监控模块.md` | 已完成，需以后续代码为准维护 `evaluation/` 子包路径 |
 
 ## 8. 全局工程原则
 

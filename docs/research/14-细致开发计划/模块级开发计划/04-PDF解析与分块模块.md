@@ -1,6 +1,6 @@
 # PDF 解析与分块模块专项开发计划
 
-更新时间：2026-05-28
+更新时间：2026-05-29
 
 ## 实现状态
 
@@ -521,4 +521,40 @@ https://pymupdf.readthedocs.io/en/latest/recipes-text.html
 
 Marker:
 https://github.com/datalab-to/marker
+```
+
+## 当前代码对齐深化（2026-05-29）
+
+### 当前实现确认
+
+```text
+parser_service.py 已作为 PDF 下载、解析和分块入口，测试覆盖 test_parser_service.py 与 test_parser_sections.py。
+模型侧已有 PaperChunk 与 SourceSpan，可承接页码、section、chunk_index、parser_name 和来源跨度。
+API 层已有 download_pdfs、download_pdf、parse_paper、parse_project_papers 路由，但任务进度和解析质量诊断仍需增强。
+```
+
+### 下一步深化任务
+
+```text
+1. 为每篇论文记录 parse_status、download_status、parser_name、parser_version、quality_flags、error_message。
+2. chunk 统一写入 paper_chunks collection，废弃或兼容迁移旧 chunks_{paper_id}。
+3. SourceSpan 必须绑定 paper_id、chunk_id、section、page_start/page_end、char_start/char_end 或 quote_hash。
+4. 解析质量报告包含页数、chunk 数、参考文献识别数、章节覆盖、空文本比例、OCR/扫描件提示。
+5. API 批量解析走 TaskService，返回 task_id，任务事件记录每篇论文成功/失败和可重试原因。
+6. 为后续卡片和证据生成提供稳定输入：标题/摘要/方法/结果/限制/未来工作等 section 优先级。
+```
+
+### 验收证据
+
+```text
+pytest tests/agents_v3/research_workspace/test_parser_service.py 通过。
+pytest tests/agents_v3/research_workspace/test_parser_sections.py 通过。
+新增测试覆盖解析失败不污染旧 chunks、重复解析幂等、SourceSpan 可回指原 chunk。
+```
+
+### 风险与阻塞
+
+```text
+不同 PDF 解析器输出差异大，必须把 parser_version 和 quality_flags 写入数据，否则后续证据可信度无法解释。
+批量解析若不接 TaskService，前端只能看到同步超时而无法恢复。
 ```

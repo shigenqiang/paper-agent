@@ -1,6 +1,6 @@
 # 09-Scope QA 与 RAG 模块专项开发计划
 
-更新时间：2026-05-28
+更新时间：2026-05-29
 
 本文档基于 `docs/research` 下的产品方案、当前开发计划、学术 QA/RAG 调研、RAG 与知识图谱评估调研、证据表计划、知识图谱计划、RetrievalScope 计划、Token 成本分析和当前代码实现，重新细化 Scope QA 与 RAG 模块的开发方案。
 
@@ -11,7 +11,8 @@ Scope QA 是用户和论文知识库交互的主入口。它不是普通聊天�
 ```text
 src/agents_v3/research_workspace/scope_qa.py
 src/agents_v3/research_workspace/scope.py
-src/agents_v3/research_workspace/llm_service.py
+src/agents_v3/research_workspace/llm/service.py
+src/agents_v3/research_workspace/llm/prompts.py
 src/agents_v3/research_workspace/models.py
 tests/agents_v3/research_workspace/test_scope_qa.py
 ```
@@ -1628,4 +1629,41 @@ https://github.com/AkariAsai/self-rag
 
 LangChain RAG:
 https://python.langchain.com/docs/tutorials/rag/
+```
+
+## 当前代码对齐深化（2026-05-29）
+
+### 当前实现确认
+
+```text
+scope_qa.py 当前包含 ScopeQAService，支持 answer 与 generate_answer。
+API 层已有 ask_question 路由，入参通过 QARequest 承接问题和 scope。
+evaluation/evaluator.py 已有 refusal_correctness_check、citation_coverage_check 等可用于 QA 质量验收的函数。
+vector_storage.py 已存在但配置默认 vector_storage: none，当前 RAG 需要支持无向量后端的证据检索路径。
+```
+
+### 下一步深化任务
+
+```text
+1. QA 执行前强制解析 RetrievalScope，并拒绝空 scope、跨项目 paper_id 和 rejected evidence。
+2. 检索诊断返回 candidate_count、selected_evidence_count、excluded_by_scope_count、low_confidence_count。
+3. 回答必须输出 citations/evidence_ids/source_span_ids，引用缺失时触发 citation_coverage_check。
+4. 对 scope 内证据不足的问题返回 refusal，而不是让 LLM 生成常识性回答。
+5. 无向量后端时采用 evidence/chunk 的关键词和结构字段检索；启用向量后端时记录 embedding_model 与 index_snapshot。
+6. QA 日志记录 prompt_version、scope_snapshot、retrieval_snapshot、validation_result，但敏感正文需 redaction/hash。
+```
+
+### 验收证据
+
+```text
+pytest tests/agents_v3/research_workspace/test_scope_qa.py 通过。
+pytest tests/agents_v3/research_workspace/test_evaluation.py 通过相关 QA 评估。
+新增测试覆盖证据不足拒答、引用越界失败、vector_storage none 路径可用。
+```
+
+### 风险与阻塞
+
+```text
+QA 最主要风险是“看似合理但不在 Scope 内”。ScopeGuard、citation coverage 和 refusal correctness 必须成为默认门禁。
+向量检索启用前，不应让系统对 ChromaDB 形成硬依赖。
 ```

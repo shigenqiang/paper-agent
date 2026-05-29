@@ -1,20 +1,21 @@
 # API 任务与前端联调模块专项开发计划
 
-更新时间：2026-05-28
+更新时间：2026-05-29
 
 ## 实现状态
 
-P0 全部完成（2026-05-28）。
+P0 后端 API 骨架已完成，下一步重点是契约收敛、长任务边界、后端健康检查和前端联调。
 
 ### 已完成
 
 ```text
-api.py: FastAPI app + CORS + request_id 中间件 + 统一错误处理 ✅
-api_models.py: 所有 request/response DTO ✅
-api_errors.py: APIError/NotFoundError/ValidationError/ScopeEmptyError + 异常处理器 ✅
-api_deps.py: 所有 service 依赖注入函数 ✅
-task_service.py: 任务状态持久化（create/get/update/list/add_event） ✅
+api/app.py: FastAPI app + lifespan + CORS + request_id 中间件 + 统一错误处理 ✅
+api/models.py: request/response DTO ✅
+api/errors.py: APIError/NotFoundError/ValidationError/ScopeEmptyError + 异常处理器 ✅
+api/deps.py: service 依赖注入 + storage backend 配置读取 ✅
+api/tasks.py: 任务状态持久化（create/get/update/list/add_event） ✅
 storage.py: tasks collection 映射 ✅
+api/app.py: _init_storage_backends 读取 config.yaml 初始化 PostgreSQL/ChromaDB ✅
 ```
 
 ### API 端点
@@ -29,13 +30,13 @@ DELETE /api/rw/projects/{id} ✅
 GET  /api/rw/projects/{id}/papers ✅
 POST /api/rw/projects/{id}/papers/import/doi ✅
 POST /api/rw/projects/{id}/papers/import/bibtex ✅
-GET  /api/rw/papers/{id} ✅
-PATCH /api/rw/papers/{id} ✅
-POST /api/rw/papers/{id}/include ✅
-POST /api/rw/papers/{id}/exclude ✅
+GET  /api/rw/projects/{id}/papers/{paper_id} ✅
+PATCH /api/rw/projects/{id}/papers/{paper_id} ✅
+POST /api/rw/projects/{id}/papers/{paper_id}/include ✅
+POST /api/rw/projects/{id}/papers/{paper_id}/exclude ✅
 POST /api/rw/projects/{id}/papers/search ✅
 POST /api/rw/projects/{id}/papers/search/commit ✅
-POST /api/rw/papers/{id}/parse ✅
+POST /api/rw/projects/{id}/papers/{paper_id}/parse ✅
 POST /api/rw/projects/{id}/papers/parse ✅
 POST /api/rw/projects/{id}/cards ✅
 POST /api/rw/projects/{id}/evidence/build ✅
@@ -48,13 +49,24 @@ POST /api/rw/projects/{id}/scope/resolve ✅
 GET  /api/rw/projects/{id}/scope/filters ✅
 POST /api/rw/projects/{id}/qa ✅
 GET  /api/rw/projects/{id}/reports ✅
-GET  /api/rw/reports/{id} ✅
+GET  /api/rw/projects/{id}/reports/{report_id} ✅
 POST /api/rw/projects/{id}/reports/literature-review ✅
 POST /api/rw/projects/{id}/reports/innovation ✅
-GET  /api/rw/reports/{id}/export/markdown ✅
-GET  /api/rw/reports/{id}/export/json ✅
+GET  /api/rw/projects/{id}/reports/{report_id}/export/markdown ✅
+GET  /api/rw/projects/{id}/reports/{report_id}/export/json ✅
 GET  /api/rw/tasks/{id} ✅
 GET  /api/rw/tasks ✅
+```
+
+### 当前仍需收敛
+
+```text
+1. `/api/health` 需要返回 storage_backend、postgres_available、vector_storage、degraded_reason。
+2. 搜索 API 需要暴露 source_stats、errors、cache_hit、elapsed_ms、duplicate_groups。
+3. 解析、卡片、证据、图谱、报告生成需要明确同步/异步边界。
+4. TaskService 需要 step/progress/events/error_type/retryable/result_ref。
+5. API 文档和测试必须统一项目作用域路径，避免旧 `/api/rw/papers/{id}` 路径残留。
+6. OpenAPI examples 需要覆盖项目创建、搜索、commit、解析、scope、qa、报告。
 ```
 
 API 任务与前端联调模块负责把 v3 `research_workspace` 的 service 能力暴露为稳定、可测试、可前端集成的本地 API，同时补齐长任务状态、任务事件、统一错误结构、演示 pipeline、OpenAPI 契约和前端页面数据流。它不是把 service 方法简单套一层 HTTP，而是后端 service 与前端研究工作台之间的产品契约层。
@@ -71,11 +83,11 @@ docs/getting-started/frontend-overview.md
 建议新增：
 
 ```text
-src/agents_v3/research_workspace/api.py
-src/agents_v3/research_workspace/api_models.py
-src/agents_v3/research_workspace/api_errors.py
-src/agents_v3/research_workspace/api_deps.py
-src/agents_v3/research_workspace/task_service.py
+src/agents_v3/research_workspace/api/app.py
+src/agents_v3/research_workspace/api/models.py
+src/agents_v3/research_workspace/api/errors.py
+src/agents_v3/research_workspace/api/deps.py
+src/agents_v3/research_workspace/api/tasks.py
 src/agents_v3/research_workspace/task_runner.py
 src/agents_v3/research_workspace/task_events.py
 src/agents_v3/research_workspace/demo_pipeline.py
@@ -316,10 +328,11 @@ TestClient / AsyncClient
 本项目落地：
 
 ```text
-api_models.py 定义所有 DTO。
-api_errors.py 定义统一错误。
-api_deps.py 管理 storage/service 依赖。
-api.py 注册 router。
+api/models.py 定义所有 DTO。
+api/errors.py 定义统一错误。
+api/deps.py 管理 storage/service 依赖。
+api/app.py 注册 router。
+api/tasks.py 管理任务状态和事件。
 ```
 
 ### 3.2 长任务系统
@@ -408,7 +421,7 @@ scope_qa.py
 review_generator.py
 innovation_generator.py
 report_service.py
-llm_service.py
+llm/service.py
 ```
 
 这些 service 大多是同步方法，API 层需要处理：
@@ -487,7 +500,7 @@ httpx AsyncClient for tests
 | 领域 | 当前状态 | 问题 | 优先级 |
 | --- | --- | --- | --- |
 | v3 API | 无统一 app/router | 前端无法调用 v3 service | P0 |
-| DTO | 无 `api_models.py` | OpenAPI 和前端类型无法稳定 | P0 |
+| DTO | `api/models.py` 已存在，仍需补齐 examples/字段收敛 | OpenAPI 和前端类型需要稳定 | P0 |
 | 长任务 | 无 `TaskService` | 批量解析/报告生成无法展示进度 | P0 |
 | 任务事件 | 无 event model | 前端不能展示 pipeline 步骤 | P0 |
 | 错误结构 | service 返回 None/异常/对象混杂 | 前端错误处理困难 | P0 |
@@ -552,26 +565,20 @@ API key 管理页面
 ### 6.1 后端组件
 
 ```text
-api.py
+api/app.py
   FastAPI app、router、middleware、exception handler。
 
-api_models.py
+api/models.py
   所有 request/response DTO。
 
-api_errors.py
+api/errors.py
   APIError、error code、异常映射。
 
-api_deps.py
+api/deps.py
   storage、service factory、request context、settings。
 
-task_service.py
-  持久化 WorkspaceTask 和 TaskEvent。
-
-task_runner.py
-  执行长任务，更新进度，捕获错误。
-
-task_events.py
-  EventBus、SSE 格式、事件订阅。
+api/tasks.py
+  TaskService、WorkspaceTask 和 TaskEvent。
 
 demo_pipeline.py
   创建演示项目并跑通最小流程。
@@ -1927,11 +1934,11 @@ POST /api/rw/projects/{project_id}/demo/run
 任务：
 
 ```text
-T14.0.1 新增 api.py。
+T14.0.1 新增 api/app.py。
 T14.0.2 新增 create_app(storage=None, settings=None)。
 T14.0.3 注册 /api/rw/health。
-T14.0.4 新增 api_models.py 基础 ApiMeta/ApiError/PageInfo。
-T14.0.5 新增 api_errors.py 和 exception handler。
+T14.0.4 新增 api/models.py 基础 ApiMeta/ApiError/PageInfo。
+T14.0.5 新增 api/errors.py 和 exception handler。
 T14.0.6 新增 request_id middleware。
 T14.0.7 增加 FastAPI TestClient 测试。
 ```
@@ -2254,9 +2261,9 @@ API 测试使用临时 storage。
 建议先做：
 
 ```text
-1. api_models.py 基础响应和错误模型。
-2. api_errors.py 和 exception handler。
-3. api.py + /health。
+1. api/models.py 基础响应和错误模型。
+2. api/errors.py 和 exception handler。
+3. api/app.py + /health。
 4. Project API。
 5. Paper list/import/upload API。
 6. TaskService。
@@ -2283,7 +2290,7 @@ P2：鉴权增强、WebSocket、分布式任务、部署监控。
 | 风险 | 表现 | 应对 |
 | --- | --- | --- |
 | service 同步阻塞 API | 报告生成请求卡死 | 长任务后台执行，P0 返回 task_id |
-| API DTO 直接暴露内部模型 | 前端和存储强耦合 | api_models.py 单独定义 DTO |
+| API DTO 直接暴露内部模型 | 前端和存储强耦合 | api/models.py 单独定义 DTO |
 | 错误结构不统一 | 前端到处 try/catch 特判 | exception handler 统一转换 |
 | 任务状态丢失 | 刷新后进度消失 | JSONStorage 持久化 tasks/events |
 | 取消任务不生效 | blocking 调用无法中断 | P0 item 间检查，P1 cancel token |
@@ -2335,4 +2342,41 @@ https://zustand-demo.pmnd.rs/
 
 Ant Design:
 https://ant.design/
+```
+
+## 当前代码对齐深化（2026-05-29）
+
+### 当前实现确认
+
+```text
+API 能力已从旧的 api.py/api_models.py 设计演进到 api/ 子包：app.py、models.py、deps.py、errors.py、tasks.py。
+create_app 已挂载 /api/rw 下的项目、论文、搜索、PDF、卡片、证据、图谱、Scope、QA、报告、任务路由。
+TaskService 当前提供 create_task、get_task、update_task、add_event、list_tasks。
+api/deps.py 已根据配置选择 JSONStorage/PostgresStorage，并为各业务 service 提供依赖注入。
+```
+
+### 下一步深化任务
+
+```text
+1. /health 返回 storage_backend、postgres_available、vector_storage_enabled、search_sources、llm_configured、schema_version。
+2. 搜索 API 返回完整 SearchResponse，而不是只返回论文列表；前端需要展示来源诊断、缓存、限流、去重和排序分。
+3. 长任务统一异步语义：download/parse/cards/evidence/graph/review/innovation 返回 task_id，并可轮询 progress/events。
+4. API 错误码稳定化：not_found、validation_error、scope_empty、task_failed、llm_error、storage_error、search_error。
+5. OpenAPI examples 覆盖 create project、search、commit、parse、generate card、resolve scope、QA、review export。
+6. 前端契约按 ApiResponse/ApiListResponse 固化，分页、过滤、排序字段不要由各路由临时定义。
+```
+
+### 验收证据
+
+```text
+pytest tests/agents_v3/research_workspace/test_api.py 通过。
+pytest tests/agents_v3/research_workspace/test_e2e_smoke.py 通过。
+新增测试覆盖 /health 后端状态、search diagnostics、task events、统一错误响应。
+```
+
+### 风险与阻塞
+
+```text
+API 当前已经能跑主流程，但部分路由仍是同步包装。大 PDF、批量卡片和报告生成需要任务化，否则前端体验不稳定。
+若默认配置强依赖 PostgreSQL，本地前端联调会被环境服务阻塞。
 ```

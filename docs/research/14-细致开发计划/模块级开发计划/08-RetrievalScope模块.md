@@ -1,6 +1,6 @@
 # 08-RetrievalScope 模块专项开发计划
 
-更新时间：2026-05-28
+更新时间：2026-05-29
 
 ## 实现状态
 
@@ -1513,4 +1513,40 @@ https://help.rayyan.ai/
 
 Covidence:
 https://support.covidence.org/help
+```
+
+## 当前代码对齐深化（2026-05-29）
+
+### 当前实现确认
+
+```text
+scope.py 当前包含 RetrievalScopeService，已具备 resolve、过滤器、scope guard、empty reason、diagnostics 等方向的实现基础。
+models.py 中 RetrievalScope 可承接项目、论文集合、主题、时间、included/excluded 等检索边界。
+API 层已有 resolve_scope 与 get_scope_filters 路由。
+```
+
+### 下一步深化任务
+
+```text
+1. RetrievalScope 输出必须包含 project_id、paper_ids、filters、empty_reason、filter_diagnostics、scope_guard。
+2. Scope 解析支持论文选择、标签、年份、作者、venue、evidence_type、review_status、主题关键词的组合过滤。
+3. ScopeGuard 作为下游统一入参，QA/Graph/Review/Innovation 在执行前先校验 project_id 与 allowed paper_ids。
+4. 空 scope 不应进入 LLM；返回可解释原因和下一步建议，例如 import_papers、parse_pdf、build_evidence。
+5. get_scope_filters 基于当前项目真实数据生成可选项，避免前端展示无效过滤器。
+6. Scope 快照写入报告 metadata，保证报告版本可复现。
+```
+
+### 验收证据
+
+```text
+pytest tests/agents_v3/research_workspace/test_retrieval_scope.py 通过。
+新增测试覆盖多过滤器交集、空 scope reason、跨项目 paper_id 拒绝、ScopeGuard 下游复用。
+API resolve_scope 返回字段可直接被 QA 和报告生成请求复用。
+```
+
+### 风险与阻塞
+
+```text
+如果 Scope 只是前端过滤而非后端强约束，QA 和报告很容易引用用户未选择的论文。
+Scope 快照缺失会导致报告版本无法解释“当时基于哪些论文生成”。
 ```

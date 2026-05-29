@@ -1,6 +1,6 @@
 # LLM 提示词与结构化输出模块专项开发报告
 
-更新时间：2026-05-28
+更新时间：2026-05-29
 
 ## 实现状态
 
@@ -27,12 +27,38 @@ reset_llm_service: 测试用重置 ✅
 - `llm_logging.py` — 日志脱敏（截断 + API key 检测）+ 调用指标日志
 - `prompt_registry.py` — PromptTemplateSpec + PromptRegistry + 内置 prompt（paper_card/scope_qa/review/innovation）
 
+### 当前代码路径对齐
+
+当前实现已经拆入 `llm/` 子包，后续开发和文档维护以子包路径为准：
+
+```text
+src/agents_v3/research_workspace/llm/service.py
+src/agents_v3/research_workspace/llm/errors.py
+src/agents_v3/research_workspace/llm/json_utils.py
+src/agents_v3/research_workspace/llm/prompts.py
+src/agents_v3/research_workspace/llm/logging.py
+```
+
+当前仍需收敛：
+
+```text
+1. 业务模块逐步统一使用 `llm/service.py` 的 invoke_structured。
+2. PromptRegistry 的 prompt_name/version/module 要写入 PaperCard、QAResponse、Report metadata。
+3. LLMCallResult 与 evaluation.metrics 打通，记录 latency、success、error_type、json_repair。
+4. 旧文档或旧代码中的根目录 `llm_service.py` 命名需要迁移为 `llm/service.py`。
+5. FakeLLMService 应成为所有生成模块默认测试入口。
+```
+
 LLM 提示词与结构化输出模块负责统一 research_workspace 中所有模型调用、Prompt 版本管理、结构化输出校验、JSON 提取与修复、错误处理、fallback 协议、日志脱敏、调用指标和模型路由。它不是简单封装一次 `ChatOpenAI.invoke()`，而是整个项目的 LLM 网关：所有抽取、问答、综述、创新点生成都应通过这一层获得可校验、可追踪、可回归测试的模型输出。
 
 对应代码：
 
 ```text
-src/agents_v3/research_workspace/llm_service.py
+src/agents_v3/research_workspace/llm/service.py
+src/agents_v3/research_workspace/llm/prompts.py
+src/agents_v3/research_workspace/llm/json_utils.py
+src/agents_v3/research_workspace/llm/errors.py
+src/agents_v3/research_workspace/llm/logging.py
 src/agents_v3/research_workspace/paper_card.py
 src/agents_v3/research_workspace/scope_qa.py
 src/agents_v3/research_workspace/review_generator.py
@@ -334,7 +360,7 @@ dashboard metrics
 
 ### 4.1 当前 LLMService 能力
 
-当前 `llm_service.py` 包含：
+当前 `llm/` 子包包含：
 
 ```text
 LLMConfig
@@ -417,12 +443,12 @@ LLM 层仍可能返回 raw_response 伪成功。
 
 ### 4.4 当前测试状态
 
-当前没有专门的 LLMService 测试文件：
+当前已有 LLMService 测试文件，但仍需要按结构化输出子能力继续拆细：
 
 ```text
-tests/agents_v3/research_workspace/test_llm_service.py 不存在
-test_llm_json_extract.py 不存在
-test_llm_structured_output.py 不存在
+tests/agents_v3/research_workspace/test_llm_service.py 已存在
+test_llm_json_extract.py 待按 json_utils.py 补充
+test_llm_structured_output.py 待按 invoke_structured 补充
 ```
 
 部分 E2E 测试通过：
@@ -581,13 +607,12 @@ P0 保留 `invoke_json`，但改为：
 ### 6.3 依赖方向
 
 ```text
-llm_service.py
-  -> llm_errors.py
-  -> llm_json.py
-  -> llm_structured.py
-  -> llm_logging.py
-  -> prompt_registry.py
-  -> model_router.py
+llm/service.py
+  -> llm/errors.py
+  -> llm/json_utils.py
+  -> llm/logging.py
+  -> llm/prompts.py
+  -> prompt/model router 预留扩展
 ```
 
 业务模块：
@@ -790,13 +815,10 @@ class ModelRoute(BaseModel):
 建议结构：
 
 ```text
-src/agents_v3/research_workspace/prompts/
-  __init__.py
-  paper_card.py
-  scope_qa.py
-  review.py
-  innovation.py
-  repair.py
+src/agents_v3/research_workspace/llm/prompts.py
+  PromptRegistry
+  PromptTemplateSpec
+  paper_card / scope_qa / review / innovation / repair prompt specs
 ```
 
 每个文件导出：
@@ -1989,4 +2011,40 @@ https://python.useinstructor.com/
 
 OpenTelemetry:
 https://opentelemetry.io/docs/
+```
+
+## 当前代码对齐深化（2026-05-29）
+
+### 当前实现确认
+
+```text
+LLM 能力已从旧的 llm_service.py 设计演进到 llm/ 子包：service.py、prompts.py、json_utils.py、errors.py、logging.py。
+LLMService 已提供 invoke、invoke_json、invoke_structured，FakeLLMService 支持测试。
+PromptRegistry 与 PromptTemplateSpec 已存在，可承接 prompt name/version/module/schema。
+```
+
+### 下一步深化任务
+
+```text
+1. 全量调用方迁移到 invoke_structured：PaperCard、ScopeQA、Review、Innovation 都必须传入明确 Pydantic schema。
+2. PromptRegistry 成为唯一 prompt 入口，prompt version 写入 PaperCard/Report/QA 日志。
+3. 结构化输出失败分层处理：empty response、JSON extraction、repair failed、schema validation、provider timeout、rate limit。
+4. LLM logging 默认 redaction/hash，不保存完整论文正文和用户问题原文，除非显式 debug 模式。
+5. 记录 token、latency、model、temperature、repair_count、schema_name、prompt_version 到 MetricsCollector。
+6. 为每个 LLM 模块准备 golden fixtures，保证 prompt 调整后能看见结构化字段退化。
+```
+
+### 验收证据
+
+```text
+pytest tests/agents_v3/research_workspace/test_llm_service.py 通过。
+PaperCard/QA/Review/Innovation 的测试均可用 FakeLLMService 注入，无需真实 API key。
+新增测试覆盖 prompt version 落库、schema validation error、redaction 不泄露长文本。
+```
+
+### 风险与阻塞
+
+```text
+如果不同模块继续各自拼 prompt 和解析 JSON，后续评估无法判断失败来自 prompt、模型还是 schema。
+日志中保存完整论文文本有隐私与体积风险，默认必须截断、脱敏或哈希。
 ```
