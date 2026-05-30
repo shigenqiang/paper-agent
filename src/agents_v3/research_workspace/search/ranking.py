@@ -137,7 +137,7 @@ class RankingService:
                     self.core_phrases.append(gram)
 
     def rank(self, results: list[SearchResult], query: str = "") -> list[SearchResult]:
-        """计算分数并排序"""
+        """用 BM25 计算分数并排序"""
         if query:
             self.query_terms = _tokenize(query)
             self._extract_phrases(query)
@@ -147,10 +147,15 @@ class RankingService:
 
         self._max_citations = max((r.citations or 0) for r in results) or 1
 
+        # 构建 BM25 语料库：每篇论文的 token 列表
+        corpus = [self._build_document(r) for r in results]
+        self._bm25 = BM25(corpus)
+
         query_set = set(self.query_terms)
         raw_scores = []
-        for r in results:
-            raw_scores.append(self._compute_relevance(r, query_set))
+        for i, r in enumerate(results):
+            bm25_score = self._bm25.score(i, self.query_terms)
+            raw_scores.append(bm25_score)
 
         max_score = max(raw_scores) if raw_scores else 1.0
         if max_score == 0:
@@ -166,38 +171,6 @@ class RankingService:
             r.source_rank = i + 1
 
         return results
-
-    def _compute_relevance(self, r: SearchResult, query_set: set[str]) -> float:
-        """相关度 = 查询词覆盖率 × 字段加权 TF + 短语匹配加分"""
-        if not query_set:
-            return 0.0
-
-        weights = _field_weights()
-        field_texts = {
-            "abstract": (r.abstract, weights.get("abstract", 3.5)),
-            "title": (r.title, weights.get("title", 2.0)),
-            "keywords": (" ".join(r.keywords), weights.get("keywords", 2.0)),
-            "concepts": (" ".join(r.concepts), weights.get("concepts", 1.0)),
-            "venue": (r.venue, weights.get("venue", 0.5)),
-        }
-
-        weighted_tf = 0.0
-        matched_terms: set[str] = set()
-        for _, (text, weight) in field_texts.items():
-            if not text:
-                continue
-            tokens = _tokenize(text)
-            for term in tokens:
-                if term in query_set:
-                    weighted_tf += weight
-                    matched_terms.add(term)
-
-        coverage = len(matched_terms) / len(query_set) if query_set else 0.0
-        base_score = weighted_tf * coverage
-
-        # 短语匹配加分：标题或摘要包含完整查询短语时，大幅加分
-        phrase_bonus = self._phrase_match_bonus(r)
-        return base_score * (1.0 + phrase_bonus)
 
     def _phrase_match_bonus(self, r: SearchResult) -> float:
         """短语匹配加分：标题或摘要包含完整查询短语时返回较大值"""
