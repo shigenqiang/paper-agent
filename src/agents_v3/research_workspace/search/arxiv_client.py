@@ -79,6 +79,9 @@ class ArxivClient(BaseSearchAdapter):
         prefix = ARXIV_FIELD_PREFIX[field]
         # 先去掉已有引号，再统一加引号，避免嵌套引号导致 HTTP 400
         q_body = query.query.strip().strip('"').strip("'")
+        # 截断过长查询（arXiv 限制约 300 字符）
+        if len(q_body) > 200:
+            q_body = q_body[:200].rsplit(" ", 1)[0]
         if " " in q_body:
             q_body = f'"{q_body}"'
         q = urllib.parse.quote(f"{prefix}:{q_body}", safe=':"')

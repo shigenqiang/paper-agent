@@ -327,7 +327,15 @@ class PaperLibraryService:
     ) -> list[SearchResult]:
         """调用已注册的搜索适配器，返回结果（去重，存入论文池）"""
         from src.agents_v3.research_workspace.search.merger import SearchResultMerger
+        from src.agents_v3.research_workspace.search.query_optimizer import refine_query
         merger = SearchResultMerger()
+
+        # 优化搜索词：提取核心主题，去除泛化词
+        original_query = query.query
+        optimized = refine_query(original_query)
+        if optimized != original_query:
+            logger.info(f"Query optimized: \"{original_query}\" → \"{optimized}\"")
+            query = query.model_copy(update={"query": optimized})
 
         all_results: list[SearchResult] = []
         for adapter in self.search_adapters:
