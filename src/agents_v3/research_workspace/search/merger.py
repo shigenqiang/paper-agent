@@ -175,7 +175,7 @@ class SearchResultMerger:
                     continue
 
                 sim = _jaccard_similarity(title_i, title_j)
-                if sim >= 0.95:
+                if sim >= 0.85:
                     # 优先保留：来源优先级 > 年份更新 > 引用数更高
                     ri, rj = results[i], results[j]
                     pi = _SOURCE_PRIORITY.get(ri.source, 0)

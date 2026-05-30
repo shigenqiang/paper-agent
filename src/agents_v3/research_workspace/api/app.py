@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from src.agents_v3.research_workspace.api.deps import (
+    _get_postgres_storage,
     get_card_generator,
     get_evidence_service,
     get_graph_service,
@@ -86,19 +87,24 @@ def _init_storage_backends() -> None:
     else:
         logger.info("PostgreSQL disabled, using JSON storage")
 
-    # ChromaDB 初始化
-    chroma_config = db_config.get("chromadb", {})
-    if chroma_config.get("enabled", False):
+    # Qdrant 向量存储初始化
+    qdrant_config = db_config.get("qdrant", {})
+    if qdrant_config.get("enabled", False):
         try:
-            from src.agents_v3.research_workspace.vector_storage import VectorStorage
-            path = chroma_config.get("path", "data/chromadb")
-            vs = VectorStorage(path=path)
-            collections = vs.list_collections()
-            logger.info(f"ChromaDB initialized at {path}, collections: {collections}")
+            from src.agents_v3.research_workspace.qdrant_init import get_collection_info, init_qdrant
+            init_qdrant(
+                host=qdrant_config.get("host", "localhost"),
+                port=qdrant_config.get("port", 6333),
+            )
+            info = get_collection_info(
+                host=qdrant_config.get("host", "localhost"),
+                port=qdrant_config.get("port", 6333),
+            )
+            logger.info(f"Qdrant ready: {info}")
         except Exception as e:
-            logger.error(f"ChromaDB initialization failed: {e}")
+            logger.error(f"Qdrant initialization failed: {e}")
     else:
-        logger.info("ChromaDB disabled")
+        logger.info("Qdrant disabled")
 
 
 @asynccontextmanager
@@ -210,10 +216,31 @@ def create_app(storage=None) -> FastAPI:
     def delete_project(project_ref: str):
         project = _resolve_project(project_ref)
         svc = get_project_service()
-        ok = svc.delete_project(project.project_id)
+        pg = _get_postgres_storage()
+
+        # 1. 先查出该项目的所有 paper_id（删除 Qdrant 用）
+        paper_ids = []
+        if pg:
+            try:
+                rows = pg.query("papers", {"project_id": project.project_id})
+                paper_ids = [r["paper_id"] for r in rows]
+            except Exception:
+                pass
+
+        # 2. 删除 Qdrant 向量
+        if paper_ids:
+            try:
+                from src.agents_v3.research_workspace.vector_storage import VectorStorage
+                vs = VectorStorage()
+                vs.delete_by_papers(paper_ids)
+            except Exception:
+                pass
+
+        # 3. 删除 PostgreSQL 数据 + 本地文件
+        ok = svc.delete_project(project.project_id, pg=pg)
         if not ok:
             raise NotFoundError("project", project_ref)
-        return ApiResponse(data={"deleted": True})
+        return ApiResponse(data={"deleted": True, "papers_cleaned": len(paper_ids)})
 
     # ── 论文库 ──
 

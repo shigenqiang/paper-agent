@@ -52,9 +52,20 @@ class SemanticScholarClient(BaseSearchAdapter):
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 retry_after = e.headers.get("Retry-After", "")
-                logger.warning(f"S2 429, Retry-After: {retry_after}")
-                if retry_after.isdigit():
-                    time.sleep(int(retry_after))
+                wait = int(retry_after) if retry_after.isdigit() else 3
+                logger.warning(f"S2 429, retrying in {wait}s...")
+                time.sleep(wait)
+                # 重试一次
+                try:
+                    req2 = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req2, timeout=20) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                    results = self._parse_response(data)
+                    for i, r in enumerate(results):
+                        r.source_rank = i + 1
+                    return results[:query.limit]
+                except Exception:
+                    pass
             logger.error(f"Semantic Scholar search failed: HTTP {e.code}")
             return []
         except Exception as e:

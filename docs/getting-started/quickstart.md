@@ -19,6 +19,9 @@ pip install -e .
 ```bash
 # LLM 服务配置（按需）
 LOG_LEVEL=INFO
+
+# 并行下载/解析 worker 数（默认 4）
+PARALLEL_WORKERS=4
 ```
 
 ## 启动服务
@@ -73,7 +76,7 @@ curl -X POST http://localhost:8000/api/rw/projects/{ref}/papers/search/commit \
   -H "Content-Type: application/json" \
   -d '{"session_id": "...", "selected_result_ids": ["id1", "id2"]}'
 
-# 4. 解析 → 卡片 → 证据 → 图谱
+# 4. 解析 → 卡片 → 证据 → 图谱（解析时自动下载未下载的 PDF）
 curl -X POST http://localhost:8000/api/rw/projects/{ref}/papers/parse
 curl -X POST http://localhost:8000/api/rw/projects/{ref}/cards
 curl -X POST http://localhost:8000/api/rw/projects/{ref}/evidence/build

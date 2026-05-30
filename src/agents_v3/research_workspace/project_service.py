@@ -128,18 +128,33 @@ class ProjectService:
         ps.save_project_metadata(data)
         return Project(**data)
 
-    def delete_project(self, project_id: str) -> bool:
-        """删除项目（移除整个目录）"""
+    def delete_project(self, project_id: str, pg=None) -> bool:
+        """删除项目（PostgreSQL + 本地文件 + PDF 文件）"""
         try:
             dir_name = resolve_project_ref(project_id, self.storage.data_dir)
         except KeyError:
             return False
 
+        # 1. 清理 PostgreSQL 数据
+        if pg is not None:
+            try:
+                pg.delete_project_data(project_id)
+            except Exception as e:
+                logger.warning(f"PostgreSQL cleanup failed: {e}")
+
+        # 2. 删除项目目录（papers, cards, evidence 等 JSON 文件）
         project_dir = self.storage.data_dir / "projects" / dir_name
         if project_dir.exists():
             shutil.rmtree(project_dir)
+            logger.info(f"Deleted project directory: {dir_name}")
+
+        # 3. 删除 PDF 文件目录
+        files_dir = self.storage.data_dir / "files" / project_id
+        if files_dir.exists():
+            shutil.rmtree(files_dir)
+            logger.info(f"Deleted PDF files: {files_dir}")
+
         remove_project_storage(dir_name)
-        logger.info(f"Deleted project directory: {dir_name}")
         return True
 
     def get_project_stats(self, ref: str) -> dict[str, int]:

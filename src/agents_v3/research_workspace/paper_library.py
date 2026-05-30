@@ -100,6 +100,8 @@ class PaperLibraryService:
             "publication_type": result.publication_type,
             "source": result.source,
             "source_payload": result.source_payload,
+            "is_pdf_downloaded": False,
+            "is_parsed": False,
             "added_at": __import__("datetime").datetime.now().isoformat(),
         }
         self.global_storage.save_to_folder("papers_pool", paper_id, pool_data)
@@ -179,11 +181,20 @@ class PaperLibraryService:
         project_id: str,
         metadata: dict[str, Any],
         source: str = "import",
+        scores: dict[str, float] | None = None,
+        topic: str = "",
     ) -> Paper | None:
         # 去重检查
         existing = self.storage.query("papers", {"project_id": project_id})
         existing_keys = build_existing_keys(existing)
         if make_dedup_key(metadata) in existing_keys:
+            # 即使论文已存在，仍保存主题相关分数
+            if scores and topic:
+                dedup_key = make_dedup_key(metadata)
+                for p in existing:
+                    if make_dedup_key(p) == dedup_key:
+                        self.save_topic_score(project_id, p["paper_id"], topic, scores)
+                        break
             logger.info(f"Duplicate skipped: {metadata.get('title', '')[:50]}")
             return None
 
@@ -265,6 +276,11 @@ class PaperLibraryService:
         else:
             citation = CitationInfo(citation_count=metadata.get("citations"))
 
+        # 提取重要性得分
+        importance_score = 0.0
+        if scores:
+            importance_score = scores.get("importance_score", 0.0)
+
         paper = Paper(
             paper_id=paper_id,
             project_id=project_id,
@@ -282,8 +298,14 @@ class PaperLibraryService:
             url=metadata.get("url", ""),
             source_platform=source if isinstance(source, str) else "",
             status=PaperStatus.IMPORTED,
+            importance_score=importance_score,
         )
         self.storage.upsert_item("papers", paper_id, paper.model_dump())
+
+        # 持久化主题相关分数到 topic_scores 集合
+        if scores and topic:
+            self.save_topic_score(project_id, paper_id, topic, scores)
+
         logger.info(f"Imported paper {paper_id}: {paper.title}")
         return paper
 
@@ -373,10 +395,23 @@ class PaperLibraryService:
     ) -> list[Paper]:
         """搜索并导入到项目（自动去重）"""
         results = self.search_papers(query)
+
+        # 排序以计算分数
+        ranking = RankingService(query=query.query)
+        results = ranking.rank(results, query=query.query)
+
         papers = []
+        topic = query.query
         for r in results:
             meta = search_result_to_meta(r)
-            paper = self.add_paper_metadata(project_id, meta, source=r.source)
+            scores = {
+                "importance_score": r.final_score,
+                "relevance_score": r.relevance_score,
+                "quality_score": r.quality_score,
+            }
+            paper = self.add_paper_metadata(
+                project_id, meta, source=r.source, scores=scores, topic=topic,
+            )
             if paper:
                 papers.append(paper)
         return papers
@@ -418,13 +453,29 @@ class PaperLibraryService:
         project_id: str,
         doi_list: list[str],
     ) -> list[Paper]:
+        from src.agents_v3.research_workspace.search.crossref_client import CrossRefClient
+        crossref = CrossRefClient()
+
         papers = []
         for doi in doi_list:
-            paper = self.add_paper_metadata(
-                project_id,
-                {"title": f"DOI: {doi}", "identifiers": PaperIdentifiers(doi=doi)},
-                source="doi",
-            )
+            # 通过 CrossRef 查询完整元数据
+            result = crossref.search_by_doi(doi)
+            if result:
+                meta = {
+                    "title": result.title,
+                    "abstract": result.abstract or "",
+                    "authors": [{"name": a} for a in (result.authors or [])],
+                    "year": result.year,
+                    "venue": result.venue or "",
+                    "identifiers": PaperIdentifiers(doi=doi),
+                    "open_access": {"pdf_url": result.pdf_url or ""} if result.pdf_url else {},
+                }
+            else:
+                meta = {
+                    "title": f"DOI: {doi}",
+                    "identifiers": PaperIdentifiers(doi=doi),
+                }
+            paper = self.add_paper_metadata(project_id, meta, source="doi")
             if paper:
                 papers.append(paper)
         return papers
@@ -532,12 +583,24 @@ class PaperLibraryService:
         project_id: str,
         session_id: str,
         result_ids: list[str],
+        topic: str = "",
     ) -> list[Paper]:
-        """将选中的搜索结果提交入库（从论文池读取元数据）"""
+        """将选中的搜索结果提交入库（从论文池读取元数据）
+
+        Args:
+            project_id: 项目 ID
+            session_id: 搜索会话 ID
+            result_ids: 用户选中的搜索结果 ID 列表
+            topic: 当前搜索主题，用于记录论文的重要性得分
+        """
         session = self.get_search_session(session_id)
         if not session:
             logger.error(f"Search session not found: {session_id}")
             return []
+
+        # 从 session query 中提取主题（如果未显式传入）
+        if not topic:
+            topic = session.query.get("query", "")
 
         results_by_id = {r.result_id: r for r in session.results}
         papers = []
@@ -546,20 +609,31 @@ class PaperLibraryService:
             if not r:
                 continue
 
+            # 提取分数
+            scores = {
+                "importance_score": r.final_score,
+                "relevance_score": r.relevance_score,
+                "quality_score": r.quality_score,
+            }
+
             # 从论文池读取元数据
             pool_paper_id = r.source_payload.get("pool_paper_id")
             if pool_paper_id:
                 pool_data = self.get_from_pool(pool_paper_id)
                 if pool_data:
                     meta = self._pool_data_to_meta(pool_data)
-                    paper = self.add_paper_metadata(project_id, meta, source=r.source)
+                    paper = self.add_paper_metadata(
+                        project_id, meta, source=r.source, scores=scores, topic=topic,
+                    )
                     if paper:
                         papers.append(paper)
                     continue
 
             # fallback: 直接用搜索结果
             meta = search_result_to_meta(r)
-            paper = self.add_paper_metadata(project_id, meta, source=r.source)
+            paper = self.add_paper_metadata(
+                project_id, meta, source=r.source, scores=scores, topic=topic,
+            )
             if paper:
                 papers.append(paper)
 
@@ -592,3 +666,130 @@ class PaperLibraryService:
             "language": pool_data.get("language", ""),
             "publication_type": pool_data.get("publication_type", ""),
         }
+
+    # ── 主题相关重要性得分 ──────────────────────────────────
+
+    def save_topic_score(
+        self,
+        project_id: str,
+        paper_id: str,
+        topic: str,
+        scores: dict[str, float],
+    ) -> None:
+        """保存论文在特定主题下的重要性得分
+
+        分数是主题相关的临时数据，只存储在项目 JSON 中，不写入关系数据库。
+        """
+        from datetime import datetime as _dt
+
+        score_record = {
+            "paper_id": paper_id,
+            "project_id": project_id,
+            "topic": topic,
+            "importance_score": scores.get("importance_score", 0.0),
+            "relevance_score": scores.get("relevance_score", 0.0),
+            "quality_score": scores.get("quality_score", 0.0),
+            "scored_at": _dt.now().isoformat(),
+        }
+
+        # 读取现有记录，按 paper_id + topic 去重更新
+        records = self.storage.load_collection("topic_scores")
+        updated = False
+        for i, rec in enumerate(records):
+            if rec.get("paper_id") == paper_id and rec.get("topic") == topic:
+                records[i] = score_record
+                updated = True
+                break
+        if not updated:
+            records.append(score_record)
+
+        self.storage.save_collection("topic_scores", records)
+        logger.debug(f"Saved topic score: {paper_id} @ {topic[:30]} = {scores.get('importance_score', 0):.3f}")
+
+    def get_topic_scores(
+        self,
+        project_id: str,
+        topic: str,
+    ) -> list[dict[str, Any]]:
+        """获取某主题下所有论文的重要性得分
+
+        返回按 importance_score 降序排列的得分记录列表。
+        """
+        records = self.storage.load_collection("topic_scores")
+        matched = [
+            r for r in records
+            if r.get("project_id") == project_id and r.get("topic") == topic
+        ]
+        matched.sort(key=lambda r: r.get("importance_score", 0), reverse=True)
+        return matched
+
+    def get_paper_topic_scores(
+        self,
+        paper_id: str,
+    ) -> list[dict[str, Any]]:
+        """获取某篇论文在所有主题下的得分"""
+        records = self.storage.load_collection("topic_scores")
+        return [r for r in records if r.get("paper_id") == paper_id]
+
+    def recompute_topic_scores(
+        self,
+        project_id: str,
+        topic: str,
+    ) -> list[dict[str, Any]]:
+        """重新计算某主题下所有论文的重要性得分
+
+        基于论文的标题和摘要与主题的相关性，使用 BM25 重新评分。
+        返回更新后的得分记录列表。
+        """
+        from src.agents_v3.research_workspace.search.ranking import RankingService
+        from src.agents_v3.research_workspace.search.base import SearchResult
+
+        papers = self.list_papers(project_id)
+        if not papers:
+            return []
+
+        # 将 Paper 转换为 SearchResult 用于评分
+        results = []
+        for p in papers:
+            r = SearchResult(
+                result_id=p.paper_id,
+                source=p.source_platform or "unknown",
+                title=p.title,
+                authors=[a.name for a in p.authors],
+                year=p.dates.year,
+                venue=p.source.venue,
+                abstract=p.abstract,
+                doi=p.identifiers.doi,
+                arxiv_id=p.identifiers.arxiv_id,
+                pubmed_id=p.identifiers.pubmed_id,
+                semantic_scholar_id=p.identifiers.semantic_scholar_id,
+                openalex_id=p.identifiers.openalex_id,
+                citations=p.citation.citation_count,
+                concepts=p.classification.concepts,
+                keywords=p.classification.keywords,
+            )
+            results.append(r)
+
+        # 使用 RankingService 计算分数
+        ranking = RankingService(query=topic)
+        ranked = ranking.rank(results, query=topic)
+
+        # 持久化分数
+        scored_records = []
+        for r in ranked:
+            scores = {
+                "importance_score": r.final_score,
+                "relevance_score": r.relevance_score,
+                "quality_score": r.quality_score,
+            }
+            self.save_topic_score(project_id, r.result_id, topic, scores)
+            scored_records.append({
+                "paper_id": r.result_id,
+                "topic": topic,
+                "importance_score": r.final_score,
+                "relevance_score": r.relevance_score,
+                "quality_score": r.quality_score,
+            })
+
+        logger.info(f"Recomputed topic scores for {len(scored_records)} papers @ {topic[:30]}")
+        return scored_records

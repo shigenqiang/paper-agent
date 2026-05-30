@@ -151,61 +151,56 @@ qa.answer(project_id, "这个方向有什么创新空间？", {
 
 ### 搜索排序算法
 
-搜索结果使用 **BM25 相关性 + 多维质量评分** 进行排序。
+搜索结果使用 **查询词覆盖率 × 字段加权 TF + 多维质量评分** 进行排序。
 
-#### 相关性（BM25）
+#### 相关性（TF + 覆盖率）
 
-使用 Okapi BM25 算法计算查询与论文的文本相关性，替代简单的关键词匹配：
+不依赖 BM25（小语料下 IDF 无意义），直接衡量查询词在论文各字段中的出现程度：
 
 ```
-score(D, Q) = Σ IDF(qi) × [f(qi,D) × (k1+1)] / [f(qi,D) + k1 × (1 - b + b × |D|/avgdl)]
+relevance = weighted_tf × coverage
+
+weighted_tf = Σ (字段词频 × 字段权重)
+coverage    = 匹配到的查询词数 / 总查询词数
 ```
 
-- **k1 = 1.5**：词频饱和度（学术术语重复出现的意义递减）
-- **b = 0.4**：文档长度归一化（学术摘要较短，用较小值减少长度惩罚）
-- **IDF**：逆文档频率，自动降权常见词
-
-各字段按权重拼接为 BM25 文档：
+各字段权重：
 
 | 字段 | 权重 | 说明 |
 |------|------|------|
 | title | 3.0 | 标题最能反映论文主题 |
+| keywords | 2.5 | 关键词高度相关 |
 | abstract | 1.5 | 摘要是核心内容 |
-| keywords | 2.0 | 关键词高度相关 |
 | concepts | 1.0 | OpenAlex 概念标签 |
 | venue | 0.5 | 期刊/会议名 |
+
+覆盖率惩罚只匹配少量查询词的论文：如果查询有 4 个词，某论文只匹配到 1 个，分数仅为匹配 4 个的 1/4。
 
 #### 质量评分
 
 质量分衡量论文学术影响力，归一化到 [0, 1]：
 
 ```
-quality = 0.50 × citation + 0.25 × velocity + 0.20 × completeness + 0.05 × recency
+quality = 0.75 × citation + 0.10 × velocity + 0.15 × recency
 ```
 
 | 维度 | 权重 | 计算方式 |
 |------|------|----------|
-| 引用数 | 50% | `log(1+citations) / log(1+max_citations)`，语料库内相对归一化 |
-| 引用速度 | 25% | `log(1 + citations/age) / log(1+max_citations)`，年均引用数 |
-| 元数据完整度 | 20% | 7 个字段（title/abstract/authors/doi/year/venue/pdf_url）的填充率 |
-| 新近性 | 5% | `e^(-0.15 × age)`，指数衰减，微调 |
-
-引用数是最强质量信号；引用速度反映论文持续影响力（高引用但年均低的老论文不会被过度惩罚）。
+| 引用数 | 75% | `√citations / √max_citations`，平方根归一化，高引用区分度更好 |
+| 引用速度 | 10% | `citations / age`，年均引用数，log 压缩归一化 |
+| 新近性 | 15% | `e^(-0.08 × age)`，指数衰减，对经典论文更宽容 |
 
 #### 最终分数
 
 ```
-final = 0.40 × relevance + 0.20 × citation + 0.15 × recency
-      + 0.15 × completeness + 0.10 × source
+final = 0.55 × relevance + 0.25 × quality + 0.20 × source_priority
 ```
 
 | 维度 | 权重 | 说明 |
 |------|------|------|
-| BM25 相关性 | 40% | 查询与论文的文本匹配度 |
-| 引用数 | 20% | 学术影响力 |
-| 新近性 | 15% | `e^(-0.15 × age)`，指数衰减 |
-| 元数据完整度 | 15% | 字段填充率 |
-| 来源优先级 | 10% | 数据源可信度 |
+| 相关性 | 55% | 查询词覆盖率 × 字段加权 TF |
+| 质量 | 25% | 引用数 + 引用速度 + 完整度 + 新近性 |
+| 来源优先级 | 20% | 数据源可信度（OpenAlex > arXiv > S2） |
 
 ---
 
@@ -417,28 +412,30 @@ scripts/
 
 ### 数据存储结构
 
-每个项目以名称命名独立目录，内含 `project.json` 存储元数据：
+支持 **PostgreSQL**（推荐）和 **JSON 文件** 两种存储后端，通过 `config.yaml` 切换：
 
-```
-data/research_workspace/
-├── tasks.json                         # 全局：任务队列
-├── search_cache.json                  # 全局：搜索缓存
-└── projects/
-    ├── 我的研究项目/                   # 目录名 = 项目名称
-    │   ├── project.json               # 项目元数据（project_id, name, dir_name, ...）
-    │   ├── papers.json                # 项目论文（子模型结构）
-    │   ├── paper_cards.json           # 论文卡片
-    │   ├── evidence_records.json      # 证据记录
-    │   ├── reports.json               # 报告
-    │   ├── files/                     # PDF 文件
-    │   ├── graphs/                    # 图谱数据
-    │   └── chunks/                    # 文本分块
-    └── sparse_functional_data/
-        ├── project.json
-        └── ...
+```yaml
+database:
+  postgres:
+    enabled: true
+    host: localhost
+    port: 5432
+    database: paper_agent
+    user: postgres
+    password: "your-password"
+  qdrant:
+    enabled: true
+    host: localhost
+    port: 6333
+
+storage_backend: postgres  # 可选: "json", "postgres"
 ```
 
-通过 `project_id` 或 `dir_name` 均可访问项目。
+**PostgreSQL 模式**：所有数据存储在数据库中，支持 16 张表（projects, papers, paper_chunks, paper_cards, evidence_records, kg_nodes, kg_edges, topic_scores, parse_results, reports, search_sessions, qa_history, paper_references, papers_pool 等）。
+
+**JSON 模式**：每个项目独立目录，轻量可读，适合开发和小规模使用。
+
+删除项目时，PostgreSQL 模式会自动清理：数据库记录（CASCADE 自动删 papers→chunks/cards）+ Qdrant 向量 + 本地 PDF 文件。
 
 ### 论文数据模型
 
@@ -477,9 +474,10 @@ class Paper(BaseModel):
 | HTTP 服务 | FastAPI + Uvicorn | 异步 Web 框架，自动 Swagger 文档 |
 | LLM | LLMService（可配置） | 统一 LLM 调用接口 |
 | 数据模型 | Pydantic v2 | 强类型、自动验证 |
-| 存储 | JSON 文件（项目目录隔离） | 每个项目独立目录，轻量可读 |
-| 搜索 | OpenAlex / arXiv / Semantic Scholar | 多源学术搜索 + BM25 排序 + 去重 |
-| PDF 解析 | pdfplumber | 文本提取和分块 |
+| 存储 | PostgreSQL + JSON 文件 | PostgreSQL 存储结构化数据，JSON 作为轻量备选 |
+| 向量存储 | Qdrant | 存储论文分块嵌入，支持向量检索 |
+| 搜索 | OpenAlex / arXiv / Semantic Scholar / CrossRef | 多源学术搜索 + TF 覆盖率排序 + 去重 |
+| PDF 解析 | pdfplumber / PyMuPDF / pdfminer | 多解析器 fallback，自动分块和清洗 |
 | 知识图谱 | NetworkX | 实体关系图 + Gap 分析 |
 | 日志 | Loguru | 结构化日志 |
 | 测试 | pytest | 130+ 测试用例 |

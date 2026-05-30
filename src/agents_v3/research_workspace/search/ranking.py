@@ -30,11 +30,11 @@ _FIELD_WEIGHTS = {
     "venue": 0.5,
 }
 
-# 最终权重（质量优先，适合"挑好论文"场景）
+# 最终权重（搜索场景：相关度优先，质量辅助排序）
 _FINAL_WEIGHTS = {
-    "relevance": 0.35,
-    "quality": 0.50,
-    "source_priority": 0.15,
+    "relevance": 0.55,
+    "quality": 0.25,
+    "source_priority": 0.20,
 }
 
 _RRF_K = 60
@@ -105,34 +105,27 @@ class RankingService:
         self._max_citations = 1
 
     def rank(self, results: list[SearchResult], query: str = "") -> list[SearchResult]:
-        """计算分数并排序"""
+        """计算分数并排序（TF 匹配 + 查询词覆盖率，避免小语料 BM25 的 IDF 失真）"""
         if query:
             self.query_terms = _tokenize(query)
 
         if not results:
             return results
 
-        # 预计算引用数百分位（用于更好的区分度）
         self._max_citations = max((r.citations or 0) for r in results) or 1
-        self._citation_percentiles = self._compute_citation_percentiles(results)
 
-        # 构建 BM25 语料（将各字段按权重拼接为词列表）
-        corpus = [self._build_document(r) for r in results]
-        bm25 = BM25(corpus)
-
-        # 计算 BM25 原始分数
+        # 计算相关度分数：查询词覆盖率 × TF 加权
+        query_set = set(self.query_terms)
         raw_scores = []
-        for i, r in enumerate(results):
-            raw_scores.append(bm25.score(i, self.query_terms))
+        for r in results:
+            raw_scores.append(self._compute_relevance(r, query_set))
 
-        # 归一化 BM25 分数到 [0, 1]
         max_score = max(raw_scores) if raw_scores else 1.0
         if max_score == 0:
             max_score = 1.0
 
         for i, r in enumerate(results):
-            bm25_norm = raw_scores[i] / max_score
-            r.relevance_score = round(bm25_norm, 3)
+            r.relevance_score = round(raw_scores[i] / max_score, 3)
             r.quality_score = round(self._compute_quality(r), 3)
             r.final_score = round(self._compute_final(r), 3)
 
@@ -141,6 +134,37 @@ class RankingService:
             r.source_rank = i + 1
 
         return results
+
+    def _compute_relevance(self, r: SearchResult, query_set: set[str]) -> float:
+        """相关度 = 查询词覆盖率 × 字段加权 TF
+
+        不依赖 IDF（小语料下 IDF 无意义），直接衡量查询词在论文中的出现程度。
+        """
+        if not query_set:
+            return 0.0
+
+        field_texts = {
+            "title": (r.title, 3.0),
+            "keywords": (" ".join(r.keywords), 2.5),
+            "abstract": (r.abstract, 1.5),
+            "concepts": (" ".join(r.concepts), 1.0),
+            "venue": (r.venue, 0.5),
+        }
+
+        weighted_tf = 0.0
+        matched_terms: set[str] = set()
+        for _, (text, weight) in field_texts.items():
+            if not text:
+                continue
+            tokens = _tokenize(text)
+            for term in tokens:
+                if term in query_set:
+                    weighted_tf += weight
+                    matched_terms.add(term)
+
+        # 覆盖率：匹配到的查询词占比（惩罚只匹配少量词的论文）
+        coverage = len(matched_terms) / len(query_set) if query_set else 0.0
+        return weighted_tf * coverage
 
     def _build_document(self, r: SearchResult) -> list[str]:
         """将论文各字段按权重拼接为词列表（用于 BM25）"""
@@ -155,8 +179,8 @@ class RankingService:
         for field, text in field_texts.items():
             if text:
                 weight = _FIELD_WEIGHTS[field]
-                # 按权重重复 tokens（整数倍）
-                repeat = max(1, int(weight))
+                # 按权重重复 tokens，用 round 保留小数精度
+                repeat = max(1, round(weight))
                 tokens.extend(_tokenize(text) * repeat)
         return tokens
 
@@ -201,18 +225,6 @@ class RankingService:
         if not citations or citations <= 0:
             return 0.0
         return math.sqrt(citations) / math.sqrt(self._max_citations)
-
-    @staticmethod
-    def _compute_citation_percentiles(results: list[SearchResult]) -> dict[int, float]:
-        """计算引用数的百分位排名，返回 {citations: percentile} 映射"""
-        citation_values = sorted(set(r.citations or 0 for r in results))
-        n = len(citation_values)
-        if n <= 1:
-            return {citation_values[0]: 1.0} if n == 1 else {}
-        percentile_map = {}
-        for i, val in enumerate(citation_values):
-            percentile_map[val] = i / (n - 1)
-        return percentile_map
 
     @staticmethod
     def _recency_score(year: int | None) -> float:

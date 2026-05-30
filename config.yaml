@@ -50,19 +50,19 @@ database:
     # 或者使用 DSN:
     # dsn: "postgresql://user:password@localhost:5432/paper_agent"
 
-  # ChromaDB 配置
-  chromadb:
-    enabled: true  # 设为 true 启用 ChromaDB
-    path: data/chromadb  # 本地存储路径
+  # Qdrant 向量数据库配置
+  qdrant:
+    enabled: true
+    host: localhost
+    port: 6333
+    collection: paper_chunks
+    vector_size: 512
+    distance: cosine
 
 # 存储后端选择
 # 可选值: "json", "postgres"
-# json: 使用 JSON 文件存储（默认，无需数据库）
-# postgres: 使用 PostgreSQL 存储
 storage_backend: postgres
 
 # 向量存储
-# 可选值: "none", "chromadb"
-# none: 不使用向量存储
-# chromadb: 使用 ChromaDB
-vector_storage: chromadb
+# 可选值: "none", "qdrant"
+vector_storage: qdrant

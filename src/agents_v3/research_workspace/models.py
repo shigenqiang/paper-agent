@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -39,6 +39,24 @@ class ChunkType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class SectionType(str, Enum):
+    """论文章节类型（细粒度，比 ChunkType 更精确）"""
+    TITLE = "title"
+    ABSTRACT = "abstract"
+    INTRODUCTION = "introduction"
+    RELATED_WORK = "related_work"
+    METHOD = "method"
+    EXPERIMENT = "experiment"
+    RESULT = "result"
+    DISCUSSION = "discussion"
+    LIMITATION = "limitation"
+    CONCLUSION = "conclusion"
+    ACKNOWLEDGMENT = "acknowledgment"
+    APPENDIX = "appendix"
+    REFERENCE = "reference"
+    UNKNOWN = "unknown"
+
+
 class ReportType(str, Enum):
     LITERATURE_REVIEW = "literature_review"
     INNOVATION_REPORT = "innovation_report"
@@ -64,6 +82,11 @@ class NodeType(str, Enum):
     LIMITATION = "Limitation"
     GAP = "Gap"
     INNOVATION = "InnovationPoint"
+    # SciERC 扩展
+    METRIC = "Metric"
+    OTHER_SCI_TERM = "OtherSciTerm"
+    VENUE = "Venue"
+    INSTITUTION = "Institution"
 
 
 class EdgeType(str, Enum):
@@ -75,6 +98,24 @@ class EdgeType(str, Enum):
     SUGGESTS_GAP = "SUGGESTS_GAP"
     SUPPORTS_INNOVATION = "SUPPORTS_INNOVATION"
     CITES = "CITES"
+    # SciERC 核心关系
+    USED_FOR = "USED_FOR"           # Method → Task (55.6%)
+    CONJUNCTION = "CONJUNCTION"     # Entity ↔ Entity (18.5%)
+    HYPONYM_OF = "HYPONYM_OF"      # Entity → Entity (9.8%)
+    COMPARE = "COMPARE"             # Method ↔ Method (5%)
+    PART_OF = "PART_OF"             # Entity → Entity (5%)
+    EVALUATE_FOR = "EVALUATE_FOR"   # Metric → Task (4.4%)
+    FEATURE_OF = "FEATURE_OF"       # Property → Entity (1.8%)
+    # 扩展关系
+    EVALUATED_ON = "EVALUATED_ON"   # Method → Dataset
+    EVALUATED_BY = "EVALUATED_BY"   # Method → Metric
+    EXTENDS = "EXTENDS"             # Method → Method
+    SUBCLASS_OF = "SUBCLASS_OF"
+    SUBTASK_OF = "SUBTASK_OF"
+    TRAINED_WITH = "TRAINED_WITH"   # Method → Dataset
+    ACHIEVES = "ACHIEVES"           # Method → Metric
+    AUTHORED_BY = "AUTHORED_BY"
+    PUBLISHED_IN = "PUBLISHED_IN"
 
 
 # ── 项目 ──────────────────────────────────────────────
@@ -181,6 +222,7 @@ class Paper(BaseModel):
     error_message: str = ""
     included: bool = True
     exclude_reason: str = ""
+    importance_score: float = 0.0  # 主题相关重要性得分（项目级临时数据，不入库论文池）
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -204,6 +246,158 @@ class PaperChunk(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+# ── 三层论文数据结构 ──────────────────────────────────────
+
+
+class KeyResult(BaseModel):
+    """论文关键结果"""
+    description: str = ""
+    evidence_quote: str = ""
+    source_chunk_id: str = ""
+    confidence: float = 0.0
+
+
+class PaperProfile(BaseModel):
+    """
+    L1: 论文整体画像
+    统一 Paper + PaperCard + 引用指标，作为实体提取的输入
+    """
+    paper_id: str
+    project_id: str = ""
+    title: str = ""
+    abstract: str = ""
+    language: str = "en"
+    publication_type: str = ""  # journal/conference/preprint/thesis
+
+    identifiers: PaperIdentifiers = Field(default_factory=PaperIdentifiers)
+    authors: list[Author] = Field(default_factory=list)
+    dates: PaperDates = Field(default_factory=PaperDates)
+    source: PaperSource = Field(default_factory=PaperSource)
+    open_access: OpenAccessInfo = Field(default_factory=OpenAccessInfo)
+    classification: PaperClassification = Field(default_factory=PaperClassification)
+    citation: CitationInfo = Field(default_factory=CitationInfo)
+
+    url: str = ""
+    source_platform: str = ""
+    pdf_path: str = ""
+    status: PaperStatus = PaperStatus.IMPORTED
+
+    # ── 引言部分（重点提取） ──
+    research_background: str = ""  # 研究背景：领域概况、技术发展脉络
+    research_motivation: str = ""  # 研究动机：为什么要做这个研究
+    problem_statement: str = ""  # 问题陈述：要解决什么具体问题
+    research_gap: str = ""  # 研究空白：现有方法的不足
+    research_question: str = "unknown"  # 核心研究问题
+    contribution_summary: list[str] = Field(default_factory=list)  # 论文贡献列表（通常引言末尾列出）
+    prior_work_summary: str = ""  # 相关工作概述（引言中简要提及的前人工作）
+
+    # ── 方法与结果 ──
+    methodology: str = "unknown"
+    data_or_sample: str = "unknown"
+    key_findings: list[str] = Field(default_factory=list)
+    key_results: list[KeyResult] = Field(default_factory=list)
+
+    # ── 讨论与展望 ──
+    limitations: list[str] = Field(default_factory=list)
+    future_work: list[str] = Field(default_factory=list)
+    possible_gaps: list[str] = Field(default_factory=list)
+
+    # ── 主题与分类 ──
+    topics: list[str] = Field(default_factory=list)
+
+    # 引用指标
+    citation_count: int = 0
+    fwci: float = 0.0  # Field-Weighted Citation Impact (OpenAlex, 0-3+)
+    h_index_author: int = 0  # 第一作者 h-index
+
+    # 实体提取结果
+    extracted_entities: list[str] = Field(default_factory=list)  # entity_id 列表
+    section_count: int = 0
+    chunk_count: int = 0
+
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class FigureRef(BaseModel):
+    """图表引用"""
+    ref_id: str = ""
+    caption: str = ""
+    page: int = 0
+
+
+class TableRef(BaseModel):
+    """表格引用"""
+    ref_id: str = ""
+    caption: str = ""
+    page: int = 0
+
+
+class SectionClaim(BaseModel):
+    """章节中的核心论点"""
+    claim: str = ""
+    evidence_quote: str = ""
+    source_chunk_id: str = ""
+    confidence: float = 0.0
+
+
+class SectionEntity(BaseModel):
+    """章节中提取的实体"""
+    entity_id: str = ""
+    name: str = ""
+    entity_type: str = ""  # 对应 NodeType
+    mention_text: str = ""
+    source_chunk_id: str = ""
+    confidence: float = 0.0
+
+
+class PaperSection(BaseModel):
+    """
+    L2: 论文章节
+    表示论文中的逻辑章节（introduction/method/result/discussion 等）
+    """
+    section_id: str
+    paper_id: str
+    section_type: SectionType = SectionType.UNKNOWN
+    section_title: str = ""
+    section_index: int = 0  # 在论文中的顺序
+    page_start: int = 0
+    page_end: int = 0
+    text: str = ""
+    token_count: int = 0
+
+    # 结构化提取（通用）
+    claims: list[SectionClaim] = Field(default_factory=list)
+    entities: list[SectionEntity] = Field(default_factory=list)
+    figures: list[FigureRef] = Field(default_factory=list)
+    tables: list[TableRef] = Field(default_factory=list)
+
+    # 引言专属字段（section_type == INTRODUCTION 时填充）
+    background_points: list[str] = Field(default_factory=list)  # 背景要点
+    motivation_points: list[str] = Field(default_factory=list)  # 动机要点
+    gap_points: list[str] = Field(default_factory=list)  # 研究空白
+    contribution_points: list[str] = Field(default_factory=list)  # 贡献列表
+    prior_work_refs: list[str] = Field(default_factory=list)  # 引言中提及的前人文献 ID
+
+    chunk_ids: list[str] = Field(default_factory=list)  # 关联的 L3 chunk
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+class Reference(BaseModel):
+    """结构化参考文献条目"""
+    ref_id: str = ""
+    paper_id: str = ""
+    index: int = 0
+    raw_text: str = ""
+    title: str = ""
+    authors: list[str] = Field(default_factory=list)
+    year: int | None = None
+    venue: str = ""
+    doi: str = ""
+    url: str = ""
+
+
 class ParseResult(BaseModel):
     parse_id: str = Field(default_factory=lambda: f"parse_{uuid.uuid4().hex[:8]}")
     paper_id: str
@@ -215,7 +409,10 @@ class ParseResult(BaseModel):
     chunk_count: int = 0
     body_chunk_count: int = 0
     reference_count: int = 0
+    table_count: int = 0
+    figure_count: int = 0
     quality_flags: list[str] = Field(default_factory=list)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
     error_message: str = ""
     started_at: str = ""
     finished_at: str = ""
@@ -338,6 +535,115 @@ class KnowledgeGraph(BaseModel):
     edges: list[GraphEdge] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+# ── 类型化知识图谱节点 ─────────────────────────────────
+
+
+class KGNodeBase(BaseModel):
+    """KG 节点基类"""
+    node_id: str
+    node_type: NodeType
+    label: str = ""
+    description: str = ""
+    confidence: float = 1.0
+    source_paper_ids: list[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+class PaperNode(KGNodeBase):
+    node_type: Literal[NodeType.PAPER] = NodeType.PAPER
+    title: str = ""
+    authors: list[str] = Field(default_factory=list)
+    year: int | None = None
+    venue: str = ""
+    doi: str = ""
+    abstract: str = ""
+    citation_count: int = 0
+    fwci: float = 0.0
+
+
+class TaskNode(KGNodeBase):
+    node_type: Literal[NodeType.TASK] = NodeType.TASK
+    task_domain: str = ""
+
+
+class MethodNode(KGNodeBase):
+    node_type: Literal[NodeType.METHOD] = NodeType.METHOD
+    method_type: str = ""  # model/algorithm/framework/technique
+    input_type: str = ""
+    output_type: str = ""
+
+
+class MaterialNode(KGNodeBase):
+    node_type: Literal[NodeType.DATASET] = NodeType.DATASET
+    data_type: str = ""
+    size: str = ""
+    domain: str = ""
+
+
+class MetricNode(KGNodeBase):
+    node_type: Literal[NodeType.METRIC] = NodeType.METRIC
+    metric_type: str = ""  # accuracy/efficiency/quality
+    higher_is_better: bool = True
+
+
+class FindingNode(KGNodeBase):
+    node_type: Literal[NodeType.FINDING] = NodeType.FINDING
+    evidence_quote: str = ""
+    source_chunk_id: str = ""
+    evidence_strength: str = "medium"
+
+
+class LimitationNode(KGNodeBase):
+    node_type: Literal[NodeType.LIMITATION] = NodeType.LIMITATION
+    limitation_type: str = ""
+    evidence_quote: str = ""
+
+
+class GapNode(KGNodeBase):
+    node_type: Literal[NodeType.GAP] = NodeType.GAP
+    gap_type: str = ""
+    potential_impact: str = ""
+
+
+class TopicNode(KGNodeBase):
+    node_type: Literal[NodeType.TOPIC] = NodeType.TOPIC
+    keywords: list[str] = Field(default_factory=list)
+
+
+class AuthorNode(KGNodeBase):
+    node_type: Literal[NodeType.AUTHOR] = NodeType.AUTHOR
+    affiliations: list[str] = Field(default_factory=list)
+    h_index: int = 0
+
+
+class VenueNode(KGNodeBase):
+    node_type: Literal[NodeType.VENUE] = NodeType.VENUE
+    venue_type: str = ""  # journal/conference/workshop
+    impact_factor: float = 0.0
+
+
+class InnovationNode(KGNodeBase):
+    node_type: Literal[NodeType.INNOVATION] = NodeType.INNOVATION
+    innovation_type: str = ""
+    why_innovative: str = ""
+    feasibility: str = ""
+    risk: str = ""
+    supporting_papers: list[str] = Field(default_factory=list)
+
+
+class KGEdge(BaseModel):
+    """类型化 KG 边"""
+    edge_id: str
+    source_id: str
+    target_id: str
+    edge_type: EdgeType
+    confidence: float = 1.0
+    evidence: str = ""  # 支撑文本引用
+    source_chunk_id: str = ""
+    source_paper_id: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
 
 # ── Scope ─────────────────────────────────────────────

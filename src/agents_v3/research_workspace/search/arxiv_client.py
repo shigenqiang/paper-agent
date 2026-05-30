@@ -77,7 +77,8 @@ class ArxivClient(BaseSearchAdapter):
     def _build_params(self, query: SearchQuery) -> str:
         field = self._resolve_field(query.field)
         prefix = ARXIV_FIELD_PREFIX[field]
-        q_body = query.query.strip()
+        # 先去掉已有引号，再统一加引号，避免嵌套引号导致 HTTP 400
+        q_body = query.query.strip().strip('"').strip("'")
         if " " in q_body:
             q_body = f'"{q_body}"'
         q = urllib.parse.quote(f"{prefix}:{q_body}", safe=':"')

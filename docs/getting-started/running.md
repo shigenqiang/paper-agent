@@ -6,7 +6,7 @@
 # 1. 安装依赖
 pip install -e .
 
-# 2. 配置 .env（按需）
+# 2. 配置 .env（按需，含 PARALLEL_WORKERS 控制并行下载/解析数）
 cp .env.example .env
 
 # 3. 启动服务

@@ -41,19 +41,42 @@
 
 ## 4. 排序算法
 
-### 4.1 最终分数公式
+### 4.1 相关性：TF + 查询词覆盖率
+
+不依赖 BM25（小语料下 IDF 无意义），直接衡量查询词在论文各字段中的出现程度：
 
 ```
-final_score = 0.35 × relevance + 0.50 × quality + 0.15 × source_priority
+relevance = weighted_tf × coverage
+
+weighted_tf = Σ (字段词频 × 字段权重)
+coverage    = 匹配到的查询词数 / 总查询词数
+```
+
+各字段权重：
+
+| 字段 | 权重 | 说明 |
+|------|------|------|
+| title | 3.0 | 标题最能反映论文主题 |
+| keywords | 2.5 | 关键词高度相关 |
+| abstract | 1.5 | 摘要是核心内容 |
+| concepts | 1.0 | OpenAlex 概念标签 |
+| venue | 0.5 | 期刊/会议名 |
+
+覆盖率惩罚只匹配少量查询词的论文：如果查询有 4 个词，某论文只匹配到 1 个，分数仅为匹配 4 个的 1/4。
+
+### 4.2 最终分数公式
+
+```
+final_score = 0.55 × relevance + 0.25 × quality + 0.20 × source_priority
 ```
 
 | 组件 | 权重 | 说明 |
 |------|------|------|
-| relevance | 35% | BM25 相关性，基于查询词在标题/摘要/关键词中的匹配 |
-| quality | 50% | 论文质量综合分 |
-| source_priority | 15% | 来源优先级（OpenAlex 0.9, S2 0.8, arXiv 0.7） |
+| relevance | 55% | 查询词覆盖率 × 字段加权 TF |
+| quality | 25% | 论文质量综合分 |
+| source_priority | 20% | 来源优先级（OpenAlex 0.9, S2 0.8, arXiv 0.7） |
 
-### 4.2 质量分 (quality_score)
+### 4.3 质量分 (quality_score)
 
 ```
 quality_score = 0.75 × citation + 0.10 × velocity + 0.15 × recency
@@ -65,7 +88,7 @@ quality_score = 0.75 × citation + 0.10 × velocity + 0.15 × recency
 | velocity | 10% | citations / age（年均引用数，log 压缩） |
 | recency | 15% | e^(-0.08 × age)（指数衰减） |
 
-### 4.3 引用数归一化
+### 4.4 引用数归一化
 
 使用**平方根归一化**而非 log 归一化，以提供更好的高引用论文区分度：
 
@@ -79,7 +102,7 @@ citation_norm = √citations / √max_citations
 
 平方根对高引用论文的区分度更好。
 
-### 4.4 新近性衰减
+### 4.5 新近性衰减
 
 ```
 recency = e^(-0.08 × age)
@@ -101,7 +124,7 @@ recency = e^(-0.08 × age)
 1. DOI 精确匹配
 2. arXiv ID 匹配（忽略版本号）
 3. OpenAlex/S2/PubMed ID 匹配
-4. 标题 Jaccard 相似度 ≥ 0.95
+4. 标题 Jaccard 相似度 ≥ 0.85
 
 ### 5.2 合并策略
 
@@ -163,6 +186,6 @@ POST /api/rw/projects/{project_id}/papers/search
 | 问题 | 说明 |
 |------|------|
 | arXiv SSL | Windows 环境下 SSL 证书验证失败 |
-| Semantic Scholar 限流 | 无 API key 时被 429 限流 |
+| Semantic Scholar 限流 | 无 API key 时被 429 限流，已有自动重试（sleep + 1次重试） |
 | OpenAlex 作者搜索 | `author.display_name.search` 过滤不可靠，降级为全文 |
 | 同一论文多版本 | 去重已生效，但同一本书不同年份可能保留最新版 |

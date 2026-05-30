@@ -9,6 +9,45 @@
 version: '3.8'
 
 services:
+  # ---- 结构化存储 ----
+  postgres:
+    image: postgres:16
+    container_name: paper-agent-postgres
+    environment:
+      - POSTGRES_DB=paper_agent
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - paper-network
+
+  # ---- 向量存储 ----
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: paper-agent-qdrant
+    volumes:
+      - qdrant-data:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - paper-network
+
   # ---- 主服务 ----
   paper-agent:
     build:
@@ -91,9 +130,8 @@ services:
       - monitoring
 
 # ============================================
-# 已移除的服务 (2026-05-03 更新)
+# 已移除的服务
 # ============================================
-# postgres: 代码无引用 (storage 使用 SQLite)
 # redis: 代码无引用 (monitoring 模块无实际连接)
 # neo4j: 代码在 deprecated/ 目录，已不使用
 # ============================================
@@ -102,6 +140,10 @@ services:
 # 卷定义
 # ============================================
 volumes:
+  postgres-data:
+    driver: local
+  qdrant-data:
+    driver: local
   paper-data:
     driver: local
   paper-output:

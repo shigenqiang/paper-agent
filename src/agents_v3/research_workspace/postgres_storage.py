@@ -56,6 +56,8 @@ TABLE_SCHEMAS = {
             publication_type VARCHAR(32),
             source VARCHAR(32),
             source_payload JSONB DEFAULT '{}',
+            is_pdf_downloaded BOOLEAN DEFAULT FALSE,
+            is_parsed BOOLEAN DEFAULT FALSE,
             metadata JSONB DEFAULT '{}',
             added_at TIMESTAMP DEFAULT NOW()
         )
@@ -83,6 +85,7 @@ TABLE_SCHEMAS = {
             error_message TEXT,
             included BOOLEAN DEFAULT TRUE,
             exclude_reason TEXT,
+            importance_score FLOAT DEFAULT 0.0,
             metadata JSONB DEFAULT '{}',
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -97,6 +100,7 @@ TABLE_SCHEMAS = {
             section_title TEXT,
             section_type VARCHAR(32),
             chunk_type VARCHAR(32) DEFAULT 'body',
+            parent_id VARCHAR(64) DEFAULT '',
             text TEXT,
             start_char INTEGER DEFAULT 0,
             end_char INTEGER DEFAULT 0,
@@ -105,6 +109,8 @@ TABLE_SCHEMAS = {
             token_count INTEGER DEFAULT 0,
             parser_name VARCHAR(32),
             quality_flags JSONB DEFAULT '[]',
+            quality_score FLOAT DEFAULT 0.0,
+            quality_details JSONB DEFAULT '{}',
             metadata JSONB DEFAULT '{}'
         )
     """,
@@ -230,6 +236,63 @@ TABLE_SCHEMAS = {
             created_at TIMESTAMP DEFAULT NOW()
         )
     """,
+    "paper_references": """
+        CREATE TABLE IF NOT EXISTS paper_references (
+            ref_id VARCHAR(64) PRIMARY KEY,
+            paper_id VARCHAR(64),
+            project_id VARCHAR(64),
+            index INTEGER DEFAULT 0,
+            raw_text TEXT,
+            title TEXT,
+            authors JSONB DEFAULT '[]',
+            year INTEGER,
+            venue TEXT,
+            doi VARCHAR(255),
+            url TEXT,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """,
+    "kg_nodes": """
+        CREATE TABLE IF NOT EXISTS kg_nodes (
+            node_id VARCHAR(128) PRIMARY KEY,
+            project_id VARCHAR(64),
+            node_type VARCHAR(32),
+            label TEXT,
+            description TEXT,
+            properties JSONB DEFAULT '{}',
+            confidence FLOAT DEFAULT 1.0,
+            source_paper_ids JSONB DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """,
+    "kg_edges": """
+        CREATE TABLE IF NOT EXISTS kg_edges (
+            edge_id VARCHAR(128) PRIMARY KEY,
+            project_id VARCHAR(64),
+            source_id VARCHAR(128),
+            target_id VARCHAR(128),
+            edge_type VARCHAR(32),
+            confidence FLOAT DEFAULT 1.0,
+            evidence TEXT,
+            source_chunk_id VARCHAR(64),
+            source_paper_id VARCHAR(64),
+            properties JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """,
+    "topic_scores": """
+        CREATE TABLE IF NOT EXISTS topic_scores (
+            paper_id VARCHAR(64),
+            project_id VARCHAR(64),
+            topic VARCHAR(255),
+            importance_score FLOAT DEFAULT 0.0,
+            relevance_score FLOAT DEFAULT 0.0,
+            quality_score FLOAT DEFAULT 0.0,
+            scored_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (paper_id, topic)
+        )
+    """,
 }
 
 # 表名到 ID 字段的映射
@@ -248,6 +311,15 @@ TABLE_ID_FIELDS = {
     "tasks": "task_id",
     "qa_history": "qa_id",
     "search_cache": "cache_key",
+    "paper_references": "ref_id",
+    "kg_nodes": "node_id",
+    "kg_edges": "edge_id",
+    "topic_scores": "paper_id",
+}
+
+# 复合唯一约束表（ON CONFLICT 需要列出所有列）
+TABLE_UNIQUE_CONSTRAINTS = {
+    "topic_scores": ["paper_id", "topic"],
 }
 
 
@@ -276,13 +348,53 @@ class PostgresStorage:
         self._ensure_tables()
 
     def _ensure_tables(self) -> None:
-        """创建所有表"""
+        """创建所有表并修补缺失列"""
         with self.conn.cursor() as cur:
             for table_name, schema in TABLE_SCHEMAS.items():
                 try:
                     cur.execute(schema)
                 except Exception as e:
                     logger.error(f"Failed to create table {table_name}: {e}")
+
+            # 修补已有表的缺失列（CREATE TABLE IF NOT EXISTS 不会修改已有表）
+            _migrations = [
+                ("papers_pool", "is_pdf_downloaded", "BOOLEAN DEFAULT FALSE"),
+                ("papers_pool", "is_parsed", "BOOLEAN DEFAULT FALSE"),
+                ("paper_chunks", "parent_id", "VARCHAR(64) DEFAULT ''"),
+                ("paper_chunks", "quality_score", "FLOAT DEFAULT 0.0"),
+                ("paper_chunks", "quality_details", "JSONB DEFAULT '{}'"),
+                ("parse_results", "table_count", "INTEGER DEFAULT 0"),
+                ("parse_results", "figure_count", "INTEGER DEFAULT 0"),
+                ("parse_results", "diagnostics", "JSONB DEFAULT '{}'"),
+                ("papers", "importance_score", "FLOAT DEFAULT 0.0"),
+                ("papers", "research_background", "TEXT DEFAULT ''"),
+                ("papers", "research_motivation", "TEXT DEFAULT ''"),
+                ("papers", "problem_statement", "TEXT DEFAULT ''"),
+                ("papers", "research_gap", "TEXT DEFAULT ''"),
+                ("papers", "contribution_summary", "JSONB DEFAULT '[]'"),
+                ("papers", "prior_work_summary", "TEXT DEFAULT ''"),
+                ("papers", "methodology", "TEXT DEFAULT 'unknown'"),
+                ("papers", "data_or_sample", "TEXT DEFAULT 'unknown'"),
+                ("papers", "key_findings", "JSONB DEFAULT '[]'"),
+                ("papers", "key_results", "JSONB DEFAULT '[]'"),
+                ("papers", "limitations", "JSONB DEFAULT '[]'"),
+                ("papers", "future_work", "JSONB DEFAULT '[]'"),
+                ("papers", "possible_gaps", "JSONB DEFAULT '[]'"),
+                ("papers", "topics", "JSONB DEFAULT '[]'"),
+                ("papers", "citation_count", "INTEGER DEFAULT 0"),
+                ("papers", "fwci", "FLOAT DEFAULT 0.0"),
+                ("papers", "h_index_author", "INTEGER DEFAULT 0"),
+                ("papers", "extracted_entities", "JSONB DEFAULT '[]'"),
+                ("papers", "section_count", "INTEGER DEFAULT 0"),
+                ("papers", "chunk_count", "INTEGER DEFAULT 0"),
+                ("paper_references", "project_id", "VARCHAR(64)"),
+            ]
+            for table, col, col_def in _migrations:
+                try:
+                    cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_def}")
+                except Exception:
+                    pass  # 列已存在
+
         logger.info("PostgreSQL tables ensured")
 
     def _get_id_field(self, table: str) -> str:
@@ -299,15 +411,20 @@ class PostgresStorage:
         values = [processed[k] for k in columns]
         placeholders = ["%s"] * len(columns)
 
-        # 构建 UPSERT 语句
+        # 确定冲突目标：复合唯一约束 or 单字段主键
+        conflict_cols = TABLE_UNIQUE_CONSTRAINTS.get(table, [id_field])
+        conflict_target = ", ".join(conflict_cols)
+
+        # 构建 UPDATE 子句（排除冲突目标列）
+        exclude_set = set(conflict_cols)
         update_clause = ", ".join(
-            f"{k} = EXCLUDED.{k}" for k in columns if k != id_field
+            f"{k} = EXCLUDED.{k}" for k in columns if k not in exclude_set
         )
 
         sql = f"""
             INSERT INTO {table} ({", ".join(columns)})
             VALUES ({", ".join(placeholders)})
-            ON CONFLICT ({id_field}) DO UPDATE SET {update_clause}
+            ON CONFLICT ({conflict_target}) DO UPDATE SET {update_clause}
         """
 
         try:
@@ -376,6 +493,53 @@ class PostgresStorage:
         except Exception as e:
             logger.error(f"Delete failed for {table}/{item_id}: {e}")
             return False
+
+    def delete_project_data(self, project_id: str) -> dict[str, int]:
+        """删除项目相关的所有数据库记录
+
+        删除顺序：
+        1. 先删有 project_id 但无 CASCADE 的子表
+        2. 再删 projects（CASCADE 自动删 papers → chunks/cards/parse_results）
+        3. reports 的 CASCADE 会自动删 report_versions
+        """
+        deleted = {}
+
+        # 有 project_id 但无 CASCADE 的表（需手动删除）
+        manual_tables = [
+            "evidence_records",
+            "graphs",
+            "reports",          # CASCADE: report_versions
+            "search_sessions",
+            "qa_history",
+            "paper_references",
+            "kg_nodes",
+            "kg_edges",
+            "topic_scores",
+        ]
+
+        with self.conn.cursor() as cur:
+            for table in manual_tables:
+                if table not in TABLE_SCHEMAS:
+                    continue
+                try:
+                    cur.execute(f"DELETE FROM {table} WHERE project_id = %s", (project_id,))
+                    deleted[table] = cur.rowcount
+                except Exception as e:
+                    logger.warning(f"Failed to delete {table} for project {project_id}: {e}")
+                    deleted[table] = 0
+
+            # 最后删 projects（CASCADE: papers → paper_chunks, paper_cards, parse_results）
+            try:
+                cur.execute("DELETE FROM projects WHERE project_id = %s", (project_id,))
+                deleted["projects"] = cur.rowcount
+            except Exception as e:
+                logger.warning(f"Failed to delete project {project_id}: {e}")
+                deleted["projects"] = 0
+
+        self.conn.commit()
+        total = sum(deleted.values())
+        logger.info(f"Deleted {total} rows for project {project_id}: {deleted}")
+        return deleted
 
     def list_all(self, table: str) -> list[dict[str, Any]]:
         """列出表中所有记录"""
