@@ -101,14 +101,46 @@ class BM25:
 class RankingService:
     """搜索结果排序服务"""
 
+    # 停用词列表（用于提取核心短语）
+    _STOP_WORDS = frozenset({
+        "a", "an", "the", "of", "for", "and", "with", "from", "based", "on",
+        "using", "via", "in", "to", "about", "novel", "efficient", "new",
+        "approach", "method", "methods", "framework", "model", "study",
+        "research", "survey", "analysis", "system", "application",
+    })
+
     def __init__(self, query: str = ""):
         self.query_terms = _tokenize(query) if query else []
         self._max_citations = 1
+        self.query_phrase = ""
+        self.core_phrases: list[str] = []
+        if query:
+            self._extract_phrases(query)
+
+    def _extract_phrases(self, query: str) -> None:
+        """提取查询短语和核心子短语"""
+        q = query.strip().lower()
+        self.query_phrase = q
+
+        # 提取核心子短语：去掉停用词后的连续词组
+        words = q.split()
+        core_words = [w for w in words if w not in self._STOP_WORDS]
+        if len(core_words) >= 2:
+            self.core_phrases.append(" ".join(core_words))
+
+        # 也保留原始查询中的 2-gram 和 3-gram
+        for n in (3, 2):
+            for i in range(len(words) - n + 1):
+                gram = " ".join(words[i:i + n])
+                # 跳过纯停用词 n-gram
+                if not all(w in self._STOP_WORDS for w in words[i:i + n]):
+                    self.core_phrases.append(gram)
 
     def rank(self, results: list[SearchResult], query: str = "") -> list[SearchResult]:
         """计算分数并排序"""
         if query:
             self.query_terms = _tokenize(query)
+            self._extract_phrases(query)
 
         if not results:
             return results
@@ -136,7 +168,7 @@ class RankingService:
         return results
 
     def _compute_relevance(self, r: SearchResult, query_set: set[str]) -> float:
-        """相关度 = 查询词覆盖率 × 字段加权 TF"""
+        """相关度 = 查询词覆盖率 × 字段加权 TF + 短语匹配加分"""
         if not query_set:
             return 0.0
 
@@ -161,7 +193,34 @@ class RankingService:
                     matched_terms.add(term)
 
         coverage = len(matched_terms) / len(query_set) if query_set else 0.0
-        return weighted_tf * coverage
+        base_score = weighted_tf * coverage
+
+        # 短语匹配加分：标题或摘要包含完整查询短语时，大幅加分
+        phrase_bonus = self._phrase_match_bonus(r)
+        return base_score * (1.0 + phrase_bonus)
+
+    def _phrase_match_bonus(self, r: SearchResult) -> float:
+        """短语匹配加分：标题或摘要包含完整查询短语时返回较大值"""
+        if not self.query_phrase:
+            return 0.0
+
+        title = (r.title or "").lower()
+        abstract = (r.abstract or "").lower()
+
+        bonus = 0.0
+        if self.query_phrase in title:
+            bonus += 2.0  # 标题包含完整短语，加 200%
+        if self.query_phrase in abstract:
+            bonus += 1.0  # 摘要包含完整短语，加 100%
+
+        # 也检查核心子短语（去掉停用词后的核心部分）
+        for sub in self.core_phrases:
+            if sub in title:
+                bonus += 0.5
+            elif sub in abstract:
+                bonus += 0.2
+
+        return bonus
 
     def _build_document(self, r: SearchResult) -> list[str]:
         """将论文各字段按权重拼接为词列表（用于 BM25）"""

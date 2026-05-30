@@ -84,7 +84,7 @@ class ArxivClient(BaseSearchAdapter):
             q_body = q_body[:200].rsplit(" ", 1)[0]
         if " " in q_body:
             q_body = f'"{q_body}"'
-        q = urllib.parse.quote(f"{prefix}:{q_body}", safe=':"')
+        q = urllib.parse.quote(f"{prefix}:{q_body}")
         limit = min(query.limit, self.max_results)
         return f"search_query={q}&start={query.offset}&max_results={limit}&sortBy=relevance&sortOrder=descending"
 

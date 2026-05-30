@@ -324,10 +324,12 @@ class PaperLibraryService:
     def search_papers(
         self,
         query: SearchQuery,
+        llm_filter: bool = True,
     ) -> list[SearchResult]:
         """调用已注册的搜索适配器，返回结果（去重，存入论文池）"""
         from src.agents_v3.research_workspace.search.merger import SearchResultMerger
         from src.agents_v3.research_workspace.search.query_optimizer import refine_query
+        from src.agents_v3.research_workspace.search.relevance_filter import filter_relevant_papers
         merger = SearchResultMerger()
 
         # 优化搜索词：提取核心主题，去除泛化词
@@ -347,6 +349,10 @@ class PaperLibraryService:
 
         # 去重合并
         merged = merger.merge(all_results)
+
+        # LLM 相关性过滤
+        if llm_filter and merged:
+            merged = filter_relevant_papers(merged, original_query)
 
         # 存入论文池
         for r in merged:
