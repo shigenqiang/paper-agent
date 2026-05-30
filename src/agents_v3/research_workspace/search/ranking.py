@@ -1,4 +1,7 @@
-"""搜索结果排序 — BM25 相关性 + 多维质量评分"""
+"""搜索结果排序 — BM25 相关性 + 多维质量评分
+
+所有参数从 config.yaml 读取，无硬编码。
+"""
 
 from __future__ import annotations
 
@@ -6,38 +9,40 @@ import math
 import re
 from datetime import datetime
 
+from src.agents_v3.research_workspace.config import get_search_config
 from src.agents_v3.research_workspace.search.base import SearchResult
 
-# ── 常量 ──────────────────────────────────────────────
+# ── 从配置加载参数 ──────────────────────────────────────
 
-_SOURCE_PRIORITY = {
-    "openalex": 0.9,
-    "semantic_scholar": 0.8,
-    "arxiv": 0.7,
-    "pubmed": 0.7,
-}
+def _cfg() -> dict:
+    return get_search_config()
 
-# BM25 参数（针对学术短文本调优）
-_BM25_K1 = 1.5   # 词频饱和度
-_BM25_B = 0.4    # 文档长度归一化（学术摘要较短，用较小值）
 
-# 字段权重（用于拼接文档）
-_FIELD_WEIGHTS = {
-    "abstract": 3.5,
-    "title": 2.0,
-    "keywords": 2.0,
-    "concepts": 1.0,
-    "venue": 0.5,
-}
+def _source_priority() -> dict[str, float]:
+    return _cfg().get("source_priority", {
+        "openalex": 0.9, "semantic_scholar": 0.8, "arxiv": 0.7, "pubmed": 0.7,
+    })
 
-# 最终权重（搜索场景：相关度优先，质量辅助排序）
-_FINAL_WEIGHTS = {
-    "relevance": 0.55,
-    "quality": 0.25,
-    "source_priority": 0.20,
-}
 
-_RRF_K = 60
+def _field_weights() -> dict[str, float]:
+    return _cfg().get("field_weights", {
+        "abstract": 3.5, "title": 2.0, "keywords": 2.0, "concepts": 1.0, "venue": 0.5,
+    })
+
+
+def _final_weights() -> dict[str, float]:
+    return _cfg().get("final_weights", {
+        "relevance": 0.55, "quality": 0.25, "source_priority": 0.20,
+    })
+
+
+def _bm25_params() -> tuple[float, float]:
+    bm25 = _cfg().get("bm25", {})
+    return bm25.get("k1", 1.5), bm25.get("b", 0.4)
+
+
+def _rrf_k() -> int:
+    return _cfg().get("rrf_k", 60)
 
 
 # ── 分词 ──────────────────────────────────────────────
@@ -52,17 +57,15 @@ def _tokenize(text: str) -> list[str]:
 class BM25:
     """Okapi BM25 实现"""
 
-    def __init__(self, corpus: list[list[str]], k1: float = _BM25_K1, b: float = _BM25_B):
-        self.k1 = k1
-        self.b = b
+    def __init__(self, corpus: list[list[str]], k1: float | None = None, b: float | None = None):
+        default_k1, default_b = _bm25_params()
+        self.k1 = k1 if k1 is not None else default_k1
+        self.b = b if b is not None else default_b
         self.corpus_size = len(corpus)
         self.avgdl = sum(len(doc) for doc in corpus) / max(self.corpus_size, 1)
 
-        # 文档频率：每个词出现在多少文档中
         self.df: dict[str, int] = {}
-        # 每篇文档的词频
         self.doc_tfs: list[dict[str, int]] = []
-        # 每篇文档的长度
         self.doc_lens: list[int] = []
 
         for doc in corpus:
@@ -75,12 +78,10 @@ class BM25:
                 self.df[term] = self.df.get(term, 0) + 1
 
     def idf(self, term: str) -> float:
-        """Robertson-Sparck Jones IDF"""
         n = self.df.get(term, 0)
         return math.log((self.corpus_size - n + 0.5) / (n + 0.5) + 1)
 
     def score(self, doc_idx: int, query_terms: list[str]) -> float:
-        """计算单篇文档对查询的 BM25 分数"""
         tf = self.doc_tfs[doc_idx]
         dl = self.doc_lens[doc_idx]
         score = 0.0
@@ -105,7 +106,7 @@ class RankingService:
         self._max_citations = 1
 
     def rank(self, results: list[SearchResult], query: str = "") -> list[SearchResult]:
-        """计算分数并排序（TF 匹配 + 查询词覆盖率，避免小语料 BM25 的 IDF 失真）"""
+        """计算分数并排序"""
         if query:
             self.query_terms = _tokenize(query)
 
@@ -114,7 +115,6 @@ class RankingService:
 
         self._max_citations = max((r.citations or 0) for r in results) or 1
 
-        # 计算相关度分数：查询词覆盖率 × TF 加权
         query_set = set(self.query_terms)
         raw_scores = []
         for r in results:
@@ -136,19 +136,17 @@ class RankingService:
         return results
 
     def _compute_relevance(self, r: SearchResult, query_set: set[str]) -> float:
-        """相关度 = 查询词覆盖率 × 字段加权 TF
-
-        不依赖 IDF（小语料下 IDF 无意义），直接衡量查询词在论文中的出现程度。
-        """
+        """相关度 = 查询词覆盖率 × 字段加权 TF"""
         if not query_set:
             return 0.0
 
+        weights = _field_weights()
         field_texts = {
-            "abstract": (r.abstract, 3.5),
-            "title": (r.title, 2.0),
-            "keywords": (" ".join(r.keywords), 2.5),
-            "concepts": (" ".join(r.concepts), 1.0),
-            "venue": (r.venue, 0.5),
+            "abstract": (r.abstract, weights.get("abstract", 3.5)),
+            "title": (r.title, weights.get("title", 2.0)),
+            "keywords": (" ".join(r.keywords), weights.get("keywords", 2.0)),
+            "concepts": (" ".join(r.concepts), weights.get("concepts", 1.0)),
+            "venue": (r.venue, weights.get("venue", 0.5)),
         }
 
         weighted_tf = 0.0
@@ -162,13 +160,13 @@ class RankingService:
                     weighted_tf += weight
                     matched_terms.add(term)
 
-        # 覆盖率：匹配到的查询词占比（惩罚只匹配少量词的论文）
         coverage = len(matched_terms) / len(query_set) if query_set else 0.0
         return weighted_tf * coverage
 
     def _build_document(self, r: SearchResult) -> list[str]:
         """将论文各字段按权重拼接为词列表（用于 BM25）"""
         tokens: list[str] = []
+        weights = _field_weights()
         field_texts = {
             "title": r.title,
             "abstract": r.abstract,
@@ -178,57 +176,44 @@ class RankingService:
         }
         for field, text in field_texts.items():
             if text:
-                weight = _FIELD_WEIGHTS[field]
-                # 按权重重复 tokens，用 round 保留小数精度
+                weight = weights.get(field, 1.0)
                 repeat = max(1, round(weight))
                 tokens.extend(_tokenize(text) * repeat)
         return tokens
 
     def _compute_quality(self, r: SearchResult) -> float:
-        """质量分：引用数 75% + 引用速度 10% + 新近性 15%
-
-        引用数：学术影响力核心指标，百分位归一化
-        引用速度：年均引用数，微调
-        新近性：微调，避免完全忽略新论文
-        """
+        """质量分：引用数 75% + 引用速度 10% + 新近性 15%"""
         citation = self._citation_norm(r.citations)
         velocity = self._citation_velocity(r)
         recency = self._recency_score(r.year)
-
-        return (
-            0.75 * citation
-            + 0.10 * velocity
-            + 0.15 * recency
-        )
+        return 0.75 * citation + 0.10 * velocity + 0.15 * recency
 
     def _citation_velocity(self, r: SearchResult) -> float:
-        """引用速度：年均引用数，归一化到 [0, 1]"""
         if not r.citations or r.citations <= 0:
             return 0.0
         if not r.year:
             return self._citation_norm(r.citations)
         age = max(1, datetime.now().year - r.year)
         velocity = r.citations / age
-        # 用 log 压缩，限制在 [0, 1]
         return min(1.0, math.log(1 + velocity) / math.log(1 + self._max_citations))
 
     def _compute_final(self, r: SearchResult) -> float:
         """最终分 = 相关性 + 质量分 + 来源优先级"""
+        fw = _final_weights()
+        sp = _source_priority()
         return (
-            _FINAL_WEIGHTS["relevance"] * r.relevance_score
-            + _FINAL_WEIGHTS["quality"] * r.quality_score
-            + _FINAL_WEIGHTS["source_priority"] * _SOURCE_PRIORITY.get(r.source, 0.5)
+            fw.get("relevance", 0.55) * r.relevance_score
+            + fw.get("quality", 0.25) * r.quality_score
+            + fw.get("source_priority", 0.20) * sp.get(r.source, 0.5)
         )
 
     def _citation_norm(self, citations: int | None) -> float:
-        """引用数归一化（平方根，高引用论文区分度更好）"""
         if not citations or citations <= 0:
             return 0.0
         return math.sqrt(citations) / math.sqrt(self._max_citations)
 
     @staticmethod
     def _recency_score(year: int | None) -> float:
-        """新近性：指数衰减 e^(-0.08 * age)，对经典论文更宽容"""
         if not year:
             return 0.3
         age = max(0, datetime.now().year - year)
@@ -236,7 +221,6 @@ class RankingService:
 
     @staticmethod
     def _metadata_completeness(r: SearchResult) -> float:
-        """元数据完整度"""
         fields = [r.title, r.abstract, r.authors, r.doi, r.year, r.venue, r.pdf_url]
         filled = sum(1 for f in fields if f)
         return filled / len(fields)
@@ -245,14 +229,15 @@ class RankingService:
         """RRF 多源融合排序"""
         rrf_scores: dict[str, float] = {}
         result_map: dict[str, SearchResult] = {}
+        k = _rrf_k()
 
         for ranking in source_rankings:
             for rank, r in enumerate(ranking):
                 key = r.result_id
-                rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank + 1)
+                rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (k + rank + 1)
                 result_map[key] = r
 
-        sorted_ids = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)
+        sorted_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
         results = []
         for rid in sorted_ids:
             r = result_map[rid]

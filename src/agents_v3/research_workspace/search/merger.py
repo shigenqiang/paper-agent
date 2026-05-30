@@ -6,6 +6,7 @@ from typing import Any
 
 from loguru import logger
 
+from src.agents_v3.research_workspace.config import get_search_config
 from src.agents_v3.research_workspace.search.base import SearchResult
 from src.agents_v3.research_workspace.search.dedup import (
     DedupDecision,
@@ -15,13 +16,10 @@ from src.agents_v3.research_workspace.search.dedup import (
 )
 
 
-# 字段合并优先级：来源越可靠越优先
-_SOURCE_PRIORITY = {
-    "openalex": 4,
-    "semantic_scholar": 3,
-    "arxiv": 2,
-    "pubmed": 1,
-}
+def _source_priority() -> dict[str, int]:
+    return get_search_config().get("source_priority", {
+        "openalex": 4, "semantic_scholar": 3, "arxiv": 2, "pubmed": 1,
+    })
 
 
 class SearchResultMerger:
@@ -93,7 +91,7 @@ class SearchResultMerger:
         """合并一组重复结果"""
         # Sort by source priority (higher = better)
         group.sort(
-            key=lambda r: _SOURCE_PRIORITY.get(r.source, 0),
+            key=lambda r: _source_priority().get(r.source, 0),
             reverse=True,
         )
 
@@ -135,7 +133,7 @@ class SearchResultMerger:
             # Venue: prefer higher priority source
             if r.venue and (
                 not best.venue
-                or _SOURCE_PRIORITY.get(r.source, 0) > _SOURCE_PRIORITY.get(best.source, 0)
+                or _source_priority().get(r.source, 0) > _source_priority().get(best.source, 0)
             ):
                 best.venue = r.venue
 
@@ -175,8 +173,8 @@ class SearchResultMerger:
                 if sim >= 0.85:
                     # 优先保留：来源优先级 > 年份更新 > 引用数更高
                     ri, rj = results[i], results[j]
-                    pi = _SOURCE_PRIORITY.get(ri.source, 0)
-                    pj = _SOURCE_PRIORITY.get(rj.source, 0)
+                    pi = _source_priority().get(ri.source, 0)
+                    pj = _source_priority().get(rj.source, 0)
                     if pj != pi:
                         if pj > pi:
                             keep[i] = False

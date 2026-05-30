@@ -1,41 +1,75 @@
-"""搜索词优化 — 通过 LLM 提取核心主题词"""
+"""搜索词优化 — 通过 LLM 提取学术核心关键词"""
 
 from __future__ import annotations
 
 from loguru import logger
 
+# ── 提示词 ──────────────────────────────────────────
 
-def refine_query(query: str, max_words: int = 6) -> str:
-    """通过 LLM 提取核心学术搜索词
+_SYSTEM_PROMPT = """你是一个学术论文搜索查询优化专家。
 
-    去除泛化词（approach, method, based on 等），保留核心主题。
-    LLM 不可用时回退到原查询。
+## 职责
+将用户的自然语言查询转换为精确的学术搜索关键词，用于 OpenAlex、arXiv、Semantic Scholar 等学术搜索引擎。
+
+## 优化规则
+1. 去除所有泛化词：approach, method, based on, using, for, and, with, novel, efficient, analysis, framework, model, study, research, data, system, application
+2. 保留核心学术术语：专业方法名、理论名称、技术领域关键词
+3. 保留英文缩写（如 PCA, FPCA, LSTM, CNN）
+4. 保留连字符术语（如 non-parametric, self-supervised）
+5. 不要解释关键词含义，只输出优化后的搜索词
+6. 不要添加原查询中没有的概念
+
+## Few-Shot 示例
+
+【示例1】
+输入：sparse functional data for deep learning
+输出：sparse functional deep learning
+
+【示例2】
+输入：novel approach for efficient deep learning based on sparse functional data analysis
+输出：deep learning sparse functional
+
+【示例3】
+输入：a comprehensive survey of machine learning methods for time series forecasting
+输出：machine learning time series forecasting
+
+【示例4】
+输入：investigating the application of transformer architecture in natural language processing tasks
+输出：transformer natural language processing
+
+【示例5】
+输入：principal component analysis for high dimensional functional data with missing observations
+输出：principal component analysis functional data missing observations
+"""
+
+_USER_PROMPT_TEMPLATE = "优化以下学术搜索查询（最多 {max_words} 个关键词）：\n{query}"
+
+
+# ── 优化函数 ──────────────────────────────────────────
+
+def refine_query(query: str, max_words: int = 8) -> str:
+    """通过 LLM 提取核心学术搜索关键词
+
+    去除泛化词，保留专业术语和方法名。
 
     Args:
         query: 原始搜索词
         max_words: 保留的最大词数
 
     Returns:
-        精简后的搜索词
+        精简后的学术搜索关键词
     """
     words = query.split()
-    if len(words) <= max_words:
+    if len(words) <= 3:
         return query.strip()
 
     try:
         from src.agents_v3.research_workspace.llm.service import get_llm_service
         llm = get_llm_service()
 
-        system_prompt = (
-            "You are an academic search query optimizer. "
-            "Extract the core research topic from the user's query. "
-            "Remove filler words (approach, method, based on, using, for, novel, efficient, etc.). "
-            "Keep only the key technical terms that define the research topic. "
-            "Return ONLY the optimized query, no explanation."
-        )
-        user_prompt = f"Optimize this search query for academic paper search (max {max_words} words): {query}"
+        user_prompt = _USER_PROMPT_TEMPLATE.format(max_words=max_words, query=query)
+        result = llm.invoke(_SYSTEM_PROMPT, user_prompt).strip().strip('"').strip("'")
 
-        result = llm.invoke(system_prompt, user_prompt).strip().strip('"').strip("'")
         if result and len(result.split()) >= 2:
             logger.info(f"Query optimized: \"{query}\" → \"{result}\"")
             return result
@@ -69,16 +103,15 @@ def split_query(query: str) -> list[str]:
         llm = get_llm_service()
 
         system_prompt = (
-            "You are an academic search query optimizer. "
-            "If the query contains multiple distinct research concepts, split it into 2-3 sub-queries. "
-            "Each sub-query should be a focused search on one concept. "
-            "Return a JSON array of strings. If no splitting needed, return a single-element array."
+            "你是一个学术搜索查询优化专家。"
+            "如果查询包含多个独立的研究概念，将其拆分为 2-3 个子查询，每个子查询聚焦一个概念。"
+            "如果查询已经是单一主题，返回原查询。"
+            "输出 JSON 数组格式。"
         )
-        user_prompt = f"Split this query if needed: {query}"
+        user_prompt = f"拆分以下查询（如需要）：{query}"
 
         import json
         result = llm.invoke(system_prompt, user_prompt).strip()
-        # 提取 JSON 数组
         start = result.find("[")
         end = result.rfind("]")
         if start != -1 and end != -1:

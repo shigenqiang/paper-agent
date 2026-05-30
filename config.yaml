@@ -66,3 +66,37 @@ storage_backend: postgres
 # 向量存储
 # 可选值: "none", "qdrant"
 vector_storage: qdrant
+
+# 搜索排序配置
+search:
+  # 来源优先级（越高越优先）
+  source_priority:
+    openalex: 4
+    semantic_scholar: 3
+    arxiv: 2
+    pubmed: 1
+
+  # BM25 参数
+  bm25:
+    k1: 1.5        # 词频饱和度
+    b: 0.4         # 文档长度归一化
+
+  # 字段权重（用于相关度计算）
+  field_weights:
+    abstract: 3.5
+    title: 2.0
+    keywords: 2.0
+    concepts: 1.0
+    venue: 0.5
+
+  # 最终分数权重
+  final_weights:
+    relevance: 0.55
+    quality: 0.25
+    source_priority: 0.20
+
+  # RRF 融合常数
+  rrf_k: 60
+
+  # 入库最低分数阈值
+  min_import_score: 0.3
