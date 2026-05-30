@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 class LLMConfig(BaseModel):
     provider: str = "openai"
-    model_name: str = "MiniMax-M2.7"
+    model_name: str = ""
     temperature: float = 0.2
     max_tokens: int = 4096
     timeout: float = 60.0
@@ -24,6 +24,12 @@ class LLMConfig(BaseModel):
     base_url: str | None = None
     seed: int | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.model_name:
+            from dotenv import load_dotenv
+            load_dotenv()
+            self.model_name = os.environ.get("LLM_MODEL", "mimo-v2.5-pro")
 
 
 class LLMCallResult(BaseModel):
@@ -58,6 +64,9 @@ class LLMService:
         return self._llm
 
     def _create_llm(self):
+        from dotenv import load_dotenv
+        load_dotenv()
+
         config = self.config
         api_key = config.api_key or os.environ.get("OPENAI_API_KEY", "")
         base_url = config.base_url or os.environ.get("OPENAI_BASE_URL", "")
