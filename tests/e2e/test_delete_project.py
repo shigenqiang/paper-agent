@@ -97,7 +97,14 @@ def resolve_project_id(project_id: str = "", project_name: str = "") -> str:
 
 def show_project_detail(project_id: str) -> dict:
     """显示项目详情和论文统计"""
-    result = api("GET", f"/api/rw/projects/{project_id}")
+    try:
+        result = api("GET", f"/api/rw/projects/{project_id}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print(f"\nERROR: 项目不存在: {project_id}")
+            print(f"  使用 --list 查看所有项目")
+            sys.exit(1)
+        raise
     project = result["data"]
     name = project.get("name", "?")
     created = project.get("created_at", "?")[:19]
