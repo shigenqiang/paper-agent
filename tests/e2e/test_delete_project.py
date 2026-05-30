@@ -149,10 +149,12 @@ def delete_project(project_id: str) -> bool:
 
 def verify_deleted(project_id: str) -> bool:
     """验证项目已被删除"""
+    url = f"{BASE}/api/rw/projects/{project_id}"
+    req = urllib.request.Request(url, method="GET")
     try:
-        api("GET", f"/api/rw/projects/{project_id}")
-        print(f"  验证: FAIL (项目仍存在)")
-        return False
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"  验证: FAIL (项目仍存在)")
+            return False
     except urllib.error.HTTPError as e:
         if e.code == 404:
             print(f"  验证: PASS (项目已删除)")
