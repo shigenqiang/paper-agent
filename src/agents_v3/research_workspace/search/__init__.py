@@ -11,7 +11,6 @@ from src.agents_v3.research_workspace.search.base import (
     SearchSession,
 )
 from src.agents_v3.research_workspace.search.cache import SearchCache
-from src.agents_v3.research_workspace.search.crossref_client import CrossRefClient
 from src.agents_v3.research_workspace.search.dedup import (
     DedupDecision,
     DedupService,
@@ -37,7 +36,6 @@ from src.agents_v3.research_workspace.search.strategies import SearchStrategy, g
 __all__ = [
     "ArxivClient",
     "BaseSearchAdapter",
-    "CrossRefClient",
     "DedupDecision",
     "DedupService",
     "OpenAlexClient",

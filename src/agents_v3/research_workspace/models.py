@@ -214,7 +214,7 @@ class Paper(BaseModel):
     citation: CitationInfo = Field(default_factory=CitationInfo)
 
     url: str = ""
-    source_platform: str = ""  # arxiv/crossref/openalex/upload/bibtex/doi
+    source_platform: str = ""  # arxiv/openalex/upload/bibtex/doi
     source_payload: dict[str, Any] = Field(default_factory=dict)
 
     status: PaperStatus = PaperStatus.IMPORTED

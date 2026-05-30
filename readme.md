@@ -402,7 +402,7 @@ src/
 │       ├── innovation_generator.py    # 创新点报告生成
 │       ├── report_service.py          # 报告管理
 │       ├── llm/                       # LLM 服务层
-│       ├── search/                    # 多源搜索（arXiv/OpenAlex/CrossRef）
+│       ├── search/                    # 多源搜索（arXiv/OpenAlex/Semantic Scholar）
 │       ├── evaluation/                # 评估与质量门
 │       └── api/                       # FastAPI 路由
 scripts/
@@ -439,7 +439,7 @@ storage_backend: postgres  # 可选: "json", "postgres"
 
 ### 论文数据模型
 
-论文采用子模型结构，支持 arXiv、CrossRef、OpenAlex、Semantic Scholar、PubMed 五个平台的统一元数据：
+论文采用子模型结构，支持 arXiv、OpenAlex、Semantic Scholar、PubMed 四个平台的统一元数据：
 
 ```python
 class Paper(BaseModel):
@@ -457,7 +457,7 @@ class Paper(BaseModel):
     citation: CitationInfo           # citation_count, references
 
     url: str
-    source_platform: str             # arxiv/crossref/openalex/upload/bibtex/doi
+    source_platform: str             # arxiv/openalex/upload/bibtex/doi
     source_payload: dict             # 平台原始数据
     status: PaperStatus              # imported/parsing/parsed/card_ready/...
 ```
@@ -476,7 +476,7 @@ class Paper(BaseModel):
 | 数据模型 | Pydantic v2 | 强类型、自动验证 |
 | 存储 | PostgreSQL + JSON 文件 | PostgreSQL 存储结构化数据，JSON 作为轻量备选 |
 | 向量存储 | Qdrant | 存储论文分块嵌入，支持向量检索 |
-| 搜索 | OpenAlex / arXiv / Semantic Scholar / CrossRef | 多源学术搜索 + TF 覆盖率排序 + 去重 |
+| 搜索 | OpenAlex / arXiv / Semantic Scholar | 多源学术搜索 + TF 覆盖率排序 + 去重 |
 | PDF 解析 | pdfplumber / PyMuPDF / pdfminer | 多解析器 fallback，自动分块和清洗 |
 | 知识图谱 | NetworkX | 实体关系图 + Gap 分析 |
 | 日志 | Loguru | 结构化日志 |

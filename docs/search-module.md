@@ -12,19 +12,18 @@
 |------|------|---------|------|
 | OpenAlex | ✅ | title | 主力全学科搜索，覆盖最广 |
 | arXiv | ✅ | title/author/abstract | CS/物理/数学预印本 |
-| CrossRef | ✅ | title/author | DOI 元数据补全 |
 | Semantic Scholar | ✅ | 仅全文 | AI/CS 引用网络，TLDR |
 
 ## 3. 搜索模式 (SearchField)
 
 通过 `field` 参数控制搜索范围：
 
-| 模式 | 说明 | OpenAlex | arXiv | CrossRef | S2 |
-|------|------|----------|-------|----------|-----|
-| `all` | 全文搜索（默认） | ✅ | ✅ | ✅ | ✅ |
-| `title` | 仅搜索标题 | ✅ | ✅ | ✅ | 降级为 all |
-| `author` | 仅搜索作者 | 降级为 all | ✅ | ✅ | 降级为 all |
-| `abstract` | 仅搜索摘要 | 降级为 all | ✅ | 降级为 all | 降级为 all |
+| 模式 | 说明 | OpenAlex | arXiv | S2 |
+|------|------|----------|-------|-----|
+| `all` | 全文搜索（默认） | ✅ | ✅ | ✅ |
+| `title` | 仅搜索标题 | ✅ | ✅ | 降级为 all |
+| `author` | 仅搜索作者 | 降级为 all | ✅ | 降级为 all |
+| `abstract` | 仅搜索摘要 | 降级为 all | ✅ | 降级为 all |
 
 **降级策略：** 不支持某字段模式的 adapter 自动降级为 `all`。
 

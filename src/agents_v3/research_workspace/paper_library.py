@@ -453,32 +453,53 @@ class PaperLibraryService:
         project_id: str,
         doi_list: list[str],
     ) -> list[Paper]:
-        from src.agents_v3.research_workspace.search.crossref_client import CrossRefClient
-        crossref = CrossRefClient()
+        """通过 DOI 导入论文，使用 Semantic Scholar 查询元数据"""
+        import json
+        import urllib.request
 
         papers = []
         for doi in doi_list:
-            # 通过 CrossRef 查询完整元数据
-            result = crossref.search_by_doi(doi)
-            if result:
-                meta = {
-                    "title": result.title,
-                    "abstract": result.abstract or "",
-                    "authors": [{"name": a} for a in (result.authors or [])],
-                    "year": result.year,
-                    "venue": result.venue or "",
-                    "identifiers": PaperIdentifiers(doi=doi),
-                    "open_access": {"pdf_url": result.pdf_url or ""} if result.pdf_url else {},
-                }
-            else:
-                meta = {
-                    "title": f"DOI: {doi}",
-                    "identifiers": PaperIdentifiers(doi=doi),
-                }
+            meta = self._lookup_doi_via_s2(doi)
+            meta["identifiers"] = PaperIdentifiers(doi=doi)
             paper = self.add_paper_metadata(project_id, meta, source="doi")
             if paper:
                 papers.append(paper)
         return papers
+
+    @staticmethod
+    def _lookup_doi_via_s2(doi: str) -> dict[str, Any]:
+        """通过 Semantic Scholar API 查询 DOI 元数据"""
+        import json
+        import time
+        import urllib.request
+
+        url = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}?fields=title,abstract,authors,year,venue,openAccessPdf,externalIds,citationCount"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "PaperAgent/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
+
+            authors = [a.get("name", "") for a in (data.get("authors") or []) if a.get("name")]
+            oa = data.get("openAccessPdf") or {}
+            pdf_url = oa.get("url", "") or ""
+            ext = data.get("externalIds") or {}
+            arxiv_id = ext.get("ArXiv", "") or ""
+
+            # 优先使用 arXiv PDF
+            if arxiv_id:
+                pdf_url = f"https://arxiv.org/pdf/{arxiv_id}"
+
+            return {
+                "title": data.get("title", f"DOI: {doi}"),
+                "abstract": data.get("abstract") or "",
+                "authors": [{"name": a} for a in authors],
+                "year": data.get("year"),
+                "venue": data.get("venue") or "",
+                "open_access": {"pdf_url": pdf_url} if pdf_url else {},
+            }
+        except Exception as e:
+            logger.warning(f"S2 DOI lookup failed for {doi}: {e}")
+            return {"title": f"DOI: {doi}"}
 
     def import_bibtex(
         self,

@@ -17,7 +17,6 @@ from src.agents_v3.research_workspace.search.dedup import (
 
 # 字段合并优先级：来源越可靠越优先
 _SOURCE_PRIORITY = {
-    "crossref": 5,
     "openalex": 4,
     "semantic_scholar": 3,
     "arxiv": 2,
@@ -108,8 +107,6 @@ class SearchResultMerger:
                 source_ids["openalex"] = r.openalex_id
             if r.source == "arxiv" and r.arxiv_id:
                 source_ids["arxiv"] = r.arxiv_id
-            if r.source == "crossref" and r.doi:
-                source_ids["crossref"] = r.doi
 
             # Merge fields by priority
             if not best.doi and r.doi:
@@ -135,7 +132,7 @@ class SearchResultMerger:
                 if best.citations is None or r.citations > best.citations:
                     best.citations = r.citations
 
-            # Venue: prefer crossref > openalex
+            # Venue: prefer higher priority source
             if r.venue and (
                 not best.venue
                 or _SOURCE_PRIORITY.get(r.source, 0) > _SOURCE_PRIORITY.get(best.source, 0)
