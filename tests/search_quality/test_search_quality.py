@@ -132,12 +132,12 @@ def main():
     )
     all_reports.append(r1)
 
-    # 场景2: 排序 + min_score 过滤（0.3）
-    min_score = 0.3
+    # 场景2: 排序 + min_score 过滤（0.85）
+    min_score = 0.85
     filtered_score = [r for r in ranked if (r.final_score or 0) >= min_score]
     judgments_2 = judge_relevance(filtered_score, TEST_QUERY)
     r2 = print_results(
-        f"场景2: 短语匹配 + 排序 + min_score≥{min_score}（{search_time:.2f}s）",
+        f"场景2: 排序 + min_score≥{min_score}（{search_time:.2f}s）",
         filtered_score, judgments_2, search_time,
     )
     all_reports.append(r2)
