@@ -106,6 +106,97 @@ python -m tests.e2e.test_search_to_library --query "deep learning" --limit 20 --
 
 ---
 
+### test_ranking.py
+
+**功能**：验证搜索排序 — 摘要权重是否高于标题权重，过滤无关论文
+
+**完整示例**：
+
+```powershell
+# ① 默认参数（搜索 "sparse functional data"，20 篇）
+python -m tests.e2e.test_ranking
+
+# ② 自定义搜索词
+python -m tests.e2e.test_ranking --query "functional PCA"
+
+# ③ 指定数量和来源
+python -m tests.e2e.test_ranking --query "sparse functional data" --limit 30 --sources openalex,arxiv
+
+# ④ 只用 Semantic Scholar
+python -m tests.e2e.test_ranking --query "sparse functional principal component" --sources semantic_scholar
+```
+
+**参数**：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--query` | `sparse functional data` | 搜索关键词 |
+| `--limit` | `20` | 搜索数量 |
+| `--sources` | `openalex,arxiv,semantic_scholar` | 搜索源，逗号分隔 |
+
+**测试流程**：
+
+```
+① 等待服务就绪（最多 15 秒）
+② POST /api/rw/projects                    → 创建临时项目
+③ POST /api/rw/projects/{id}/papers/search → 搜索论文
+④ 检查分数是否降序排列
+⑤ 检查摘要相关性（摘要中查询词覆盖率 ≥ 50% 为相关）
+⑥ DELETE /api/rw/projects/{id}             → 删除临时项目
+⑦ 输出 PASS/FAIL
+```
+
+**输出示例**：
+
+```
+============================================================
+端到端测试: 搜索排序验证
+============================================================
+服务就绪: http://localhost:8000
+
+[1/4] 创建临时项目...
+  -> proj_tmp1234
+
+[2/4] 搜索: "sparse functional data"
+  sources=['openalex', 'arxiv', 'semantic_scholar'], limit=20
+  -> 找到 20 篇
+
+前 10 个结果:
+--------------------------------------------------------------------------------
+   1. [0.939] rel=0.935 qual=0.612 | Functional Data Analysis for Sparse Longitudinal Data
+      摘要: 380字
+   2. [0.640] rel=0.580 qual=0.421 | Clustering for Sparsely Sampled Functional Data
+      摘要: 295字
+   ...
+
+[3/4] 检查分数排序...
+  PASS: 分数降序正确
+
+[4/4] 检查摘要相关性...
+  相关论文: 15/20 (75%)
+  问题论文:
+    [ 6] 摘要相关度低 (1/3) [0.320]: Some Unrelated Paper Title
+    [12] 标题匹配但摘要无关 [0.280]: Another Paper With Generic Title
+
+清理临时项目...
+
+============================================================
+测试通过!
+  排序: PASS
+  相关性: 15/20 (75%) PASS
+============================================================
+```
+
+**判断标准**：
+- 排序：分数必须严格降序排列
+- 相关性：摘要中查询词覆盖率 ≥ 50% 的论文占比需 ≥ 50%
+
+**返回值**：
+- 退出码 `0` = 测试通过
+- 退出码 `1` = 测试失败
+
+---
+
 ### test_delete_project.py
 
 **功能**：删除指定项目并清理关联数据（PostgreSQL + Qdrant 向量）
