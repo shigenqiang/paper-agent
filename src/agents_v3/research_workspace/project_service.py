@@ -130,10 +130,21 @@ class ProjectService:
 
     def delete_project(self, project_id: str, pg=None) -> bool:
         """删除项目（PostgreSQL + 本地文件 + PDF 文件）"""
+        # 解析 dir_name：先尝试本地目录，再从 PostgreSQL 读取
+        dir_name = None
         try:
             dir_name = resolve_project_ref(project_id, self.storage.data_dir)
         except KeyError:
-            return False
+            # 本地没有目录，从 PostgreSQL 获取 dir_name
+            if pg is not None:
+                try:
+                    rows = pg.query("projects", {"project_id": project_id})
+                    if rows:
+                        dir_name = rows[0].get("dir_name", "")
+                except Exception:
+                    pass
+            if not dir_name:
+                return False
 
         # 1. 清理 PostgreSQL 数据
         if pg is not None:
