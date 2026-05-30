@@ -15,7 +15,7 @@ from loguru import logger
 
 TEST_QUERY = "sparse functional data for deep learning"
 SOURCES = ["openalex", "arxiv", "semantic_scholar"]
-LIMIT = 20
+LIMIT = 50
 
 
 def judge_relevance(results: list, query: str) -> list[bool]:
