@@ -14,6 +14,7 @@ GHCR_IMG  = ghcr.io/$(GHCR_USER)/paper-agent
 # ============ Service ============
 
 service:
+	@$(PYTHON) -c "import subprocess;s=subprocess.run(['netstat','-ano'],capture_output=True,text=True);[subprocess.run(['taskkill','/F','/PID',l.split()[-1]],capture_output=True) for l in s.stdout.splitlines() if ':$(PORT)' in l and 'LISTEN' in l and l.split()[-1].isdigit()]"
 	$(PYTHON) -m src.service --port $(PORT)
 
 # ============ API ============
