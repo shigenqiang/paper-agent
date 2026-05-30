@@ -23,8 +23,8 @@ _BM25_B = 0.4    # 文档长度归一化（学术摘要较短，用较小值）
 
 # 字段权重（用于拼接文档）
 _FIELD_WEIGHTS = {
-    "title": 3.0,
-    "abstract": 1.5,
+    "abstract": 3.5,
+    "title": 2.0,
     "keywords": 2.0,
     "concepts": 1.0,
     "venue": 0.5,
@@ -144,9 +144,9 @@ class RankingService:
             return 0.0
 
         field_texts = {
-            "title": (r.title, 3.0),
+            "abstract": (r.abstract, 3.5),
+            "title": (r.title, 2.0),
             "keywords": (" ".join(r.keywords), 2.5),
-            "abstract": (r.abstract, 1.5),
             "concepts": (" ".join(r.concepts), 1.0),
             "venue": (r.venue, 0.5),
         }
