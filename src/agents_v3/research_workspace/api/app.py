@@ -325,7 +325,7 @@ def create_app(storage=None) -> FastAPI:
     def commit_search(project_ref: str, req: SearchCommitRequest):
         project = _resolve_project(project_ref)
         svc = get_paper_library(project_ref)
-        papers = svc.commit_search_results(project.project_id, req.session_id, req.selected_result_ids)
+        papers = svc.commit_search_results(project.project_id, req.session_id, req.selected_result_ids, min_score=req.min_score)
         return ApiResponse(data=[p.model_dump() for p in papers])
 
     # ── PDF 下载 ──

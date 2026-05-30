@@ -98,6 +98,7 @@ class SearchPapersRequest(BaseModel):
 class SearchCommitRequest(BaseModel):
     session_id: str
     selected_result_ids: list[str] = Field(default_factory=list)
+    min_score: float = 0.3  # 最低重要性分数阈值，低于此值的论文不入库
 
 
 # ── Scope ─────────────────────────────────────────

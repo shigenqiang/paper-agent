@@ -392,8 +392,9 @@ class PaperLibraryService:
         self,
         project_id: str,
         query: SearchQuery,
+        min_score: float = 0.3,
     ) -> list[Paper]:
-        """搜索并导入到项目（自动去重）"""
+        """搜索并导入到项目（自动去重，低于阈值的论文跳过）"""
         results = self.search_papers(query)
 
         # 排序以计算分数
@@ -401,8 +402,13 @@ class PaperLibraryService:
         results = ranking.rank(results, query=query.query)
 
         papers = []
+        skipped = 0
         topic = query.query
         for r in results:
+            if r.final_score < min_score:
+                skipped += 1
+                logger.info(f"Skipped (score={r.final_score:.3f} < {min_score}): {r.title[:50]}")
+                continue
             meta = search_result_to_meta(r)
             scores = {
                 "importance_score": r.final_score,
@@ -414,6 +420,7 @@ class PaperLibraryService:
             )
             if paper:
                 papers.append(paper)
+        logger.info(f"Imported {len(papers)} papers (skipped {skipped} below {min_score})")
         return papers
 
     def list_papers(
@@ -605,6 +612,7 @@ class PaperLibraryService:
         session_id: str,
         result_ids: list[str],
         topic: str = "",
+        min_score: float = 0.3,
     ) -> list[Paper]:
         """将选中的搜索结果提交入库（从论文池读取元数据）
 
@@ -613,6 +621,7 @@ class PaperLibraryService:
             session_id: 搜索会话 ID
             result_ids: 用户选中的搜索结果 ID 列表
             topic: 当前搜索主题，用于记录论文的重要性得分
+            min_score: 最低重要性分数阈值，低于此值的论文不入库
         """
         session = self.get_search_session(session_id)
         if not session:
@@ -625,6 +634,7 @@ class PaperLibraryService:
 
         results_by_id = {r.result_id: r for r in session.results}
         papers = []
+        skipped = 0
         for rid in result_ids:
             r = results_by_id.get(rid)
             if not r:
@@ -636,6 +646,12 @@ class PaperLibraryService:
                 "relevance_score": r.relevance_score,
                 "quality_score": r.quality_score,
             }
+
+            # 阈值过滤：跳过低分论文
+            if r.final_score < min_score:
+                skipped += 1
+                logger.info(f"Skipped (score={r.final_score:.3f} < {min_score}): {r.title[:50]}")
+                continue
 
             # 从论文池读取元数据
             pool_paper_id = r.source_payload.get("pool_paper_id")
@@ -663,7 +679,7 @@ class PaperLibraryService:
         session.status = "committed"
         self.storage.upsert_item("search_sessions", session_id, session.model_dump())
 
-        logger.info(f"Committed {len(papers)} papers from session {session_id}")
+        logger.info(f"Committed {len(papers)} papers from session {session_id} (skipped {skipped} below {min_score})")
         return papers
 
     def _pool_data_to_meta(self, pool_data: dict[str, Any]) -> dict[str, Any]:
