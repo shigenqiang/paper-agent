@@ -35,6 +35,11 @@ class RetrievalScopeService:
     def __init__(self, storage: JSONStorage | None = None):
         self.storage = storage or get_storage()
 
+    def _get_project_paper_ids(self, project_id: str) -> list[str]:
+        """获取项目下所有 paper_id"""
+        papers = self.storage.query("papers", {"project_id": project_id})
+        return [p.get("paper_id", "") for p in papers]
+
     def resolve(self, project_id: str, scope_payload: dict[str, Any]) -> RetrievalScope:
         scope_type = ScopeType(scope_payload.get("type", "all_project"))
         warnings: list[str] = []
@@ -230,7 +235,8 @@ class RetrievalScopeService:
             return sorted(graph_papers & included_ids)
 
         # Fallback 到 evidence
-        evidence = self.storage.query("evidence_records", {"project_id": project_id})
+        paper_ids_proj = self._get_project_paper_ids(project_id)
+        evidence = self.storage.query("evidence_records", {"paper_id": paper_ids_proj}) if paper_ids_proj else []
         paper_ids: set[str] = set()
         for e in evidence:
             if e.get("paper_id") not in included_ids:
@@ -264,7 +270,8 @@ class RetrievalScopeService:
             return []
         normalized_targets = {normalize_label(m) for m in method_ids}
 
-        evidence = self.storage.query("evidence_records", {"project_id": project_id})
+        paper_ids_proj = self._get_project_paper_ids(project_id)
+        evidence = self.storage.query("evidence_records", {"paper_id": paper_ids_proj}) if paper_ids_proj else []
         paper_ids: set[str] = set()
         for e in evidence:
             if e.get("paper_id") not in included_ids:
@@ -370,7 +377,8 @@ class RetrievalScopeService:
         self, project_id: str, paper_ids: list[str],
         topic_ids: list[str], method_ids: list[str],
     ) -> list[str]:
-        evidence = self.storage.query("evidence_records", {"project_id": project_id})
+        paper_ids_proj = self._get_project_paper_ids(project_id)
+        evidence = self.storage.query("evidence_records", {"paper_id": paper_ids_proj}) if paper_ids_proj else []
         paper_set = set(paper_ids)
         result = []
         for e in evidence:
@@ -426,7 +434,8 @@ class RetrievalScopeService:
             return records
 
         # Fallback: 用 paper_ids 过滤
-        all_evidence = self.storage.query("evidence_records", {"project_id": scope.project_id})
+        paper_ids_proj = self._get_project_paper_ids(scope.project_id)
+        all_evidence = self.storage.query("evidence_records", {"paper_id": paper_ids_proj}) if paper_ids_proj else []
         paper_set = set(scope.paper_ids)
         records = [EvidenceRecord(**e) for e in all_evidence if e.get("paper_id") in paper_set]
 
@@ -532,7 +541,8 @@ class RetrievalScopeService:
                     })
         else:
             # Fallback to evidence
-            evidence = self.storage.query("evidence_records", {"project_id": project_id})
+            paper_ids_proj = self._get_project_paper_ids(project_id)
+            evidence = self.storage.query("evidence_records", {"paper_id": paper_ids_proj}) if paper_ids_proj else []
             topic_counts: dict[str, int] = {}
             method_counts: dict[str, int] = {}
             for e in evidence:

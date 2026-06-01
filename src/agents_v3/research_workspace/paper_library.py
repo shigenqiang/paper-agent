@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ from src.agents_v3.research_workspace.models import (
     PaperSource,
     PaperStatus,
 )
-from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, SearchQuery, SearchResult, SearchSession
+from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, QueryRecord, SearchQuery, SearchResult, SearchResponse
 from src.agents_v3.research_workspace.search.dedup import build_existing_keys, make_dedup_key
 from src.agents_v3.research_workspace.search.ranking import RankingService
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
@@ -55,6 +56,23 @@ def search_result_to_meta(r: SearchResult) -> dict[str, Any]:
     }
 
 
+def _apply_quality_filter(
+    results: list[SearchResult], quality_threshold: float = 0.3, min_results: int = 3
+) -> list[SearchResult]:
+    """质量分过滤（保底保留 top-N）"""
+    if not results:
+        return []
+    from src.agents_v3.research_workspace.search.quality_filter import compute_quality
+    for r in results:
+        if not r.quality_score:
+            r.quality_score = compute_quality(r)
+    filtered = [r for r in results if (r.quality_score or 0) >= quality_threshold]
+    if len(filtered) < min_results and len(results) > min_results:
+        results.sort(key=lambda r: r.quality_score or 0, reverse=True)
+        filtered = results[:min_results]
+    return filtered
+
+
 class PaperLibraryService:
     """项目论文库管理"""
 
@@ -63,10 +81,13 @@ class PaperLibraryService:
         storage: JSONStorage | None = None,
         search_adapters: list[BaseSearchAdapter] | None = None,
         global_storage: JSONStorage | None = None,
+        pg_storage: Any | None = None,
     ):
         self.storage = storage or get_storage()
         self.search_adapters = search_adapters or []
         self.global_storage = global_storage or get_storage()
+        self.pg = pg_storage  # PostgresStorage instance (optional)
+        self._pending_searches: dict[str, list[SearchResult]] = {}  # query_text → results (临时缓存)
 
     # ── 论文池操作 ──────────────────────────────────────
 
@@ -193,7 +214,7 @@ class PaperLibraryService:
                 dedup_key = make_dedup_key(metadata)
                 for p in existing:
                     if make_dedup_key(p) == dedup_key:
-                        self.save_topic_score(project_id, p["paper_id"], topic, scores)
+                        self.save_topic_score(p["paper_id"], topic, scores)
                         break
             logger.info(f"Duplicate skipped: {metadata.get('title', '')[:50]}")
             return None
@@ -304,7 +325,7 @@ class PaperLibraryService:
 
         # 持久化主题相关分数到 topic_scores 集合
         if scores and topic:
-            self.save_topic_score(project_id, paper_id, topic, scores)
+            self.save_topic_score(paper_id, topic, scores)
 
         logger.info(f"Imported paper {paper_id}: {paper.title}")
         return paper
@@ -324,12 +345,12 @@ class PaperLibraryService:
     def search_papers(
         self,
         query: SearchQuery,
-        llm_filter: bool = True,
     ) -> list[SearchResult]:
-        """调用已注册的搜索适配器，返回结果（去重，存入论文池）"""
+        """调用已注册的搜索适配器，返回结果（去重 + HyDE 排序 + 质量过滤）"""
         from src.agents_v3.research_workspace.search.merger import SearchResultMerger
         from src.agents_v3.research_workspace.search.query_optimizer import refine_query
-        from src.agents_v3.research_workspace.search.relevance_filter import filter_relevant_papers
+        from src.agents_v3.research_workspace.search.hyde_ranker import HyDERanker
+        from src.agents_v3.research_workspace.config import get_search_config
         merger = SearchResultMerger()
 
         # 优化搜索词：提取核心主题，去除泛化词
@@ -340,19 +361,64 @@ class PaperLibraryService:
             query = query.model_copy(update={"query": optimized})
 
         all_results: list[SearchResult] = []
-        for adapter in self.search_adapters:
+
+        def _search_one(adapter):
             try:
-                results = adapter.search(query)
-                all_results.extend(results)
+                return adapter.search(query), None
             except Exception as e:
                 logger.error(f"Search adapter {adapter.source_name} failed: {e}")
+                return [], e
+
+        with ThreadPoolExecutor(max_workers=min(4, len(self.search_adapters))) as executor:
+            futures = {executor.submit(_search_one, a): a for a in self.search_adapters}
+            for future in as_completed(futures):
+                results, error = future.result()
+                all_results.extend(results)
 
         # 去重合并
         merged = merger.merge(all_results)
 
-        # LLM 相关性过滤
-        if llm_filter and merged:
-            merged = filter_relevant_papers(merged, original_query)
+        # 混合排序 + 质量过滤
+        search_cfg = get_search_config().get("hyde", {})
+        hybrid_cfg = get_search_config().get("hybrid", {})
+        qual_threshold = search_cfg.get("quality_threshold", 0.3)
+        top_n = hybrid_cfg.get("top_n", 30)
+
+        if hybrid_cfg.get("enabled", True) and merged:
+            try:
+                from src.agents_v3.research_workspace.search.hybrid_ranker import HybridRanker
+                hybrid_ranker = HybridRanker(
+                    rrf_k=get_search_config().get("rrf_k", 60),
+                    top_k=hybrid_cfg.get("top_k", 60),
+                    top_n=top_n,
+                    quality_threshold=qual_threshold,
+                )
+                merged = hybrid_ranker.rank(merged, original_query)
+            except Exception as e:
+                logger.warning(f"Hybrid ranking failed, falling back to HyDE: {e}")
+                try:
+                    hyde_ranker = HyDERanker()
+                    merged = hyde_ranker.rank(merged, original_query)
+                    merged = _apply_quality_filter(merged[:top_n], qual_threshold)
+                except Exception as e2:
+                    logger.warning(f"HyDE ranking failed, falling back to BM25: {e2}")
+                    ranking = RankingService(query=original_query)
+                    merged = ranking.rank(merged, query=original_query)
+                    merged = _apply_quality_filter(merged[:top_n], qual_threshold)
+        elif search_cfg.get("enabled", True) and merged:
+            try:
+                hyde_ranker = HyDERanker()
+                merged = hyde_ranker.rank(merged, original_query)
+                merged = _apply_quality_filter(merged[:top_n], qual_threshold)
+            except Exception as e:
+                logger.warning(f"HyDE ranking failed, falling back to BM25: {e}")
+                ranking = RankingService(query=original_query)
+                merged = ranking.rank(merged, query=original_query)
+                merged = _apply_quality_filter(merged[:top_n], qual_threshold)
+        else:
+            ranking = RankingService(query=original_query)
+            merged = ranking.rank(merged, query=original_query)
+            merged = _apply_quality_filter(merged[:top_n], qual_threshold)
 
         # 存入论文池
         for r in merged:
@@ -361,46 +427,6 @@ class PaperLibraryService:
 
         return merged
 
-    # ── 搜索缓存 ──────────────────────────────────────
-
-    @staticmethod
-    def _make_cache_key(query: SearchQuery) -> str:
-        """根据查询参数生成缓存 key"""
-        parts = [
-            query.query.strip().lower(),
-            ",".join(sorted(query.sources)),
-            str(query.year_from or ""),
-            str(query.year_to or ""),
-            str(query.limit),
-        ]
-        raw = "|".join(parts)
-        return hashlib.md5(raw.encode()).hexdigest()
-
-    def _check_cache(self, cache_key: str) -> list[SearchResult] | None:
-        """查找缓存的搜索结果"""
-        item = self.storage.get_item("search_cache", cache_key)
-        if item:
-            # 兼容两种格式：直接存储或包装在 data 字段中
-            cache_data = item.get("data", item)
-            results = [SearchResult(**r) for r in cache_data.get("results", [])]
-            logger.info(f"Search cache hit: {cache_key} ({len(results)} results)")
-            return results
-        return None
-
-    def _store_cache(self, cache_key: str, query: SearchQuery, results: list[SearchResult]) -> None:
-        """存储搜索结果到缓存"""
-        cache_data = {
-            "query": query.model_dump(),
-            "results": [r.model_dump(exclude_defaults=True) for r in results],
-            "cached_at": datetime.now().isoformat(),
-            "result_count": len(results),
-        }
-        self.storage.upsert_item("search_cache", cache_key, {
-            "cache_key": cache_key,
-            "data": cache_data,
-            "expires_at": (datetime.now().timestamp() + 86400),  # 24 小时
-        })
-        logger.info(f"Cached search results: {cache_key} ({len(results)} results)")
 
     def search_and_import(
         self,
@@ -436,6 +462,403 @@ class PaperLibraryService:
                 papers.append(paper)
         logger.info(f"Imported {len(papers)} papers (skipped {skipped} below {min_score})")
         return papers
+
+    # ── 文献综述专用搜索 ──────────────────────────────
+
+    def search_for_review(
+        self,
+        project_id: str,
+        query: str,
+        max_local: int | None = None,
+        max_remote: int | None = None,
+        max_total: int | None = None,
+    ) -> dict[str, Any]:
+        """为文献综述搜索论文：本地项目库 + 联网学术平台
+
+        流程：
+        1. 本地搜索：从项目已入库论文中按相关性筛选
+        2. 查询相似度检查：与历史查询对比，复用相关论文
+        3. 联网搜索：用同一搜索词在学术平台搜索补充
+        4. 返回结果（不持久化，用户 commit 时再写入）
+
+        Args:
+            project_id: 项目 ID
+            query: 搜索词
+            max_local: 本地搜索最大论文数
+            max_remote: 联网搜索最大论文数
+            max_total: 总论文数上限
+
+        Returns:
+            {
+                "local_papers": [{"paper_id": ..., "score": ...}],
+                "remote_papers": [{"paper_id": ..., "score": ...}],
+                "total_count": int,
+                "query": str,
+            }
+        """
+        import os
+        _max_local = max_local or int(os.getenv("REVIEW_LOCAL_MAX", "20"))
+        _max_remote = max_remote or int(os.getenv("REVIEW_REMOTE_MAX", "20"))
+        _max_total = max_total or int(os.getenv("REVIEW_MAX_PAPERS", "40"))
+
+        # ── Step 1: 本地搜索（项目论文库）──────────────
+        local_results = self._search_local_papers(project_id, query, _max_local)
+        local_count = len(local_results)
+        logger.info(f"Local search: {local_count} papers found (max={_max_local})")
+
+        # ── Step 2: 查询相似度检查 ──────────────────
+        # 检查是否有相似的历史查询，复用其关联的论文
+        similar_paper_ids = self._find_similar_queries(query, project_id)
+        if similar_paper_ids:
+            logger.info(f"Found {len(similar_paper_ids)} papers from similar queries")
+
+        # ── Step 3: 联网搜索（学术平台）────────────────
+        remaining_slots = max(0, _max_total - local_count)
+        remote_limit = min(remaining_slots, _max_remote)
+
+        remote_results: list[dict[str, Any]] = []
+        if remote_limit > 0:
+            new_remote = self._search_remote_papers(
+                project_id, query, remote_limit,
+                exclude_ids={r["paper_id"] for r in local_results},
+            )
+            remote_results.extend(new_remote)
+
+        logger.info(f"Remote search: {len(remote_results)} papers (limit={remote_limit})")
+
+        # ── Step 4: 返回结果 ──────────────────────────
+        total = local_count + len(remote_results)
+        logger.info(f"Review search complete: {local_count} local + {len(remote_results)} remote = {total} total")
+
+        return {
+            "local_papers": local_results,
+            "remote_papers": remote_results,
+            "total_count": total,
+            "query": query,
+        }
+
+    def _search_local_papers(
+        self,
+        project_id: str,
+        query: str,
+        max_count: int,
+        relevance_threshold: float = 0.15,
+    ) -> list[dict[str, Any]]:
+        """从项目论文库中搜索：历史查询匹配 → Qdrant hybrid 检索
+
+        Step 1: 从 paper_queries 获取历史查询关联的论文作为候选。
+        Step 2: Qdrant dense + sparse 双路交集检索，按 paper_id 聚合分数。
+        """
+        papers = self.list_papers(project_id)
+        if not papers:
+            return []
+
+        # ── Step 1: 历史查询关联论文 ──
+        candidate_ids = self._find_similar_queries(query, project_id)
+        logger.info(f"Historical query match: {len(candidate_ids)} candidate papers")
+
+        # 候选不够时用全项目论文补充
+        all_paper_ids = {p.paper_id for p in papers}
+        if len(candidate_ids) < max_count:
+            candidate_ids.update(all_paper_ids)
+
+        # 只保留项目内论文
+        candidate_ids &= all_paper_ids
+        if not candidate_ids:
+            return []
+
+        # ── Step 2: Qdrant hybrid 检索 ────────────────
+        paper_scores = self._qdrant_hybrid_search(
+            query, project_id, list(candidate_ids),
+        )
+
+        # 如果 Qdrant 不可用，回退到 BM25
+        if not paper_scores:
+            logger.warning("Qdrant hybrid search failed, falling back to BM25")
+            paper_scores = self._bm25_fallback(query, papers, candidate_ids)
+
+        # 过滤低相关性
+        filtered = [
+            (pid, score) for pid, score in paper_scores
+            if score >= relevance_threshold
+        ]
+        if len(filtered) < 3 and len(paper_scores) >= 3:
+            filtered = paper_scores[:3]
+        logger.info(f"Relevance filter: {len(paper_scores)} → {len(filtered)} (threshold={relevance_threshold})")
+
+        # 返回 top-N
+        selected = []
+        for pid, score in filtered[:max_count]:
+            selected.append({
+                "paper_id": pid,
+                "score": round(score, 3),
+                "source": "local",
+            })
+
+        return selected
+
+    def _qdrant_hybrid_search(
+        self,
+        query: str,
+        project_id: str,
+        paper_ids: list[str],
+    ) -> list[tuple[str, float]]:
+        """Qdrant dense + sparse + RRF 混合检索，按 paper_id 聚合分数
+
+        云端推理模式下直接传文本，Qdrant 自动向量化。
+        优先搜索 paper_profiles，无结果时回退到 paper_chunks。
+
+        Returns:
+            [(paper_id, score), ...] 按分数降序排列
+        """
+        try:
+            from src.agents_v3.research_workspace.vector_storage import get_vector_storage
+            vector_storage = get_vector_storage()
+
+            # ── 优先搜 paper_profiles（论文级）──
+            paper_scores = self._qdrant_search_collection(
+                vector_storage, query, paper_ids, "paper_profiles",
+            )
+            if paper_scores:
+                return paper_scores
+
+            # ── 回退搜 paper_chunks（chunk 级，按 paper_id 聚合）──
+            return self._qdrant_search_collection(
+                vector_storage, query, paper_ids, "paper_chunks",
+            )
+
+        except Exception as e:
+            logger.error(f"Qdrant hybrid search failed: {e}")
+            return []
+
+    def _qdrant_search_collection(
+        self,
+        vector_storage,
+        query: str,
+        paper_ids: list[str],
+        collection: str,
+        top_k: int = 100,
+    ) -> list[tuple[str, float]]:
+        """对指定 Qdrant 集合执行双路交集检索（dense + sparse 各取 top-K，取交集）
+
+        交集内的论文按两路排名之和排序（排名越小越好）。
+        交集为空时回退到 dense-only 结果。
+
+        Returns:
+            [(paper_id, score), ...] score 为归一化排名分（越高越好）
+        """
+        # ── Dense 路 ──
+        dense_results = vector_storage.search_dense_by_text(
+            query_text=query, top_k=top_k, paper_ids=paper_ids, collection=collection,
+        )
+        # ── Sparse 路 ──
+        sparse_results = vector_storage.search_sparse_by_text(
+            query_text=query, top_k=top_k, paper_ids=paper_ids, collection=collection,
+        )
+
+        if not dense_results and not sparse_results:
+            return []
+
+        # 提取 paper_id
+        def _get_pid(item: dict) -> str:
+            return item.get("metadata", {}).get("paper_id", "") or item.get("id", "")
+
+        # Dense 排名表 {paper_id: rank}
+        dense_rank: dict[str, int] = {}
+        for rank, item in enumerate(dense_results):
+            pid = _get_pid(item)
+            if pid and pid not in dense_rank:
+                dense_rank[pid] = rank
+
+        # Sparse 排名表 {paper_id: rank}
+        sparse_rank: dict[str, int] = {}
+        for rank, item in enumerate(sparse_results):
+            pid = _get_pid(item)
+            if pid and pid not in sparse_rank:
+                sparse_rank[pid] = rank
+
+        # 双路交集：同时出现在 dense 和 sparse top-K 中
+        intersection = set(dense_rank.keys()) & set(sparse_rank.keys())
+
+        if not intersection:
+            # 交集为空，回退到 dense-only
+            logger.debug(f"No intersection for {collection}, falling back to dense-only")
+            paper_best: dict[str, float] = {}
+            for item in dense_results:
+                pid = _get_pid(item)
+                score = item.get("score", 0.0)
+                if pid and (pid not in paper_best or score > paper_best[pid]):
+                    paper_best[pid] = score
+            ranked = sorted(paper_best.items(), key=lambda x: x[1], reverse=True)
+            logger.info(f"Qdrant {collection} (dense fallback): {len(ranked)} papers")
+            return ranked
+
+        # 交集内按两路排名之和排序（排名越小 = 分数越高）
+        scored: list[tuple[str, float]] = []
+        for pid in intersection:
+            combined_rank = dense_rank[pid] + sparse_rank[pid]
+            # 归一化：排名和越小越好，转换为 [0,1] 分数
+            score = 1.0 - combined_rank / (top_k * 2)
+            scored.append((pid, score))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        logger.info(f"Qdrant {collection} (intersection): {len(scored)} papers (dense={len(dense_rank)}, sparse={len(sparse_rank)})")
+        return scored
+
+    def _bm25_fallback(
+        self,
+        query: str,
+        papers: list,
+        candidate_ids: set[str],
+    ) -> list[tuple[str, float]]:
+        """BM25 兜底排序"""
+        from src.agents_v3.research_workspace.search.base import SearchResult
+        from src.agents_v3.research_workspace.search.ranking import RankingService
+
+        results = []
+        for p in papers:
+            if p.paper_id not in candidate_ids:
+                continue
+            r = SearchResult(
+                result_id=p.paper_id,
+                title=p.title,
+                authors=[a.name for a in p.authors],
+                year=p.dates.year,
+                abstract=p.abstract,
+            )
+            results.append(r)
+
+        ranking = RankingService(query=query)
+        ranked = ranking.rank(results, query=query)
+        return [(r.result_id, r.relevance_score or 0.0) for r in ranked]
+
+    def _search_remote_papers(
+        self,
+        project_id: str,
+        query: str,
+        need_count: int,
+        exclude_ids: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """联网搜索学术平台，返回新论文（去重后）"""
+        exclude = exclude_ids or set()
+
+        if not self.search_adapters:
+            logger.warning("No search adapters configured, skipping remote search")
+            return []
+
+        search_query = SearchQuery(
+            query=query,
+            project_id=project_id,
+            limit=need_count * 2,  # 多搜一些，去重后可能不够
+        )
+
+        # 复用现有 search_papers 方法
+        results = self.search_papers(search_query)
+
+        # 去重：排除已有的论文
+        new_results = []
+        for r in results:
+            pool_id = r.source_payload.get("pool_paper_id", "")
+            # 用 dedup key 检查是否已在项目中
+            meta = search_result_to_meta(r)
+            dedup_key = make_dedup_key(meta)
+            if dedup_key and dedup_key in exclude:
+                continue
+            if pool_id and pool_id in exclude:
+                continue
+
+            new_results.append({
+                "paper_id": pool_id or r.result_id,
+                "score": round(r.final_score, 3),
+                "relevance_score": round(r.relevance_score, 3),
+                "quality_score": round(r.quality_score, 3),
+                "source": r.source,
+                "title": r.title,
+                "dedup_key": dedup_key or "",
+            })
+
+            if len(new_results) >= need_count:
+                break
+
+        return new_results
+
+    def _find_similar_queries(
+        self,
+        query_text: str,
+        project_id: str,
+        similarity_threshold: float = 0.5,
+        top_k: int = 5,
+    ) -> set[str]:
+        """查找与当前查询相似的历史查询，返回关联的 paper_id 集合
+
+        流程：
+        1. Qdrant dense-only 语义搜索 → 获取相似 query_id
+        2. 从 PG queries 表确认 query 存在
+        3. 从 PG paper_queries 表获取关联的 paper_id
+        4. 回退：Jaccard token 相似度匹配 PG queries 表
+        """
+        paper_ids: set[str] = set()
+
+        # ── 优先：Qdrant 向量相似度 ──
+        try:
+            from src.agents_v3.research_workspace.vector_storage import get_vector_storage
+            vs = get_vector_storage()
+            similar = vs.search_similar_queries(query_text, top_k=top_k)
+            for item in similar:
+                if item["score"] < similarity_threshold:
+                    continue
+                query_id = item["query_id"]
+                # 从 paper_queries 获取关联论文
+                if self.pg:
+                    rows = self.pg.query("paper_queries", {"query_id": query_id})
+                    for row in rows:
+                        paper_ids.add(row["paper_id"])
+                    logger.info(
+                        f"Similar query found (vector): {query_id} "
+                        f"(score={item['score']:.2f}), {len(rows)} papers"
+                    )
+        except Exception as e:
+            logger.debug(f"Qdrant query similarity failed, falling back to Jaccard: {e}")
+
+        # ── 回退：Jaccard token 相似度 ──
+        if not paper_ids:
+            query_tokens = set(query_text.lower().split())
+            if not query_tokens:
+                return paper_ids
+
+            best_query_id = None
+            best_sim = 0.0
+
+            # 从 PG queries 表读取所有查询
+            if self.pg:
+                try:
+                    records = self.pg.query("queries", {})
+                    for rec in records:
+                        rec_text = rec.get("query_text", "")
+                        if not rec_text:
+                            continue
+                        rec_tokens = set(rec_text.lower().split())
+                        if not rec_tokens:
+                            continue
+                        intersection = query_tokens & rec_tokens
+                        union = query_tokens | rec_tokens
+                        sim = len(intersection) / len(union) if union else 0.0
+                        if sim > best_sim and sim >= similarity_threshold:
+                            best_sim = sim
+                            best_query_id = rec["query_id"]
+
+                    if best_query_id:
+                        rows = self.pg.query("paper_queries", {"query_id": best_query_id})
+                        for row in rows:
+                            paper_ids.add(row["paper_id"])
+                        logger.info(
+                            f"Similar query found (Jaccard): {best_query_id} "
+                            f"(sim={best_sim:.2f}), {len(rows)} papers"
+                        )
+                except Exception as e:
+                    logger.debug(f"Jaccard query similarity failed: {e}")
+
+        return paper_ids
 
     def list_papers(
         self,
@@ -474,13 +897,26 @@ class PaperLibraryService:
         project_id: str,
         doi_list: list[str],
     ) -> list[Paper]:
-        """通过 DOI 导入论文，使用 Semantic Scholar 查询元数据"""
+        """通过 DOI 导入论文，使用 Semantic Scholar 查询元数据（并行查询）"""
         import json
         import urllib.request
 
+        def _lookup_one(doi: str) -> tuple[str, dict[str, Any]]:
+            meta = self._lookup_doi_via_s2(doi)
+            return doi, meta
+
+        # 并行查询 DOI 元数据
+        doi_meta: dict[str, dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=min(4, len(doi_list))) as executor:
+            futures = {executor.submit(_lookup_one, doi): doi for doi in doi_list}
+            for future in as_completed(futures):
+                doi, meta = future.result()
+                doi_meta[doi] = meta
+
+        # 顺序导入（写入操作需要保持顺序）
         papers = []
         for doi in doi_list:
-            meta = self._lookup_doi_via_s2(doi)
+            meta = doi_meta.get(doi, {})
             meta["identifiers"] = PaperIdentifiers(doi=doi)
             paper = self.add_paper_metadata(project_id, meta, source="doi")
             if paper:
@@ -563,90 +999,59 @@ class PaperLibraryService:
             entries.append(entry)
         return entries
 
-    # ── 搜索暂存与提交 ──────────────────────────────
+    # ── 搜索与提交 ──────────────────────────────
 
     def search_candidates(
         self,
         project_id: str,
         query: SearchQuery,
-    ) -> SearchSession:
-        """搜索并暂存结果（不入库），返回 SearchSession。支持缓存。"""
-        cache_key = self._make_cache_key(query)
-
-        # 尝试缓存
-        if query.use_cache and not query.force_refresh:
-            cached = self._check_cache(cache_key)
-            if cached is not None:
-                session = SearchSession(
-                    project_id=project_id,
-                    query=query.model_dump(),
-                    results=cached,
-                    status="pending",
-                )
-                storage = self.storage
-                session_data = session.model_dump()
-                session_data["results"] = [r.model_dump(exclude_defaults=True) for r in session.results]
-                storage.upsert_item("search_sessions", session.session_id, session_data)
-                logger.info(f"Created search session {session.session_id} from cache: {len(cached)} results")
-                return session
-
-        # 缓存未命中，调用 API
+    ) -> SearchResponse:
+        """搜索候选论文，返回结果（不持久化，结果缓存在内存中供 commit 使用）"""
         results = self.search_papers(query)
         ranking = RankingService(query=query.query)
         results = ranking.rank(results, query=query.query)
 
-        # 存入缓存
-        self._store_cache(cache_key, query, results)
-        session = SearchSession(
-            project_id=project_id,
-            query=query.model_dump(),
+        # 缓存搜索结果供 commit 使用
+        self._pending_searches[query.query] = results
+
+        logger.info(f"Search candidates: {len(results)} results for \"{query.query}\"")
+        return SearchResponse(
+            query=query,
             results=results,
-            status="pending",
+            total_count=len(results),
         )
-        storage = self.storage
-        session_data = session.model_dump()
-        session_data["results"] = [r.model_dump(exclude_defaults=True) for r in session.results]
-        storage.upsert_item("search_sessions", session.session_id, session_data)
-        logger.info(f"Created search session {session.session_id}: {len(results)} results")
-        return session
-
-    def get_search_session(self, session_id: str) -> SearchSession | None:
-        item = self.storage.get_item("search_sessions", session_id)
-        if item:
-            return SearchSession(**item)
-        return None
-
-    def list_search_sessions(self, project_id: str) -> list[SearchSession]:
-        items = self.storage.query("search_sessions", {"project_id": project_id})
-        return [SearchSession(**i) for i in items]
 
     def commit_search_results(
         self,
         project_id: str,
-        session_id: str,
+        query_text: str,
         result_ids: list[str],
         topic: str = "",
         min_score: float = 0.3,
+        source: str = "candidate",
     ) -> list[Paper]:
-        """将选中的搜索结果提交入库（从论文池读取元数据）
+        """将选中的搜索结果提交入库
 
-        Args:
-            project_id: 项目 ID
-            session_id: 搜索会话 ID
-            result_ids: 用户选中的搜索结果 ID 列表
-            topic: 当前搜索主题，用于记录论文的重要性得分
-            min_score: 最低重要性分数阈值，低于此值的论文不入库
+        写入：
+        1. queries 表（UNIQUE query_text 去重）
+        2. paper_queries 表（论文与查询的多对多关联）
+        3. Qdrant search_queries 向量
+
+        从 _pending_searches 缓存中获取搜索结果。
         """
-        session = self.get_search_session(session_id)
-        if not session:
-            logger.error(f"Search session not found: {session_id}")
-            return []
-
-        # 从 session query 中提取主题（如果未显式传入）
         if not topic:
-            topic = session.query.get("query", "")
+            topic = query_text
 
-        results_by_id = {r.result_id: r for r in session.results}
+        # 从缓存获取搜索结果
+        results = self._pending_searches.get(query_text, [])
+        if not results:
+            logger.warning(f"No pending search results for \"{query_text}\", commit may be incomplete")
+
+        results_by_id = {r.result_id: r for r in results}
+
+        # ── Step 1: 写 queries 表（去重）──
+        query_id = self._ensure_query(query_text)
+
         papers = []
         skipped = 0
         for rid in result_ids:
@@ -654,14 +1059,12 @@ class PaperLibraryService:
             if not r:
                 continue
 
-            # 提取分数
             scores = {
                 "importance_score": r.final_score,
                 "relevance_score": r.relevance_score,
                 "quality_score": r.quality_score,
             }
 
-            # 阈值过滤：跳过低分论文
             if r.final_score < min_score:
                 skipped += 1
                 logger.info(f"Skipped (score={r.final_score:.3f} < {min_score}): {r.title[:50]}")
@@ -678,6 +1081,8 @@ class PaperLibraryService:
                     )
                     if paper:
                         papers.append(paper)
+                        # ── Step 2: 写 paper_queries ──
+                        self._link_paper_query(paper.paper_id, query_id, r.final_score, source)
                     continue
 
             # fallback: 直接用搜索结果
@@ -687,14 +1092,62 @@ class PaperLibraryService:
             )
             if paper:
                 papers.append(paper)
+                self._link_paper_query(paper.paper_id, query_id, r.final_score, source)
 
-        # Update session
-        session.selected_result_ids = result_ids
-        session.status = "committed"
-        self.storage.upsert_item("search_sessions", session_id, session.model_dump())
+        # ── Step 3: 写 Qdrant search_queries 向量 ──
+        self._save_query_vector(query_id, query_text)
 
-        logger.info(f"Committed {len(papers)} papers from session {session_id} (skipped {skipped} below {min_score})")
+        # 清理缓存
+        self._pending_searches.pop(query_text, None)
+
+        logger.info(f"Committed {len(papers)} papers for query \"{query_text}\" (skipped {skipped} below {min_score})")
         return papers
+
+    def _ensure_query(self, query_text: str) -> str:
+        """确保查询存在于 queries 表，返回 query_id（去重）"""
+        if not self.pg:
+            # 无 PG 时用 JSONStorage 兜底
+            query_id = f"qry_{uuid.uuid4().hex[:8]}"
+            return query_id
+
+        # 先查是否已存在
+        existing = self.pg.query("queries", {"query_text": query_text})
+        if existing:
+            return existing[0]["query_id"]
+
+        # 新建
+        query_id = f"qry_{uuid.uuid4().hex[:8]}"
+        record = QueryRecord(query_id=query_id, query_text=query_text)
+        self.pg.upsert_item("queries", query_id, record.model_dump())
+        logger.debug(f"Created query: {query_id} for \"{query_text[:50]}\"")
+        return query_id
+
+    def _link_paper_query(
+        self, paper_id: str, query_id: str, score: float, source: str,
+    ) -> None:
+        """写入 paper_queries 关联记录"""
+        if not self.pg:
+            return
+
+        record = {
+            "paper_id": paper_id,
+            "query_id": query_id,
+            "score": score,
+            "source": source,
+        }
+        try:
+            self.pg.upsert_item("paper_queries", paper_id, record)
+        except Exception as e:
+            logger.warning(f"Failed to link paper_query: {e}")
+
+    def _save_query_vector(self, query_id: str, query_text: str) -> None:
+        """将查询文本写入 Qdrant search_queries 集合（向量化）"""
+        try:
+            from src.agents_v3.research_workspace.vector_storage import get_vector_storage
+            vs = get_vector_storage()
+            vs.add_search_query(query_id, query_text)
+        except Exception as e:
+            logger.warning(f"Failed to save query vector to Qdrant: {e}")
 
     def _pool_data_to_meta(self, pool_data: dict[str, Any]) -> dict[str, Any]:
         """将论文池数据转换为入库元数据格式"""
@@ -722,20 +1175,15 @@ class PaperLibraryService:
 
     def save_topic_score(
         self,
-        project_id: str,
         paper_id: str,
         topic: str,
         scores: dict[str, float],
     ) -> None:
-        """保存论文在特定主题下的重要性得分
-
-        分数是主题相关的临时数据，只存储在项目 JSON 中，不写入关系数据库。
-        """
+        """保存论文在特定主题下的重要性得分"""
         from datetime import datetime as _dt
 
         score_record = {
             "paper_id": paper_id,
-            "project_id": project_id,
             "topic": topic,
             "importance_score": scores.get("importance_score", 0.0),
             "relevance_score": scores.get("relevance_score", 0.0),
@@ -766,10 +1214,11 @@ class PaperLibraryService:
 
         返回按 importance_score 降序排列的得分记录列表。
         """
+        paper_ids = {p.paper_id for p in self.list_papers(project_id)}
         records = self.storage.load_collection("topic_scores")
         matched = [
             r for r in records
-            if r.get("project_id") == project_id and r.get("topic") == topic
+            if r.get("paper_id") in paper_ids and r.get("topic") == topic
         ]
         matched.sort(key=lambda r: r.get("importance_score", 0), reverse=True)
         return matched
@@ -833,7 +1282,7 @@ class PaperLibraryService:
                 "relevance_score": r.relevance_score,
                 "quality_score": r.quality_score,
             }
-            self.save_topic_score(project_id, r.result_id, topic, scores)
+            self.save_topic_score(r.result_id, topic, scores)
             scored_records.append({
                 "paper_id": r.result_id,
                 "topic": topic,

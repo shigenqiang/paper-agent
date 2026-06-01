@@ -84,7 +84,7 @@ def get_storage_backend():
     return None  # None 表示使用 JSONStorage
 
 
-# ── 全局存储（tasks, search_cache） ──
+# ── 全局存储（tasks, queries） ──
 
 def get_storage_dep():
     backend = get_storage_backend()
@@ -123,7 +123,8 @@ def get_paper_library(project_ref: str) -> PaperLibraryService:
     adapters = list(create_default_adapters().values())
     storage = _resolve_project_storage(project_ref)
     global_storage = get_storage_backend() or get_storage()
-    return PaperLibraryService(storage=storage, search_adapters=adapters, global_storage=global_storage)
+    pg = _get_postgres_storage()
+    return PaperLibraryService(storage=storage, search_adapters=adapters, global_storage=global_storage, pg_storage=pg)
 
 
 def get_parser_service(project_ref: str) -> ParserService:

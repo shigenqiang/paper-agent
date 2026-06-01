@@ -15,7 +15,6 @@ from src.agents_v3.research_workspace.search.base import (
     SearchResponse,
     SearchResult,
 )
-from src.agents_v3.research_workspace.search.cache import SearchCache
 from src.agents_v3.research_workspace.search.merger import SearchResultMerger
 from src.agents_v3.research_workspace.search.rate_limit import RateManager
 from src.agents_v3.research_workspace.search.ranking import RankingService
@@ -28,13 +27,11 @@ class SearchOrchestrator:
         self,
         adapters: dict[str, BaseSearchAdapter],
         rate_manager: RateManager | None = None,
-        cache: SearchCache | None = None,
         merger: SearchResultMerger | None = None,
         ranking: RankingService | None = None,
     ):
         self.adapters = adapters
         self.rate_manager = rate_manager or RateManager()
-        self.cache = cache or SearchCache()
         self.merger = merger or SearchResultMerger()
         self.ranking = ranking or RankingService()
 
@@ -87,20 +84,6 @@ class SearchOrchestrator:
         errors: list[SearchErrorInfo] = []
         source_stats: dict[str, dict[str, Any]] = {}
 
-        # Cache check
-        if query.use_cache and not query.force_refresh:
-            cache_key = SearchCache.make_key(
-                query.query, query.sources, query.limit,
-                query.year_from, query.year_to, query.field,
-                query.offset,
-            )
-            cached = self.cache.get(cache_key)
-            if cached:
-                logger.info(f"Cache hit for query: {query.query[:50]}")
-                resp = SearchResponse(**cached)
-                resp.cache_hit = True
-                return resp
-
         # Select adapters
         sources = query.sources or list(self.adapters.keys())
         active_adapters = {s: self.adapters[s] for s in sources if s in self.adapters}
@@ -144,16 +127,6 @@ class SearchOrchestrator:
             cache_hit=False,
             elapsed_ms=total_elapsed,
         )
-
-        # Write cache
-        if query.use_cache:
-            cache_key = SearchCache.make_key(
-                query.query, query.sources, query.limit,
-                query.year_from, query.year_to, query.field,
-                query.offset,
-            )
-            ttl = SearchCache.get_ttl_for_query(query.query, query.sources)
-            self.cache.set(cache_key, response.model_dump(), ttl=ttl)
 
         logger.info(f"Search complete: {len(ranked)} results from {len(active_adapters)} sources in {total_elapsed}ms")
         return response

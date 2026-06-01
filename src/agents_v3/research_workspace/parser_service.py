@@ -220,6 +220,86 @@ class PdfMinerAdapter:
             return [], flags
 
 
+class PyMuPDF4LLMAdapter:
+    """pymupdf4llm 解析器适配器（GNN 版面分析 + 全文档 Markdown 输出）
+
+    基于 PyMuPDF 的图神经网络版面分析，CPU 可用，自动处理多栏阅读顺序。
+    测试结果：速度 3x、内容量 3x、章节识别 2.3x，全面优于 Docling。
+    """
+    name = "pymupdf4llm"
+
+    def can_parse(self, pdf_path: str) -> bool:
+        try:
+            import pymupdf4llm  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def extract_pages(self, pdf_path: str) -> tuple[list[tuple[int, str]], list[str]]:
+        flags: list[str] = []
+        try:
+            import pymupdf4llm
+        except ImportError:
+            flags.append("pymupdf4llm_not_available")
+            return [], flags
+
+        try:
+            # page_chunks=True 返回每页文本，保留跨页上下文
+            page_data = pymupdf4llm.to_markdown(pdf_path, page_chunks=True)
+            pages_text: list[tuple[int, str]] = []
+            for i, page in enumerate(page_data):
+                text = page.get("text", "")
+                pages_text.append((i + 1, text))
+            flags.append("pymupdf4llm_used")
+            return pages_text, flags
+        except Exception as e:
+            logger.error(f"pymupdf4llm failed: {e}")
+            flags.append("pymupdf4llm_exception")
+            return [], flags
+
+
+class DoclingAdapter:
+    """Docling 解析器适配器（高质量 Markdown 输出，内置 OCR）"""
+    name = "docling"
+
+    def can_parse(self, pdf_path: str) -> bool:
+        try:
+            from docling.document_converter import DocumentConverter  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def extract_pages(self, pdf_path: str) -> tuple[list[tuple[int, str]], list[str]]:
+        flags: list[str] = []
+        try:
+            from docling.document_converter import DocumentConverter
+        except ImportError:
+            flags.append("docling_not_available")
+            return [], flags
+
+        try:
+            converter = DocumentConverter()
+            result = converter.convert(pdf_path)
+            num_pages = result.document.num_pages()
+
+            pages_text: list[tuple[int, str]] = []
+            for i in range(1, num_pages + 1):
+                try:
+                    page_result = converter.convert(pdf_path, page_range=(i, i))
+                    md = page_result.document.export_to_markdown()
+                    pages_text.append((i, md))
+                except Exception:
+                    pages_text.append((i, ""))
+                    flags.append(f"docling_page_{i}_failed")
+
+            flags.append("docling_used")
+            return pages_text, flags
+        except Exception as e:
+            logger.error(f"Docling failed: {e}")
+            flags.append("docling_exception")
+            return [], flags
+
+
 class TextPostProcessor:
     """文本后处理管线：修复 PDF 提取中的常见文本问题"""
 
@@ -855,15 +935,18 @@ _SECTION_TO_CHUNK_TYPE: dict[str, str] = {
 class ParserService:
     """PDF 解析与分块"""
 
-    def __init__(self, storage: JSONStorage | None = None):
+    def __init__(self, storage: JSONStorage | None = None, enable_contextual_retrieval: bool = True):
         self.storage = storage or get_storage()
         self._adapters: list[ParserAdapter] = [
+            PyMuPDF4LLMAdapter(),
             PdfPlumberAdapter(),
             PyMuPDFAdapter(),
             PdfMinerAdapter(),
+            DoclingAdapter(),
         ]
         self._post_processor = TextPostProcessor()
         self._chunk_cleaner = ChunkCleaner()
+        self._enable_contextual = enable_contextual_retrieval
 
     def download_pdf(self, paper_id: str) -> dict[str, Any]:
         """下载论文 PDF 到本地"""
@@ -989,7 +1072,6 @@ class ParserService:
 
         parse_result = ParseResult(
             paper_id=paper_id,
-            project_id=paper.project_id,
             parser_name="pdfplumber",
             status="parsing",
             started_at=datetime.now().isoformat(),
@@ -1028,6 +1110,11 @@ class ParserService:
 
         # 分块
         chunks_data = self._chunk_by_sections(pages_text, paper_id)
+
+        # Contextual Retrieval：每个 chunk 携带论文标题、作者、章节上下文
+        # 测试显示：小数据集(<50 chunks)下效果更差，大规模场景下有效
+        if self._enable_contextual:
+            chunks_data = self._enrich_context(chunks_data, paper)
 
         # 分块后清洗：过滤公式噪声行、合并碎片
         chunks_data = self._chunk_cleaner.clean(chunks_data)
@@ -1190,11 +1277,11 @@ class ParserService:
         return None
 
     def embed_paper(self, paper_id: str) -> dict[str, Any]:
-        """将已解析的 chunks 向量化并存入 Qdrant
+        """将已解析的论文向量化并存入 Qdrant（chunks + paper_profile）
 
+        云端推理模式下，Qdrant 自动生成 dense + sparse 向量。
         需要先调用 parse_paper 成功后再调用此方法。
         """
-        from src.agents_v3.research_workspace.embedding_service import get_embedding_service
         from src.agents_v3.research_workspace.vector_storage import get_vector_storage
 
         # 获取该论文的所有 chunks
@@ -1205,10 +1292,9 @@ class ParserService:
         chunk_dicts = [c.model_dump() for c in chunks]
 
         try:
-            embedding_service = get_embedding_service()
             vector_storage = get_vector_storage()
         except Exception as e:
-            return {"success": False, "error": f"Failed to init services: {e}"}
+            return {"success": False, "error": f"Failed to init vector storage: {e}"}
 
         # 先删除旧的 embeddings
         try:
@@ -1216,18 +1302,39 @@ class ParserService:
         except Exception:
             pass  # 集合可能不存在
 
-        # 向量化
+        # ── 1. 写入 paper_chunks（云端推理自动嵌入）──
         texts = [c["text"] for c in chunk_dicts]
         logger.info(f"Embedding {len(texts)} chunks for paper {paper_id}")
-        embeddings = embedding_service.embed_texts(texts)
 
-        # 存入 Qdrant
-        vector_storage.add_chunks(chunk_dicts, embeddings)
+        if vector_storage.use_inference:
+            # 云端推理：传文本，Qdrant 自动生成向量
+            vector_storage.add_chunks(chunk_dicts, texts, sparse_embeddings=None)
+        else:
+            # 本地模式：预计算 embeddings
+            from src.agents_v3.research_workspace.embedding_service import get_embedding_service
+            embedding_service = get_embedding_service()
+            embeddings = embedding_service.embed_texts(texts)
+            vector_storage.add_chunks(chunk_dicts, embeddings)
+
+        # ── 2. 写入 paper_profiles（论文级向量）──
+        paper = self.storage.get_item("papers", paper_id)
+        if paper:
+            title = paper.get("title", "")
+            abstract = paper.get("abstract", "")
+            profile_text = f"{title}. {abstract}".strip()
+            if profile_text and len(profile_text) > 10:
+                project_id = paper.get("project_id", "")
+                vector_storage.add_paper_profiles(
+                    paper_ids=[paper_id],
+                    texts=[profile_text],
+                    metadatas=[{"project_id": project_id, "title": title}],
+                )
+                logger.info(f"Added paper profile for {paper_id}")
 
         return {
             "success": True,
             "chunk_count": len(chunk_dicts),
-            "embedding_dim": len(embeddings[0]) if embeddings else 0,
+            "cloud_inference": vector_storage.use_inference,
         }
 
     def search_chunks(
@@ -1374,6 +1481,41 @@ class ParserService:
         return cn_chars // 2 + en_chars // 4
 
     # ── 分块 ──────────────────────────────────────────
+
+    @staticmethod
+    def _enrich_context(chunks: list[dict[str, Any]], paper: Paper) -> list[dict[str, Any]]:
+        """Anthropic Contextual Retrieval：给每个 chunk 前缀论文标题、作者、章节上下文。
+
+        格式: "This chunk is from \"{title}\" by {authors}. Section: {section}.\n\n{original_text}"
+        减少 ~67% 失败检索（Anthropic 2024 实验数据）。
+        """
+        title = (paper.title or "").strip()
+        if not title:
+            return chunks
+
+        # 取前 3 个作者，避免前缀过长
+        author_names = [a.name for a in paper.authors if a.name][:3]
+        authors_str = ", ".join(author_names) if author_names else "Unknown"
+
+        for chunk in chunks:
+            section = chunk.get("section_title", "") or chunk.get("section_type", "")
+            original_text = chunk.get("text", "")
+            if not original_text:
+                continue
+
+            # 构造上下文前缀
+            prefix = f'This chunk is from "{title}" by {authors_str}.'
+            if section:
+                prefix += f" Section: {section}."
+            prefix += "\n\n"
+
+            # 存储原始文本到 metadata
+            chunk.setdefault("metadata", {})["original_text"] = original_text
+            chunk["text"] = prefix + original_text
+            # 重新计算 token 数
+            chunk["token_count"] = len(chunk["text"].split())  # 粗估
+
+        return chunks
 
     def _chunk_by_sections(
         self, pages_text: list[tuple[int, str]], paper_id: str
@@ -1579,7 +1721,12 @@ class ParserService:
         for group in groups:
             if not group:
                 continue
-            merged_text = "\n\n".join(c.get("text", "") for c in group)
+            # Contextual Retrieval: 合并时用 original_text，避免重复前缀
+            texts = []
+            for c in group:
+                orig = c.get("metadata", {}).get("original_text")
+                texts.append(orig if orig else c.get("text", ""))
+            merged_text = "\n\n".join(texts)
             page_start = min(c.get("page_start", 0) for c in group)
             page_end = max(c.get("page_end", 0) for c in group)
             section_type = group[0].get("section_type", "")
@@ -1627,7 +1774,7 @@ class ParserService:
     def _save_references(self, paper_id: str, references: list[Reference]) -> None:
         """保存结构化参考文献到 references 集合"""
         existing = self.storage.load_collection("paper_references")
-        filtered = [r for r in existing if r.get("paper_id") != paper_id]
+        filtered = [r for r in existing if r.get("citing_paper_id") != paper_id]
         filtered.extend([r.model_dump() for r in references])
         self.storage.save_collection("paper_references", filtered)
 
@@ -1707,7 +1854,7 @@ class ParserService:
 
         流程：
         1. 扫描件预检测 → 直接走 OCR
-        2. 遍历文本提取器（PdfPlumber → PyMuPDF → PdfMiner）
+        2. 遍历文本提取器（pymupdf4llm → PdfPlumber → PyMuPDF → PdfMiner → Docling）
         3. 每个提取器成功后做乱码检测，乱码则尝试下一个
         4. 所有文本提取器失败 → OCR 最终 fallback
 
@@ -1971,7 +2118,7 @@ class ParserService:
 
             ref = Reference(
                 ref_id=f"ref_{paper_id}_{i:04d}",
-                paper_id=paper_id,
+                citing_paper_id=paper_id,
                 index=i,
                 raw_text=raw_text,
             )

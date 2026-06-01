@@ -1,7 +1,7 @@
 """JSON 文件持久化层
 
 两种作用域：
-- 全局存储：data/research_workspace/{name}.json（tasks, search_cache）
+- 全局存储：data/research_workspace/{name}.json（tasks, queries）
 - 项目存储：data/research_workspace/projects/{dir_name}/{name}.json
 
 项目元数据存储在各自目录下的 project.json 中，不再使用全局 projects.json。
@@ -21,7 +21,7 @@ from loguru import logger
 DEFAULT_DATA_DIR = Path("data/research_workspace")
 
 # 全局集合（不按项目隔离）
-GLOBAL_COLLECTIONS = {"tasks", "search_cache", "papers_pool"}
+GLOBAL_COLLECTIONS = {"tasks", "papers_pool", "queries"}
 
 
 # ── 工具函数 ──────────────────────────────────────────
@@ -196,8 +196,8 @@ class JSONStorage:
             "parse_results": "parse_id",
             "qa_history": "qa_id",
             "tasks": "task_id",
-            "search_sessions": "session_id",
-            "search_cache": "cache_key",
+            "queries": "query_id",
+            "paper_queries": "paper_id",
         }
         return mapping.get(name, "id")
 
@@ -295,7 +295,7 @@ _project_storages: dict[str, JSONStorage] = {}
 
 
 def get_storage(data_dir: Path | str | None = None) -> JSONStorage:
-    """获取全局存储（tasks, search_cache）"""
+    """获取全局存储（tasks, queries）"""
     global _global_storage
     if _global_storage is None:
         _global_storage = JSONStorage(data_dir, project_dir_name=None)

@@ -7,6 +7,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
     PayloadSchemaType,
+    SparseIndexParams,
+    SparseVectorParams,
     VectorParams,
 )
 
@@ -15,8 +17,9 @@ from qdrant_client.models import (
 COLLECTIONS = {
     "paper_chunks": {
         "description": "论文文本分块的语义向量，用于 RAG 检索",
-        "vector_size": 512,
+        "vector_size": 384,
         "distance": Distance.COSINE,
+        "sparse": True,  # 启用 sparse vector
         "payload_indexes": [
             ("paper_id", PayloadSchemaType.KEYWORD),
             ("project_id", PayloadSchemaType.KEYWORD),
@@ -26,11 +29,21 @@ COLLECTIONS = {
     },
     "paper_profiles": {
         "description": "论文整体画像的语义向量，用于论文相似性搜索",
-        "vector_size": 512,
+        "vector_size": 384,
         "distance": Distance.COSINE,
+        "sparse": True,  # 启用 sparse vector
         "payload_indexes": [
             ("paper_id", PayloadSchemaType.KEYWORD),
             ("project_id", PayloadSchemaType.KEYWORD),
+        ],
+    },
+    "search_queries": {
+        "description": "搜索查询的语义向量，用于历史查询相似度匹配",
+        "vector_size": 384,
+        "distance": Distance.COSINE,
+        "sparse": True,
+        "payload_indexes": [
+            ("query_id", PayloadSchemaType.KEYWORD),
         ],
     },
 }
@@ -40,6 +53,9 @@ def init_qdrant(
     host: str = "localhost",
     port: int = 6333,
     collections: dict | None = None,
+    cloud_url: str | None = None,
+    cloud_api_key: str | None = None,
+    cloud_inference: bool = False,
 ) -> QdrantClient:
     """初始化 Qdrant，创建所有需要的集合和索引
 
@@ -47,24 +63,45 @@ def init_qdrant(
         host: Qdrant 主机
         port: Qdrant 端口
         collections: 自定义集合定义，None 则使用默认 COLLECTIONS
+        cloud_url: Qdrant Cloud URL
+        cloud_api_key: Qdrant Cloud API key
+        cloud_inference: 是否启用云端推理
 
     Returns:
         QdrantClient 实例
     """
-    client = QdrantClient(host=host, port=port)
+    if cloud_url and cloud_api_key:
+        client = QdrantClient(url=cloud_url, api_key=cloud_api_key, cloud_inference=cloud_inference)
+        logger.info(f"[Qdrant] Cloud connected: {cloud_url[:50]}...")
+    else:
+        client = QdrantClient(host=host, port=port)
+        logger.info(f"[Qdrant] Local connected: {host}:{port}")
     existing = {c.name for c in client.get_collections().collections}
     defs = collections or COLLECTIONS
 
     for name, cfg in defs.items():
         if name not in existing:
-            client.create_collection(
-                collection_name=name,
-                vectors_config=VectorParams(
+            # 构建 named vectors config（dense + 可选 sparse）
+            vectors_config = {
+                "dense": VectorParams(
                     size=cfg["vector_size"],
                     distance=cfg["distance"],
                 ),
+            }
+            sparse_vectors_config = None
+            if cfg.get("sparse"):
+                sparse_vectors_config = {
+                    "sparse": SparseVectorParams(
+                        index=SparseIndexParams(on_disk=False),
+                    ),
+                }
+
+            client.create_collection(
+                collection_name=name,
+                vectors_config=vectors_config,
+                sparse_vectors_config=sparse_vectors_config,
             )
-            logger.info(f"[Qdrant] Created collection: {name} (dim={cfg['vector_size']})")
+            logger.info(f"[Qdrant] Created collection: {name} (dim={cfg['vector_size']}, sparse={cfg.get('sparse', False)})")
         else:
             logger.debug(f"[Qdrant] Collection exists: {name}")
 

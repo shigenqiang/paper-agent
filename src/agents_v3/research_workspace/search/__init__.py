@@ -1,16 +1,16 @@
 """论文搜索模块"""
 
 from src.agents_v3.research_workspace.search.arxiv_client import ArxivClient
+from src.agents_v3.research_workspace.search.europepmc_client import EuropePMCClient
 from src.agents_v3.research_workspace.search.base import (
     BaseSearchAdapter,
+    QueryRecord,
     SearchErrorInfo,
     SearchField,
     SearchQuery,
     SearchResponse,
     SearchResult,
-    SearchSession,
 )
-from src.agents_v3.research_workspace.search.cache import SearchCache
 from src.agents_v3.research_workspace.search.dedup import (
     DedupDecision,
     DedupService,
@@ -29,6 +29,16 @@ from src.agents_v3.research_workspace.search.merger import SearchResultMerger
 from src.agents_v3.research_workspace.search.openalex_client import OpenAlexClient
 from src.agents_v3.research_workspace.search.orchestrator import SearchOrchestrator
 from src.agents_v3.research_workspace.search.rate_limit import RateManager, SourceConfig
+from src.agents_v3.research_workspace.search.sparse_encoder import SparseEncoder
+from src.agents_v3.research_workspace.search.hybrid_ranker import HybridRanker
+from src.agents_v3.research_workspace.search.hyde_ranker import HyDERanker
+from src.agents_v3.research_workspace.search.quality_filter import (
+    compute_quality,
+    compute_quality_batch,
+    filter_by_quality,
+    filter_by_relevance,
+    two_stage_filter,
+)
 from src.agents_v3.research_workspace.search.ranking import RankingService
 from src.agents_v3.research_workspace.search.semantic_scholar_client import SemanticScholarClient
 from src.agents_v3.research_workspace.search.strategies import SearchStrategy, get_strategy
@@ -38,10 +48,13 @@ __all__ = [
     "BaseSearchAdapter",
     "DedupDecision",
     "DedupService",
+    "EuropePMCClient",
+    "HybridRanker",
+    "HyDERanker",
     "OpenAlexClient",
     "RateManager",
     "RankingService",
-    "SearchCache",
+    "QueryRecord",
     "SearchError",
     "SearchErrorCategory",
     "SearchErrorInfo",
@@ -51,12 +64,16 @@ __all__ = [
     "SearchResponse",
     "SearchResult",
     "SearchResultMerger",
-    "SearchSession",
     "SearchStrategy",
+    "SparseEncoder",
     "SemanticScholarClient",
     "SourceConfig",
     "build_existing_keys",
+    "compute_quality",
+    "compute_quality_batch",
     "create_default_adapters",
+    "filter_by_quality",
+    "filter_by_relevance",
     "first_author_key",
     "get_adapter",
     "get_strategy",
@@ -66,4 +83,5 @@ __all__ = [
     "normalize_author",
     "normalize_doi",
     "normalize_title",
+    "two_stage_filter",
 ]

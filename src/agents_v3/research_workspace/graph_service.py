@@ -116,16 +116,15 @@ class GraphService:
     def build_project_graph(self, project_id: str, force: bool = False) -> KnowledgeGraph:
         """全量构建项目知识图谱"""
         # 加载数据
-        evidence_data = self.storage.query("evidence_records", {"project_id": project_id})
-        evidence_records = [EvidenceRecord(**e) for e in evidence_data]
-
-        # 排除 excluded papers
         papers_data = self.storage.query("papers", {"project_id": project_id})
         included_paper_ids = {p["paper_id"] for p in papers_data if p.get("included", True)}
-        evidence_records = [e for e in evidence_records if e.paper_id in included_paper_ids]
+        paper_ids = list(included_paper_ids)
+
+        evidence_data = self.storage.query("evidence_records", {"paper_id": paper_ids}) if paper_ids else []
+        evidence_records = [EvidenceRecord(**e) for e in evidence_data]
 
         # 加载 cards 用于补充
-        cards_data = self.storage.query("paper_cards", {"project_id": project_id, "active": True})
+        cards_data = self.storage.query("paper_cards", {"paper_id": paper_ids, "active": True}) if paper_ids else []
 
         nodes: dict[str, GraphNode] = {}
         edges: dict[str, GraphEdge] = {}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any
 
@@ -168,14 +169,13 @@ class PaperCardGenerator:
             logger.warning(f"No chunks for paper {paper_id}")
             return None
 
-        project_id = paper_data.get("project_id", "")
 
         # 选择输入上下文
         selected_chunks = self.context_selector.select(chunks_data)
         input_chunk_ids = [c.get("chunk_id", "") for c in selected_chunks]
 
         # LLM 抽取
-        card = self._extract_card(paper_id, project_id, paper_data, selected_chunks, input_chunk_ids)
+        card = self._extract_card(paper_id, paper_data, selected_chunks, input_chunk_ids)
 
         # 校验
         validation_errors = self._validate_card(card, chunks_data)
@@ -201,8 +201,9 @@ class PaperCardGenerator:
         self, project_id: str, only_missing: bool = True
     ) -> list[PaperCard]:
         papers = self.storage.query("papers", {"project_id": project_id})
-        cards = []
 
+        # 筛选需要生成的论文
+        to_generate = []
         for p in papers:
             if only_missing and p.get("status") in (
                 PaperStatus.CARD_READY.value,
@@ -211,10 +212,26 @@ class PaperCardGenerator:
                 existing = self._get_active_card(p["paper_id"])
                 if existing:
                     continue
+            to_generate.append(p["paper_id"])
 
-            card = self.generate(p["paper_id"])
-            if card:
-                cards.append(card)
+        if not to_generate:
+            return []
+
+        # 并行生成卡片（LLM 调用为 IO 密集型）
+        cards: list[PaperCard] = []
+        max_workers = min(4, len(to_generate))
+        logger.info(f"Generating {len(to_generate)} cards with {max_workers} workers")
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(self.generate, pid): pid for pid in to_generate}
+            for future in as_completed(futures):
+                pid = futures[future]
+                try:
+                    card = future.result()
+                    if card:
+                        cards.append(card)
+                except Exception as e:
+                    logger.error(f"Card generation failed for {pid}: {e}")
 
         return cards
 
@@ -260,7 +277,6 @@ class PaperCardGenerator:
     def _extract_card(
         self,
         paper_id: str,
-        project_id: str,
         paper_data: dict[str, Any],
         chunks: list[dict[str, Any]],
         input_chunk_ids: list[str],
@@ -288,13 +304,13 @@ Chunks:
                 extraction = self._validate_extraction(result)
                 if extraction:
                     return self._extraction_to_card(
-                        paper_id, project_id, extraction, input_chunk_ids, "llm",
+                        paper_id, extraction, input_chunk_ids, "llm",
                     )
             except Exception as e:
                 logger.error(f"LLM extraction failed for {paper_id}: {e}")
 
         # Fallback
-        return self._extract_card_fallback(paper_id, project_id, paper_data, chunks, input_chunk_ids)
+        return self._extract_card_fallback(paper_id, paper_data, chunks, input_chunk_ids)
 
     def _validate_extraction(self, result: dict[str, Any]) -> PaperCardExtractionResult | None:
         """校验 LLM 输出，尝试 repair"""
@@ -325,7 +341,6 @@ Chunks:
     def _extraction_to_card(
         self,
         paper_id: str,
-        project_id: str,
         extraction: PaperCardExtractionResult,
         input_chunk_ids: list[str],
         method: str,
@@ -355,7 +370,6 @@ Chunks:
         return PaperCard(
             card_id=card_id,
             paper_id=paper_id,
-            project_id=project_id,
             version=version,
             active=True,
             research_question=extraction.research_question,
@@ -375,7 +389,6 @@ Chunks:
     def _extract_card_fallback(
         self,
         paper_id: str,
-        project_id: str,
         paper_data: dict[str, Any],
         chunks: list[dict[str, Any]],
         input_chunk_ids: list[str],
@@ -405,7 +418,6 @@ Chunks:
         return PaperCard(
             card_id=card_id,
             paper_id=paper_id,
-            project_id=project_id,
             version=version,
             active=True,
             research_question="unknown",

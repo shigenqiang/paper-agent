@@ -64,38 +64,26 @@ TABLE_SCHEMAS = {
     """,
     "papers": """
         CREATE TABLE IF NOT EXISTS papers (
-            paper_id VARCHAR(64) PRIMARY KEY,
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             project_id VARCHAR(64) REFERENCES projects(project_id) ON DELETE CASCADE,
-            title TEXT,
-            abstract TEXT,
-            language VARCHAR(16),
-            publication_type VARCHAR(32),
-            identifiers JSONB DEFAULT '{}',
-            authors JSONB DEFAULT '[]',
-            dates JSONB DEFAULT '{}',
-            source JSONB DEFAULT '{}',
-            open_access JSONB DEFAULT '{}',
-            classification JSONB DEFAULT '{}',
-            citation JSONB DEFAULT '{}',
-            url TEXT,
-            source_platform VARCHAR(32),
-            source_payload JSONB DEFAULT '{}',
-            status VARCHAR(32) DEFAULT 'imported',
-            pdf_path TEXT,
-            error_message TEXT,
-            included BOOLEAN DEFAULT TRUE,
-            exclude_reason TEXT,
             importance_score FLOAT DEFAULT 0.0,
+            relevance_score FLOAT DEFAULT 0.0,
+            quality_score FLOAT DEFAULT 0.0,
+            included BOOLEAN DEFAULT TRUE,
+            exclude_reason TEXT DEFAULT '',
+            status VARCHAR(32) DEFAULT 'imported',
+            pdf_path TEXT DEFAULT '',
+            error_message TEXT DEFAULT '',
             metadata JSONB DEFAULT '{}',
             created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
+            updated_at TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (paper_id, project_id)
         )
     """,
     "paper_chunks": """
         CREATE TABLE IF NOT EXISTS paper_chunks (
             chunk_id VARCHAR(64) PRIMARY KEY,
-            paper_id VARCHAR(64) REFERENCES papers(paper_id) ON DELETE CASCADE,
-            project_id VARCHAR(64),
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             chunk_index INTEGER DEFAULT 0,
             section_title TEXT,
             section_type VARCHAR(32),
@@ -117,8 +105,7 @@ TABLE_SCHEMAS = {
     "paper_cards": """
         CREATE TABLE IF NOT EXISTS paper_cards (
             card_id VARCHAR(64) PRIMARY KEY,
-            paper_id VARCHAR(64) REFERENCES papers(paper_id) ON DELETE CASCADE,
-            project_id VARCHAR(64),
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             is_active BOOLEAN DEFAULT TRUE,
             extraction JSONB DEFAULT '{}',
             metadata JSONB DEFAULT '{}',
@@ -128,9 +115,8 @@ TABLE_SCHEMAS = {
     "evidence_records": """
         CREATE TABLE IF NOT EXISTS evidence_records (
             evidence_id VARCHAR(64) PRIMARY KEY,
-            paper_id VARCHAR(64),
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             card_id VARCHAR(64),
-            project_id VARCHAR(64),
             topic VARCHAR(255),
             method TEXT,
             finding TEXT,
@@ -145,8 +131,7 @@ TABLE_SCHEMAS = {
     "parse_results": """
         CREATE TABLE IF NOT EXISTS parse_results (
             parse_id VARCHAR(64) PRIMARY KEY,
-            paper_id VARCHAR(64) REFERENCES papers(paper_id) ON DELETE CASCADE,
-            project_id VARCHAR(64),
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             parser_name VARCHAR(32),
             status VARCHAR(32) DEFAULT 'pending',
             page_count INTEGER DEFAULT 0,
@@ -193,19 +178,6 @@ TABLE_SCHEMAS = {
             created_at TIMESTAMP DEFAULT NOW()
         )
     """,
-    "search_sessions": """
-        CREATE TABLE IF NOT EXISTS search_sessions (
-            session_id VARCHAR(64) PRIMARY KEY,
-            project_id VARCHAR(64),
-            query JSONB DEFAULT '{}',
-            results JSONB DEFAULT '[]',
-            duplicate_groups JSONB DEFAULT '[]',
-            selected_result_ids JSONB DEFAULT '[]',
-            status VARCHAR(32) DEFAULT 'pending',
-            metadata JSONB DEFAULT '{}',
-            created_at TIMESTAMP DEFAULT NOW()
-        )
-    """,
     "tasks": """
         CREATE TABLE IF NOT EXISTS tasks (
             task_id VARCHAR(64) PRIMARY KEY,
@@ -228,19 +200,11 @@ TABLE_SCHEMAS = {
             created_at TIMESTAMP DEFAULT NOW()
         )
     """,
-    "search_cache": """
-        CREATE TABLE IF NOT EXISTS search_cache (
-            cache_key VARCHAR(128) PRIMARY KEY,
-            data JSONB DEFAULT '{}',
-            expires_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT NOW()
-        )
-    """,
     "paper_references": """
         CREATE TABLE IF NOT EXISTS paper_references (
             ref_id VARCHAR(64) PRIMARY KEY,
-            paper_id VARCHAR(64),
-            project_id VARCHAR(64),
+            citing_paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
+            cited_paper_id VARCHAR(128) DEFAULT '',
             index INTEGER DEFAULT 0,
             raw_text TEXT,
             title TEXT,
@@ -276,21 +240,39 @@ TABLE_SCHEMAS = {
             confidence FLOAT DEFAULT 1.0,
             evidence TEXT,
             source_chunk_id VARCHAR(64),
-            source_paper_id VARCHAR(64),
+            source_paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE SET NULL,
             properties JSONB DEFAULT '{}',
             created_at TIMESTAMP DEFAULT NOW()
         )
     """,
     "topic_scores": """
         CREATE TABLE IF NOT EXISTS topic_scores (
-            paper_id VARCHAR(64),
-            project_id VARCHAR(64),
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             topic VARCHAR(255),
             importance_score FLOAT DEFAULT 0.0,
             relevance_score FLOAT DEFAULT 0.0,
             quality_score FLOAT DEFAULT 0.0,
             scored_at TIMESTAMP DEFAULT NOW(),
             UNIQUE (paper_id, topic)
+        )
+    """,
+    "queries": """
+        CREATE TABLE IF NOT EXISTS queries (
+            query_id VARCHAR(64) PRIMARY KEY,
+            query_text TEXT NOT NULL,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(query_text)
+        )
+    """,
+    "paper_queries": """
+        CREATE TABLE IF NOT EXISTS paper_queries (
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
+            query_id VARCHAR(64) REFERENCES queries(query_id) ON DELETE CASCADE,
+            score FLOAT DEFAULT 0.0,
+            source VARCHAR(32) DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (paper_id, query_id)
         )
     """,
 }
@@ -307,19 +289,21 @@ TABLE_ID_FIELDS = {
     "graphs": "graph_id",
     "reports": "report_id",
     "report_versions": "version_id",
-    "search_sessions": "session_id",
     "tasks": "task_id",
     "qa_history": "qa_id",
-    "search_cache": "cache_key",
     "paper_references": "ref_id",
     "kg_nodes": "node_id",
     "kg_edges": "edge_id",
     "topic_scores": "paper_id",
+    "queries": "query_id",
+    "paper_queries": "paper_id",
 }
 
 # 复合唯一约束表（ON CONFLICT 需要列出所有列）
 TABLE_UNIQUE_CONSTRAINTS = {
+    "papers": ["paper_id", "project_id"],
     "topic_scores": ["paper_id", "topic"],
+    "paper_queries": ["paper_id", "query_id"],
 }
 
 
@@ -360,40 +344,32 @@ class PostgresStorage:
             _migrations = [
                 ("papers_pool", "is_pdf_downloaded", "BOOLEAN DEFAULT FALSE"),
                 ("papers_pool", "is_parsed", "BOOLEAN DEFAULT FALSE"),
+                ("papers", "relevance_score", "FLOAT DEFAULT 0.0"),
+                ("papers", "quality_score", "FLOAT DEFAULT 0.0"),
                 ("paper_chunks", "parent_id", "VARCHAR(64) DEFAULT ''"),
                 ("paper_chunks", "quality_score", "FLOAT DEFAULT 0.0"),
                 ("paper_chunks", "quality_details", "JSONB DEFAULT '{}'"),
                 ("parse_results", "table_count", "INTEGER DEFAULT 0"),
                 ("parse_results", "figure_count", "INTEGER DEFAULT 0"),
                 ("parse_results", "diagnostics", "JSONB DEFAULT '{}'"),
-                ("papers", "importance_score", "FLOAT DEFAULT 0.0"),
-                ("papers", "research_background", "TEXT DEFAULT ''"),
-                ("papers", "research_motivation", "TEXT DEFAULT ''"),
-                ("papers", "problem_statement", "TEXT DEFAULT ''"),
-                ("papers", "research_gap", "TEXT DEFAULT ''"),
-                ("papers", "contribution_summary", "JSONB DEFAULT '[]'"),
-                ("papers", "prior_work_summary", "TEXT DEFAULT ''"),
-                ("papers", "methodology", "TEXT DEFAULT 'unknown'"),
-                ("papers", "data_or_sample", "TEXT DEFAULT 'unknown'"),
-                ("papers", "key_findings", "JSONB DEFAULT '[]'"),
-                ("papers", "key_results", "JSONB DEFAULT '[]'"),
-                ("papers", "limitations", "JSONB DEFAULT '[]'"),
-                ("papers", "future_work", "JSONB DEFAULT '[]'"),
-                ("papers", "possible_gaps", "JSONB DEFAULT '[]'"),
-                ("papers", "topics", "JSONB DEFAULT '[]'"),
-                ("papers", "citation_count", "INTEGER DEFAULT 0"),
-                ("papers", "fwci", "FLOAT DEFAULT 0.0"),
-                ("papers", "h_index_author", "INTEGER DEFAULT 0"),
-                ("papers", "extracted_entities", "JSONB DEFAULT '[]'"),
-                ("papers", "section_count", "INTEGER DEFAULT 0"),
-                ("papers", "chunk_count", "INTEGER DEFAULT 0"),
-                ("paper_references", "project_id", "VARCHAR(64)"),
             ]
             for table, col, col_def in _migrations:
                 try:
                     cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_def}")
                 except Exception:
                     pass  # 列已存在
+
+            # 创建索引
+            _indexes = [
+                "CREATE INDEX IF NOT EXISTS idx_paper_refs_citing ON paper_references(citing_paper_id)",
+                "CREATE INDEX IF NOT EXISTS idx_paper_refs_cited ON paper_references(cited_paper_id)",
+                "CREATE INDEX IF NOT EXISTS idx_paper_queries_query ON paper_queries(query_id)",
+            ]
+            for idx_sql in _indexes:
+                try:
+                    cur.execute(idx_sql)
+                except Exception:
+                    pass
 
         logger.info("PostgreSQL tables ensured")
 
@@ -406,6 +382,13 @@ class PostgresStorage:
         id_field = self._get_id_field(table)
         # 将嵌套 dict 转为 JSON 字符串用于 JSONB 字段
         processed = self._process_data_for_db(data)
+
+        # 复合主键表：确保 data 中包含所有主键字段
+        conflict_cols = TABLE_UNIQUE_CONSTRAINTS.get(table, [id_field])
+        if len(conflict_cols) > 1:
+            for col in conflict_cols:
+                if col not in processed:
+                    raise ValueError(f"Composite key table '{table}' requires '{col}' in data")
 
         columns = list(processed.keys())
         values = [processed[k] for k in columns]
@@ -465,6 +448,13 @@ class PostgresStorage:
                     elif op == "$eq":
                         conditions.append(f"{key} = %s")
                         values.append(v)
+            elif isinstance(value, list):
+                if value:
+                    placeholders = ", ".join(["%s"] * len(value))
+                    conditions.append(f"{key} IN ({placeholders})")
+                    values.extend(value)
+                else:
+                    conditions.append("FALSE")
             else:
                 conditions.append(f"{key} = %s")
                 values.append(value)
@@ -498,27 +488,24 @@ class PostgresStorage:
         """删除项目相关的所有数据库记录
 
         删除顺序：
-        1. 先删有 project_id 但无 CASCADE 的子表
-        2. 再删 projects（CASCADE 自动删 papers → chunks/cards/parse_results）
-        3. reports 的 CASCADE 会自动删 report_versions
+        1. 根级实体（有 project_id 无 paper_id 的表）
+        2. papers_pool（CASCADE 自动删 paper_chunks/cards/evidence/parse_results/topic_scores/references）
+        3. projects（CASCADE 自动删 papers）
         """
         deleted = {}
 
-        # 有 project_id 但无 CASCADE 的表（需手动删除）
-        manual_tables = [
-            "evidence_records",
+        # 根级实体：直接属于项目，有 project_id 列
+        root_tables = [
             "graphs",
             "reports",          # CASCADE: report_versions
-            "search_sessions",
             "qa_history",
-            "paper_references",
             "kg_nodes",
             "kg_edges",
-            "topic_scores",
         ]
 
         with self.conn.cursor() as cur:
-            for table in manual_tables:
+            # 1. 删根级实体
+            for table in root_tables:
                 if table not in TABLE_SCHEMAS:
                     continue
                 try:
@@ -528,7 +515,20 @@ class PostgresStorage:
                     logger.warning(f"Failed to delete {table} for project {project_id}: {e}")
                     deleted[table] = 0
 
-            # 最后删 projects（CASCADE: papers → paper_chunks, paper_cards, parse_results）
+            # 2. 删 papers_pool（CASCADE: paper_chunks, paper_cards, evidence_records,
+            #    parse_results, topic_scores, paper_references）
+            try:
+                cur.execute(
+                    "DELETE FROM papers_pool WHERE paper_id IN "
+                    "(SELECT paper_id FROM papers WHERE project_id = %s)",
+                    (project_id,),
+                )
+                deleted["papers_pool"] = cur.rowcount
+            except Exception as e:
+                logger.warning(f"Failed to delete papers_pool for project {project_id}: {e}")
+                deleted["papers_pool"] = 0
+
+            # 3. 删 projects（CASCADE: papers）
             try:
                 cur.execute("DELETE FROM projects WHERE project_id = %s", (project_id,))
                 deleted["projects"] = cur.rowcount
@@ -590,6 +590,11 @@ class PostgresStorage:
     def get_item(self, name: str, item_id: str) -> dict[str, Any] | None:
         """兼容 JSONStorage 的 get_item 方法"""
         return self.get(name, item_id)
+
+    def get_paper(self, paper_id: str, project_id: str) -> dict[str, Any] | None:
+        """按复合键查询 papers 表"""
+        rows = self.query("papers", {"paper_id": paper_id, "project_id": project_id})
+        return rows[0] if rows else None
 
     def delete_item(self, name: str, item_id: str) -> bool:
         """兼容 JSONStorage 的 delete_item 方法"""

@@ -21,7 +21,7 @@ class SearchField(str, Enum):
 class SearchQuery(BaseModel):
     query: str
     project_id: str | None = None
-    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv", "semantic_scholar"])
+    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv", "europepmc"])
     limit: int = 20
     offset: int = 0
     year_from: int | None = None
@@ -70,20 +70,18 @@ class SearchErrorInfo(BaseModel):
 class SearchResponse(BaseModel):
     query: SearchQuery
     results: list[SearchResult] = Field(default_factory=list)
+    total_count: int = 0
     source_stats: dict[str, dict[str, Any]] = Field(default_factory=dict)
     errors: list[SearchErrorInfo] = Field(default_factory=list)
     cache_hit: bool = False
     elapsed_ms: int = 0
 
 
-class SearchSession(BaseModel):
-    session_id: str = Field(default_factory=lambda: f"ss_{uuid.uuid4().hex[:8]}")
-    project_id: str
-    query: dict[str, Any] = Field(default_factory=dict)
-    results: list[SearchResult] = Field(default_factory=list)
-    duplicate_groups: list[dict[str, Any]] = Field(default_factory=list)
-    selected_result_ids: list[str] = Field(default_factory=list)
-    status: str = "pending"  # pending/committed/expired
+class QueryRecord(BaseModel):
+    """查询记录（去重）"""
+    query_id: str = Field(default_factory=lambda: f"qry_{uuid.uuid4().hex[:8]}")
+    query_text: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: __import__("datetime").datetime.now().isoformat())
 
 

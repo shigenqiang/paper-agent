@@ -22,8 +22,14 @@ class EvidenceTableService:
     def __init__(self, storage: JSONStorage | None = None):
         self.storage = storage or get_storage()
 
+    def _get_project_paper_ids(self, project_id: str) -> list[str]:
+        """获取项目下所有 paper_id"""
+        papers = self.storage.query("papers", {"project_id": project_id})
+        return [p.get("paper_id", "") for p in papers]
+
     def build_for_project(self, project_id: str) -> list[EvidenceRecord]:
-        cards = self.storage.query("paper_cards", {"project_id": project_id})
+        paper_ids = self._get_project_paper_ids(project_id)
+        cards = self.storage.query("paper_cards", {"paper_id": paper_ids}) if paper_ids else []
         evidence_records = []
 
         for card_data in cards:
@@ -58,14 +64,18 @@ class EvidenceTableService:
     def query(
         self, project_id: str, filters: dict[str, Any] | None = None
     ) -> list[EvidenceRecord]:
-        query = {"project_id": project_id}
+        paper_ids = self._get_project_paper_ids(project_id)
+        if not paper_ids:
+            return []
+        query: dict[str, Any] = {"paper_id": paper_ids}
         if filters:
             query.update(filters)
         items = self.storage.query("evidence_records", query)
         return [EvidenceRecord(**i) for i in items]
 
     def query_by_scope(self, scope: RetrievalScope) -> list[EvidenceRecord]:
-        all_evidence = self.storage.query("evidence_records", {"project_id": scope.project_id})
+        paper_ids = self._get_project_paper_ids(scope.project_id)
+        all_evidence = self.storage.query("evidence_records", {"paper_id": paper_ids}) if paper_ids else []
         records = [EvidenceRecord(**e) for e in all_evidence]
 
         if scope.paper_ids:
@@ -88,7 +98,6 @@ class EvidenceTableService:
                 continue
             record = EvidenceRecord(
                 evidence_id=f"ev_{uuid.uuid4().hex[:8]}",
-                project_id=card.project_id,
                 paper_id=card.paper_id,
                 topic=", ".join(card.topics) if card.topics else "",
                 research_question=card.research_question,
@@ -106,7 +115,6 @@ class EvidenceTableService:
                 continue
             record = EvidenceRecord(
                 evidence_id=f"ev_{uuid.uuid4().hex[:8]}",
-                project_id=card.project_id,
                 paper_id=card.paper_id,
                 topic=", ".join(card.topics) if card.topics else "",
                 method=card.method,
@@ -118,7 +126,6 @@ class EvidenceTableService:
         if not records:
             record = EvidenceRecord(
                 evidence_id=f"ev_{uuid.uuid4().hex[:8]}",
-                project_id=card.project_id,
                 paper_id=card.paper_id,
                 topic=", ".join(card.topics) if card.topics else "",
                 research_question=card.research_question,

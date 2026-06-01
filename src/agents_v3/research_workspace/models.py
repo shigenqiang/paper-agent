@@ -223,6 +223,8 @@ class Paper(BaseModel):
     included: bool = True
     exclude_reason: str = ""
     importance_score: float = 0.0  # 主题相关重要性得分（项目级临时数据，不入库论文池）
+    relevance_score: float = 0.0  # 搜索相关性得分（入库时记录）
+    quality_score: float = 0.0  # 论文质量得分（引用、期刊等综合）
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -385,9 +387,10 @@ class PaperSection(BaseModel):
 
 
 class Reference(BaseModel):
-    """结构化参考文献条目"""
+    """结构化参考文献条目（引用关系）"""
     ref_id: str = ""
-    paper_id: str = ""
+    citing_paper_id: str = ""   # 引用方 paper_id
+    cited_paper_id: str = ""    # 被引用方 paper_id（可解析时填入）
     index: int = 0
     raw_text: str = ""
     title: str = ""
@@ -401,7 +404,6 @@ class Reference(BaseModel):
 class ParseResult(BaseModel):
     parse_id: str = Field(default_factory=lambda: f"parse_{uuid.uuid4().hex[:8]}")
     paper_id: str
-    project_id: str = ""
     parser_name: str = "pdfplumber"
     status: str = "pending"  # pending/parsing/success/failed/partial
     page_count: int = 0
@@ -450,7 +452,6 @@ class PaperCardExtractionResult(BaseModel):
 class PaperCard(BaseModel):
     card_id: str
     paper_id: str
-    project_id: str
     version: int = 1
     active: bool = True
 
@@ -496,7 +497,6 @@ class CardQualityReport(BaseModel):
 
 class EvidenceRecord(BaseModel):
     evidence_id: str
-    project_id: str
     paper_id: str
     topic: str = ""
     research_question: str = ""

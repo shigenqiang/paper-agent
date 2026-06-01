@@ -314,18 +314,21 @@ def create_app(storage=None) -> FastAPI:
             field=req.field,
             use_cache=req.use_cache, force_refresh=req.force_refresh,
         )
-        session = svc.search_candidates(project.project_id, query)
+        response = svc.search_candidates(project.project_id, query)
         return ApiResponse(data={
-            "session_id": session.session_id,
-            "results": [r.model_dump(exclude_defaults=True) for r in session.results],
-            "result_count": len(session.results),
+            "query": response.query.query if hasattr(response.query, 'query') else str(response.query),
+            "results": [r.model_dump(exclude_defaults=True) for r in response.results],
+            "result_count": response.total_count,
         })
 
     @app.post("/api/rw/projects/{project_ref}/papers/search/commit")
     def commit_search(project_ref: str, req: SearchCommitRequest):
         project = _resolve_project(project_ref)
         svc = get_paper_library(project_ref)
-        papers = svc.commit_search_results(project.project_id, req.session_id, req.selected_result_ids, min_score=req.min_score)
+        papers = svc.commit_search_results(
+            project.project_id, req.query_text, req.selected_result_ids,
+            min_score=req.min_score, source=req.source,
+        )
         return ApiResponse(data=[p.model_dump() for p in papers])
 
     # ── PDF 下载 ──

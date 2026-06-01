@@ -41,7 +41,7 @@ agent:
 database:
   # PostgreSQL 配置
   postgres:
-    enabled: true  # 设为 true 启用 PostgreSQL
+    enabled: false  # 设为 true 启用 PostgreSQL
     host: localhost
     port: 5432
     database: paper_agent
@@ -52,12 +52,20 @@ database:
 
   # Qdrant 向量数据库配置
   qdrant:
-    enabled: true
+    enabled: false
+    # 本地模式
     host: localhost
     port: 6333
+    # 云端模式（启用后优先使用）
+    cloud:
+      enabled: false
     collection: paper_chunks
-    vector_size: 512
+    vector_size: 384
     distance: cosine
+    # 推理模型配置
+    inference:
+      dense_model: "sentence-transformers/all-MiniLM-L6-v2"
+      sparse_model: "Qdrant/bm25"
 
 # 存储后端选择
 # 可选值: "json", "postgres"
@@ -100,3 +108,18 @@ search:
 
   # 入库最低分数阈值
   min_import_score: 0.3
+
+  # HyDE 语义排序配置
+  hyde:
+    enabled: true
+    relevance_threshold: 0.5   # 阶段1: 相关性过滤阈值
+    quality_threshold: 0.3     # 阶段2: 质量过滤阈值
+
+  # 混合排序配置（dense + sparse + RRF）
+  hybrid:
+    enabled: true              # 是否启用混合排序（优先于 hyde）
+    fusion: "rrf"              # 融合方式: "rrf" 或 "dbsf"
+    sparse_encoder: "tfidf"    # sparse 编码器: "tfidf" 或 "splade"
+    max_features: 10000        # TF-IDF 最大特征数
+    top_k: 60                  # RRF 排序后取前 K 篇
+    top_n: 30                  # 质量过滤后保留前 N 篇
