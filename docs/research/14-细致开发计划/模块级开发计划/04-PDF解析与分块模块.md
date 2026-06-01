@@ -1,6 +1,62 @@
 # PDF 解析与分块模块专项开发计划
 
-更新时间：2026-05-30
+更新时间：2026-06-01
+
+本文依据：
+
+- `docs/research/05-学术搜索与解析/pdf-parsing/学术PDF解析综合技术报告.md`
+- `docs/research/05-学术搜索与解析/pdf-parsing/端到端学术PDF解析方案深度调研报告.md`
+- `docs/research/05-学术搜索与解析/pdf-parsing/PDF解析技术调研总报告.md`
+- `docs/research/11-产品方案与开发/当前产品方案.md`
+- `docs/research/11-产品方案与开发/当前开发计划.md`
+- `docs/research/00-综合调研报告/学术报告生成系统产品借鉴与技术方案调研.md`
+- 当前代码：`src/agents_v3/research_workspace/parser_service.py`
+- 当前模型：`src/agents_v3/research_workspace/models.py`
+
+## 0. 与产品方案的关联
+
+PDF 解析模块是产品主线的第二环：
+
+```text
+论文入库（搜索/上传/导入）
+  -> 论文解析（PDF 分块）← 本模块
+  -> 论文卡片
+  -> 证据表
+  -> 知识图谱
+  -> Scope QA
+  -> 文献综述
+  -> 创新点报告
+```
+
+解析模块的质量直接影响下游所有环节。借鉴产品方案中的以下技术：
+
+| 借鉴来源 | 在解析模块的应用 |
+| --- | --- |
+| Anthropic Contextual Retrieval | 每个 chunk 携带论文标题、作者、章节上下文摘要，减少 67% 失败检索 |
+| RAGFlow Parent-Child Chunking | 检索命中 child chunk，返回 parent chunk 给 LLM，确保上下文完整 |
+| GROBID | 学术论文元数据提取事实标准，参考文献解析 F1 90%+ |
+| Literature Mapper | 参考文献结构化提取 → 识别 ghost papers（被引用但不在库中的论文） |
+| PRISMA-trAIce | 解析诊断数据应可追溯（哪个解析器、什么质量标记、什么覆盖率） |
+| LettuceDetect | 解析质量影响幻觉检测：低质量 chunk → 高幻觉风险 |
+
+### 当前代码与产品方案的对齐状态
+
+| 产品方案要求 | 当前代码状态 | 差距 |
+| --- | --- | --- |
+| Parent-Child Chunking | ✅ `_create_parent_chunks` 已实现 | 无 |
+| Contextual Retrieval | ⚠️ `_make_chunk` 未添加上下文前缀 | 需实现 |
+| 多解析器 fallback | ✅ `_extract_with_fallback` 已实现 5 个适配器（pymupdf4llm 优先） | 无 |
+| 文本后处理 | ✅ `TextPostProcessor` 已实现 | 无 |
+| 分块去重 | ✅ `ChunkDeduplicator` 三层去重已实现 | 无 |
+| 分块质量评分 | ✅ `ChunkQualityScorer` 5 维评分已实现 | 无 |
+| 冗余过滤 | ✅ `ChunkRedundancyFilter` BM25 已实现 | 无 |
+| 版面感知阅读顺序 | ✅ pymupdf4llm GNN 版面分析（T4.18+ 已实现） | 无 |
+| PaddleOCR fallback | ⚠️ `_try_ocr_fallback` 只标记未实现 | 需实现 |
+| 公式检测 | ❌ 未实现 | 需实现 |
+| 表格提取 | ❌ 未实现 | 需实现 |
+| GROBID 适配器 | ❌ 未实现 | 需实现 |
+
+---
 
 ## 实现状态
 
@@ -20,37 +76,50 @@ T4.8  增强 section detector：编号标题、中文标题 ✅
 T4.9  增加 section_type 归一 ✅
 T4.10 增加 overlap 分块（80 token 尾部重叠）✅
 T4.11 增加质量标记和 text coverage 计算 ✅
-T4.12 ParserAdapter 协议 + PdfPlumberAdapter + PyMuPDFAdapter ✅
+T4.12 ParserAdapter 协议 + PyMuPDF4LLMAdapter + PdfPlumberAdapter + PyMuPDFAdapter + PdfMinerAdapter + DoclingAdapter ✅
 T4.13 中文乱码检测 (_detect_garbled_text) ✅
 T4.14 水印检测 (_detect_watermark) ✅
-T4.15 双栏布局检测 (_detect_dual_column) ✅
+T4.15 双栏布局检测 + 重排 (PyMuPDFAdapter._find_column_boundary + _reorder_columns) ✅
 T4.16 Reference 模型 + 参考文献结构化提取 ✅
 T4.17 增强质量报告 (quality_flags + diagnostics) ✅
-T4.27 分块后去重：ChunkDeduplicator（SHA256 + MinHash + TF-IDF 余弦三层去重）✅
+T4.18 版面感知：双栏检测+重排（基础版）✅
+T4.18+ 版面感知升级：pymupdf4llm GNN 版面分析（已集成，首选解析器）✅
+T4.19 文本后处理管线：TextPostProcessor（合字/连字符/引用标记/页码/页眉页脚/CID/单词间距）✅
+T4.22 pdfminer.six 第三解析器：PdfMinerAdapter ✅
+T4.27 分块后去重：ChunkDeduplicator（SHA256 + MinHash + BM25 三层去重）✅
 T4.28 分块质量评分与过滤：ChunkQualityScorer（5维评分 + 低质量过滤）✅
-T4.29 Chunk 冗余检测与剔除：ChunkRedundancyFilter（TF-IDF + 动态阈值）✅
+T4.29 Chunk 冗余检测与剔除：ChunkRedundancyFilter（BM25 + 动态阈值）✅
+Parent-Child 分块：_create_parent_chunks（~2000 token 父块聚合）✅
+单词间距修复：TextPostProcessor.fix_word_spacing ✅
+CID 伪影移除：TextPostProcessor.fix_cid_artifacts ✅
+单词间距质量检测：_detect_poor_spacing ✅
+pymupdf4llm 适配器：PyMuPDF4LLMAdapter（GNN 版面分析，首选解析器）✅
+Docling 适配器：DoclingAdapter（降级为兜底）✅
+扫描件预检测：_detect_scanned_pdf ✅
+embed_paper 向量化入库 ✅
+search_chunks 检索（含 parent context 返回）✅
 ```
 
 ### 未完成
 
 ```text
-T4.18 版面感知与阅读顺序（pymupdf4llm + XY-Cut++，当前只检测不修正）
-T4.19 文本后处理管线（合字/连字符/引用标记/页眉页脚）
-T4.20 PaddleOCR fallback（中文 PDF 乱码的唯一可靠方案）
-T4.21 扫描件 OCR fallback
-T4.22 pdfminer.six 第三解析器
-T4.23 GROBID Docker 适配器
+T4.18+ XY-Cut++ 纯算法备选（pymupdf4llm 已集成，此为低优先级备选）
+T4.20 PaddleOCR fallback（中文 PDF 乱码的唯一可靠方案，当前 _try_ocr_fallback 只标记）
+T4.21 扫描件 OCR fallback（当前扫描件检测后只标记不处理）
+T4.23 GROBID Docker 适配器（参考文献解析精度最高 F1 90%+）
 T4.24 公式区域检测 + LaTeX 识别
 T4.25 表格结构化提取
-T4.26 Contextual Retrieval（chunk 上下文增强）
+T4.26 Contextual Retrieval（chunk 上下文增强：论文标题+作者+章节前缀）
 ```
 
 对应代码：
 
 ```text
-src/agents_v3/research_workspace/parser_service.py
-src/agents_v3/research_workspace/models.py
-tests/agents_v3/research_workspace/test_parser_service.py
+src/agents_v3/research_workspace/parser_service.py          # 2231 行，核心解析服务
+src/agents_v3/research_workspace/models.py                  # PaperChunk, ParseResult, Reference 等模型
+tests/agents_v3/research_workspace/test_parser_service.py   # 解析服务测试
+src/agents_v3/research_workspace/embedding_service.py       # 向量化服务（embed_paper 调用）
+src/agents_v3/research_workspace/vector_storage.py          # 向量存储（search_chunks 调用）
 ```
 
 相关研究文档：
@@ -74,7 +143,7 @@ class ParserAdapter(Protocol):
     def extract_pages(self, pdf_path: str) -> tuple[list[tuple[int, str]], list[str]]: ...
 ```
 
-两个内置适配器：`PdfPlumberAdapter`、`PyMuPDFAdapter`。fallback 链路在 `_extract_with_fallback` 中遍历。
+5 个内置适配器：`PyMuPDF4LLMAdapter`（首选）、`PdfPlumberAdapter`、`PyMuPDFAdapter`、`PdfMinerAdapter`、`DoclingAdapter`（兜底）。fallback 链路在 `_extract_with_fallback` 中遍历。
 
 ### 1.2 当前 fallback 逻辑
 
@@ -126,6 +195,20 @@ def _chunk_by_sections(self, pages_text, paper_id):
 
 ## 2. T4.18：版面感知与阅读顺序（原"双栏文本重排"）
 
+### 2.0 当前实现基线
+
+当前 `PyMuPDFAdapter` 已实现基础版双栏检测+重排：
+
+```text
+_find_column_boundary()  # 通过空白谷检测找列分界线
+_reorder_columns()       # 按分栏边界重排：全宽 → 左栏 → 右栏
+```
+
+**局限**：
+- 只处理标准双栏，不支持三栏及以上
+- 基于启发式规则，对复杂版面（嵌套表格、图文混排）效果差
+- 没有 GNN 版面分析能力
+
 ### 2.1 产品调研结论（2026-05-30）
 
 调研 MinerU、Marker/Surya、Docling、Unstructured、GROBID、ByteDance Dolphin、XY-Cut++ 等产品后，核心发现：
@@ -169,6 +252,8 @@ def _chunk_by_sections(self, pages_text, paper_id):
 - 21 种元素类型，一次推理同时输出布局和阅读顺序
 
 ### 2.2 推荐方案：pymupdf4llm + XY-Cut++ 增强
+
+> **2026-06-01 更新**：pymupdf4llm 已集成为首选解析器（PyMuPDF4LLMAdapter），测试结果全面优于 Docling（速度 3x、内容量 3x、章节识别 2.3x）。详见 `docs/test_results/04-PDF解析与分块/pymupdf4llm-test-report.md`。
 
 根据调研，最适合本项目的方案是 **pymupdf4llm**（PyMuPDF Layout），原因：
 - 无需 GPU，pip install 即用
@@ -315,28 +400,41 @@ class XYCutReadingOrder:
 
 ### 2.4 集成方案
 
-改造 `PyMuPDFAdapter`，优先使用 pymupdf4llm，fallback 到 XY-Cut++：
+> **2026-06-01 更新**：已实现为独立的 `PyMuPDF4LLMAdapter`，作为首选解析器集成到 fallback 链路。
 
 ```python
-class PyMuPDFAdapter:
-    name = "pymupdf"
+class PyMuPDF4LLMAdapter:
+    """pymupdf4llm 解析器适配器（GNN 版面分析 + 全文档 Markdown 输出）"""
+    name = "pymupdf4llm"
+
+    def can_parse(self, pdf_path: str) -> bool:
+        try:
+            import pymupdf4llm  # noqa: F401
+            return True
+        except ImportError:
+            return False
 
     def extract_pages(self, pdf_path: str) -> tuple[list[tuple[int, str]], list[str]]:
-        flags = []
-
-        # 方案 1：pymupdf4llm（GNN 版面分析，自动处理阅读顺序）
+        flags: list[str] = []
         try:
             import pymupdf4llm
+        except ImportError:
+            flags.append("pymupdf4llm_not_available")
+            return [], flags
+
+        try:
             page_data = pymupdf4llm.to_markdown(pdf_path, page_chunks=True)
             pages_text = [(i + 1, p.get("text", "")) for i, p in enumerate(page_data)]
             flags.append("pymupdf4llm_used")
             return pages_text, flags
-        except ImportError:
-            flags.append("pymupdf4llm_not_available")
         except Exception as e:
-            flags.append("pymupdf4llm_failed")
+            flags.append("pymupdf4llm_exception")
+            return [], flags
+```
 
-        # 方案 2：PyMuPDF + XY-Cut++（纯算法，无 GPU）
+Fallback 链路：`pymupdf4llm → PdfPlumber → PyMuPDF → PdfMiner → Docling`
+
+原方案中的 XY-Cut++ 备选保留为低优先级（T4.18+），当前 pymupdf4llm 已满足需求。
         try:
             import pymupdf
             doc = pymupdf.open(pdf_path)
@@ -568,9 +666,12 @@ class PaddleOCRAdapter:
 def __init__(self, storage=None):
     self.storage = storage or get_storage()
     self._adapters: list[ParserAdapter] = [
+        PyMuPDF4LLMAdapter(),  # 首选：GNN 版面分析
         PdfPlumberAdapter(),
         PyMuPDFAdapter(),
-        PaddleOCRAdapter(),   # 新增：OCR fallback
+        PdfMinerAdapter(),
+        PaddleOCRAdapter(),   # OCR fallback
+        DoclingAdapter(),     # 最终兜底
     ]
 ```
 
@@ -1018,9 +1119,25 @@ def _merge_cross_page_tables(self, tables: list[dict]) -> list[dict]:
 
 ## 10. T4.26：Contextual Retrieval
 
-### 10.1 原理
+### 10.1 原理（Anthropic 研究数据）
 
-Anthropic 提出的 Contextual Retrieval：为每个 chunk 添加上下文摘要，检索失败率降低 67%。
+Anthropic 提出的 Contextual Retrieval 是当前最先进的 RAG 检索优化方案：
+
+**问题**：传统 RAG 将文档切块后独立编码，丢失了块与文档整体的上下文关系。
+
+**解决方案**（三层递进）：
+1. **Contextual Embeddings**：在每个 chunk 编码前，prepend 一段描述该 chunk 在文档中位置和含义的上下文摘要
+2. **BM25 混合检索**：将语义向量检索与 BM25 关键词检索结合
+3. **Reranking**：对混合检索结果进行重排序
+
+**效果**（Anthropic 官方数据）：
+- 仅用 Contextual Embeddings → 减少 35% 失败检索
+- + BM25 混合 → 减少 49% 失败检索
+- + Reranking → 减少 67% 失败检索
+
+**对本模块的意义**：解析阶段是构建 chunk 上下文的最佳时机——此时论文元数据（标题、作者、摘要、章节结构）已知，且不影响检索时延。
+
+### 10.2 实现
 
 对学术论文，上下文可以是：
 - 论文标题 + 作者
@@ -1028,13 +1145,19 @@ Anthropic 提出的 Contextual Retrieval：为每个 chunk 添加上下文摘要
 - 前一个 chunk 的尾部（已有 overlap）
 - 论文摘要的简短版本
 
-### 10.2 实现
-
 ```python
 def _build_chunk_context(self, chunk_text: str, paper: Paper, section_type: str) -> str:
-    """为 chunk 构建上下文前缀
+    """为 chunk 构建上下文前缀（Contextual Retrieval）
 
     不需要 LLM，使用结构化元数据拼接。
+    这是 Anthropic Contextual Embeddings 的简化版：
+    - Anthropic 方案：用 LLM 生成上下文摘要（效果最好，但有成本和时延）
+    - 本方案：用结构化元数据拼接（零成本，零时延，覆盖 80% 效果）
+
+    参考：Anthropic Contextual Retrieval
+      - Contextual Embeddings 减少 35% 失败检索
+      - + BM25 混合减少 49%
+      - + Reranking 减少 67%
     """
     parts = []
 
@@ -1074,6 +1197,24 @@ def _make_chunk(self, paper_id, chunk_index, section_type, chunk_type,
         # ... 其他字段 ...
     }
 ```
+
+### 10.4 与下游模块的关系
+
+| 下游消费者 | 如何使用上下文 chunk |
+| --- | --- |
+| embedding_service | 上下文前缀随 chunk 文本一起编码，提升语义检索精度 |
+| vector_storage | 上下文前缀存储在 chunk.text 中，检索时自动包含 |
+| search_chunks | 检索命中 child chunk，返回 parent chunk（含上下文），给 LLM 更多语境 |
+| 论文卡片生成 | 上下文前缀帮助 LLM 准确识别 chunk 所属论文和章节 |
+| 证据表抽取 | 上下文前缀帮助 LLM 准确归因 evidence 到正确的论文和章节 |
+
+### 10.5 升级路径
+
+| 阶段 | 方案 | 成本 | 效果 |
+| --- | --- | --- | --- |
+| 当前（P1） | 结构化元数据拼接（标题+作者+章节） | 零 | 覆盖 80% 场景 |
+| P2 | LLM 生成上下文摘要（Anthropic 完整方案） | ~$0.001/chunk | 覆盖 95% 场景 |
+| P3 | Contextual Embeddings + BM25 + Reranking | 需要向量库支持 | 减少 67% 失败检索 |
 
 ---
 
@@ -1560,50 +1701,181 @@ diagnostics = {
 
 ## 16. 开发任务清单
 
-### P1（近期）
+### P1（近期）—— 已大部分完成
 
-| 任务 | 说明 | 依赖 | 预估 |
+| 任务 | 说明 | 状态 | 预估 |
 |------|------|------|------|
-| T4.18 版面感知与阅读顺序 | pymupdf4llm（GNN）+ XY-Cut++ 备选 | pip install pymupdf4llm | 3h |
-| T4.19 文本后处理管线 | 合字/连字符/引用标记/页码/页眉页脚 | 无 | 2h |
-| T4.22 pdfminer.six 适配器 | 第三解析器 fallback | pip install pdfminer.six | 1h |
-| T4.27 分块后去重 | MinHash + TF-IDF 余弦双层去重 | pip install datasketch scikit-learn | 2h |
-| T4.28 分块质量评分 | 5 维质量评分 + 低质量过滤 | 无 | 2h |
-| 测试补充 | 双栏重排、后处理、pdfminer、去重、质量评分 | T4.18-T4.22, T4.27-T4.28 | 3h |
+| T4.18 版面感知与阅读顺序 | 双栏检测+重排（基础版） | ✅ 已完成 | — |
+| T4.18+ 版面感知升级 | PyMuPDF4LLMAdapter（GNN，首选解析器） | ✅ 已完成 | — |
+| T4.19 文本后处理管线 | TextPostProcessor（7 项修复） | ✅ 已完成 | — |
+| T4.22 pdfminer.six 适配器 | PdfMinerAdapter 第三解析器 | ✅ 已完成 | — |
+| T4.27 分块后去重 | ChunkDeduplicator（SHA256+MinHash+BM25） | ✅ 已完成 | — |
+| T4.28 分块质量评分 | ChunkQualityScorer（5维评分） | ✅ 已完成 | — |
+| T4.29 Chunk 冗余过滤 | ChunkRedundancyFilter（BM25+动态阈值） | ✅ 已完成 | — |
+| Parent-Child 分块 | _create_parent_chunks（~2000 token 父块） | ✅ 已完成 | — |
+| Docling 适配器 | DoclingAdapter（降级为兜底） | ✅ 已完成 | — |
+| T4.26 Contextual Retrieval | chunk 上下文前缀（结构化元数据版） | ❌ 未开始 | 2h |
 
 ### P2（中期）
 
 | 任务 | 说明 | 依赖 | 预估 |
 |------|------|------|------|
+| T4.18+ 版面感知升级 | pymupdf4llm GNN 版面分析 + XY-Cut++ 备选 | pip install pymupdf4llm | 3h |
 | T4.20 PaddleOCR fallback | 中文 PDF 乱码最终方案 | pip install paddleocr pdf2image | 3h |
 | T4.21 扫描件 OCR | 扫描件预检测 + OCR fallback | T4.20 | 1h |
 | T4.24 公式区域检测 | 规则方法检测公式行 | 无 | 2h |
 | T4.25 表格提取 | PyMuPDF + pdfplumber 表格提取 | 无 | 2h |
-| T4.23 GROBID 适配器 | Docker 服务调用 + TEI XML 解析 | Docker | 4h |
-| T4.29 Chunk 冗余过滤 | TF-IDF + 动态阈值冗余剔除 | scikit-learn | 1h |
+| 测试补充 | pymupdf4llm、OCR、公式、表格 | T4.18+-T4.25 | 3h |
 
 ### P3（远期）
 
 | 任务 | 说明 | 依赖 | 预估 |
 |------|------|------|------|
-| T4.26 Contextual Retrieval | chunk 上下文增强 | 无 | 2h |
+| T4.23 GROBID 适配器 | Docker 服务调用 + TEI XML 解析 | Docker | 4h |
 | 公式 LaTeX 识别 | pix2tex 集成 | pip install pix2tex | 3h |
 | 跨页表格合并 | 表头检测 + 列坐标对齐 | T4.25 | 2h |
 | MinerU 适配器 | 一站式学术 PDF 解析 | GPU | 4h |
+| LLM 上下文摘要 | Anthropic Contextual Retrieval 完整方案 | LLM API | 3h |
 
 ---
 
 ## 17. 验收标准
 
 ```text
-1. 双栏/多栏 PDF 文本按正确阅读顺序排列（pymupdf4llm 或 XY-Cut++）
-2. 中文知网 PDF 乱码自动触发 OCR fallback
-3. 合字、连字符、引用标记被正确修复
-4. 页眉页脚被自动去除
-5. 扫描件 PDF 通过 OCR 提取文本
-6. 分块后自动去重（精确哈希 + MinHash + 余弦相似度）
-7. 低质量 chunk 被标记或过滤（quality_score < 0.3）
-8. 冗余 chunk 被剔除（cosine ≥ 0.85）
-9. 所有现有测试继续通过
-10. 新增测试覆盖：双栏重排、后处理、OCR fallback、去重、质量评分
+1. 双栏 PDF 文本按正确阅读顺序排列（当前基线已达标）
+2. 中文知网 PDF 乱码自动触发 OCR fallback（P2 完成后达标）
+3. 合字、连字符、引用标记被正确修复（已达标）
+4. 页眉页脚被自动去除（已达标）
+5. 扫描件 PDF 通过 OCR 提取文本（P2 完成后达标）
+6. 分块后自动去重（SHA256 + MinHash + BM25，已达标）
+7. 低质量 chunk 被标记或过滤（quality_score < 0.3，已达标）
+8. 冗余 chunk 被剔除（BM25 ≥ 0.85，已达标）
+9. Parent-Child 分块正常工作（已达标）
+10. Contextual Retrieval 前缀正确添加（P1 完成后达标）
+11. 所有现有测试继续通过
+12. 新增测试覆盖：pymupdf4llm、OCR fallback、公式检测、表格提取
 ```
+
+---
+
+## 18. 研究借鉴增强
+
+### 18.1 Contextual Retrieval 准备（T4.26）
+
+**来源**：Anthropic Contextual Retrieval 研究
+
+解析模块是构建 chunk 上下文的最佳时机。当前 `_make_chunk` 未添加上下文前缀，需要实现：
+
+```python
+# 当前 _make_chunk 的 text 字段是纯 chunk 文本
+# 需要添加上下文前缀：
+# [Paper: {title} | Authors: {authors} | Section: {section_type}]
+#
+# 这是 Anthropic Contextual Embeddings 的简化版：
+# - Anthropic 方案：用 LLM 生成上下文摘要（效果最好，但有成本和时延）
+# - 本方案：用结构化元数据拼接（零成本，零时延，覆盖 80% 效果）
+```
+
+**与搜索模块的协作**：
+- 解析模块生成 chunk 时添加上下文前缀
+- 搜索模块的 hybrid_ranker 在检索时利用上下文前缀提升精度
+- 向量存储的 embedding 包含上下文信息
+
+### 18.2 GROBID 参考文献增强（T4.23）
+
+**来源**：GROBID 官方文档 + Literature Mapper
+
+GROBID 是学术论文元数据提取的事实标准：
+- 参考文献解析精度最高（F1 90%+）
+- 输出结构化 TEI XML
+- 被 Semantic Scholar 用于处理 2 亿+ 论文
+
+**与知识图谱的关系**：
+- GROBID 解析的参考文献 → 构建 Paper CITES Paper 关系
+- 识别 ghost papers（被引用但不在库中的论文）→ Literature Mapper 的 gap detection
+- 参考文献列表 → 支撑引用网络分析（Inciteful 链接预测）
+
+### 18.3 解析诊断与透明报告（PRISMA-trAIce）
+
+**来源**：PRISMA-trAIce AI 辅助 SR 透明报告检查清单
+
+解析诊断数据应支持可追溯性：
+- 哪个解析器成功了（adapter_used）
+- fallback 链路是什么（fallback_chain）
+- 质量标记有哪些（quality_flags）
+- 后处理修复了什么（post_processing）
+- 处理耗时多少（processing_time_ms）
+
+当前 `ParseResult.diagnostics` 已记录大部分信息，可直接用于 PRISMA-trAIce 风格的透明报告。
+
+### 18.4 分块质量与幻觉检测的关系
+
+**来源**：LettuceDetect + Vectara Hallucination Leaderboard
+
+分块质量直接影响下游幻觉率：
+- 低质量 chunk（噪声多、信息密度低）→ 检索结果不准确 → LLM 基于噪声生成 → 幻觉率上升
+- 调研发现：95% 的退化案例中 LLM 被噪声 chunk 误导
+- RAG grounding 是减少幻觉的最强单一手段（-75-90%）
+
+**当前 ChunkQualityScorer 的 5 维评分**已覆盖：
+- 长度评分（过短过长都扣分）
+- 信息密度（停用词占比、词汇多样性）
+- 结构评分（是否包含有意义的句子结构）
+- 语言一致性（中英文混杂扣分）
+- 噪声评分（公式行、纯数字行、过短行）
+
+### 18.5 Parent-Child Chunking 与检索的关系
+
+**来源**：RAGFlow v0.23 Parent-Child Chunking
+
+当前 `_create_parent_chunks` 已实现 parent-child 分块：
+- child chunk：~500-900 tokens，用于精确匹配
+- parent chunk：~2000 tokens，用于给 LLM 提供上下文
+- `search_chunks(return_parent=True)` 已支持返回 parent chunk 文本
+
+**与 RAGFlow 的差距**：
+- RAGFlow 的 parent chunk 是按语义边界（段落、章节）划分的
+- 当前实现是按 section_type + token 数量聚合的
+- 后续可优化：基于段落语义边界而非 token 数量
+
+### 18.6 开发阶段更新
+
+```text
+当前阶段：P1 基础完成，P2 准备中
+下一步：
+  1. 实现 T4.26 Contextual Retrieval（P1 最后一项）
+  2. 升级 T4.18 版面感知（pymupdf4llm）
+  3. 实现 T4.20 PaddleOCR fallback
+  4. 实现 T4.24 公式检测 + T4.25 表格提取
+```
+
+---
+
+## 19. 当前代码对齐深化
+
+### 19.1 已实现但计划中未反映的能力
+
+| 能力 | 代码位置 | 说明 |
+| --- | --- | --- |
+| PyMuPDF4LLMAdapter | parser_service.py:223-258 | GNN 版面分析，首选解析器，速度 3x/内容量 3x 优于 Docling |
+| DoclingAdapter | parser_service.py:261-302 | 降级为兜底解析器 |
+| fix_word_spacing | TextPostProcessor:302-317 | 修复 PDF 提取中丢失的单词间距 |
+| fix_cid_artifacts | TextPostProcessor:291-293 | 移除 pdfplumber 的 CID 伪影 |
+| _detect_poor_spacing | parser_service.py | 单词间距质量检测，触发下一个适配器 |
+| _detect_scanned_pdf | parser_service.py:1822-1860 | 扫描件预检测（图片页比例 > 70%） |
+| embed_paper | parser_service.py:1235-1274 | 向量化 chunks 并存入 Qdrant |
+| search_chunks | parser_service.py:1276-1328 | 向量检索 + parent context 返回 |
+| _create_parent_chunks | parser_service.py:1574-1658 | Parent-Child 分块（~2000 token 父块） |
+| _migrate_old_chunks | parser_service.py:1677-1699 | 旧格式 chunks 迁移 |
+
+### 19.2 计划中描述但代码中未实现的能力
+
+| 能力 | 计划章节 | 当前状态 | 优先级 |
+| --- | --- | --- | --- |
+| Contextual Retrieval 前缀 | §10 | `_make_chunk` 未添加上下文 | P1 |
+| pymupdf4llm 版面分析 | §2.2 | 只有基础双栏重排 | P2 |
+| XY-Cut++ 算法 | §2.3 | 未实现 | P2 |
+| PaddleOCR 适配器 | §4 | `_try_ocr_fallback` 只标记 | P2 |
+| 公式区域检测 | §8 | 未实现 | P2 |
+| 表格结构化提取 | §9 | 未实现 | P2 |
+| GROBID 适配器 | §7 | 未实现 | P3 |

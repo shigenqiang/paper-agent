@@ -1,4 +1,5 @@
 .PHONY: service test install lint clean
+.PHONY: frontend-dev frontend-build frontend-install
 .PHONY: docker-build docker-push docker-login
 .PHONY: ghcr-build ghcr-push ghcr-login ghcr hub
 .PHONY: help
@@ -39,6 +40,17 @@ migrate:
 
 migrate-dry-run:
 	$(PYTHON) -m scripts.migrate_storage --dry-run
+
+# ============ Frontend ============
+
+frontend-install:
+	cd frontend && npm install
+
+frontend-dev:
+	cd frontend && npm run dev
+
+frontend-build:
+	cd frontend && npm run build
 
 # ============ Dev ============
 
@@ -99,6 +111,11 @@ help:
 	@echo "Data:"
 	@echo "  make migrate        迁移平铺 JSON 到项目目录隔离"
 	@echo "  make migrate-dry-run 预览迁移（不实际写入）"
+	@echo ""
+	@echo "Frontend:"
+	@echo "  make frontend-install 安装前端依赖"
+	@echo "  make frontend-dev     启动前端开发服务器 (端口 3000)"
+	@echo "  make frontend-build   构建前端生产包"
 	@echo ""
 	@echo "Development:"
 	@echo "  make install        安装项目依赖"

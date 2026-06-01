@@ -1,4 +1,9 @@
-"""Semantic Scholar API 搜索适配器"""
+"""Semantic Scholar API 搜索适配器
+
+注意: 无 API Key 时免费限额极低(约1请求/秒)，连续请求易触发 429 限速且冷却期较长。
+当前无法获取 API Key，该源默认不可用，需用户自行申请 Key 后启用。
+申请地址: https://www.semanticscholar.org/product/api#api-key-form
+"""
 
 from __future__ import annotations
 

@@ -118,26 +118,21 @@ class RankingService:
             self._extract_phrases(query)
 
     def _extract_phrases(self, query: str) -> None:
-        """提取查询短语和核心子短语"""
+        """提取查询核心子短语（2-gram 和 3-gram）"""
         q = query.strip().lower()
         self.query_phrase = q
 
-        # 提取核心子短语：去掉停用词后的连续词组
         words = q.split()
-        core_words = [w for w in words if w not in self._STOP_WORDS]
-        if len(core_words) >= 2:
-            self.core_phrases.append(" ".join(core_words))
 
-        # 也保留原始查询中的 2-gram 和 3-gram
+        # 提取所有 2-gram 和 3-gram（跳过纯停用词）
         for n in (3, 2):
             for i in range(len(words) - n + 1):
                 gram = " ".join(words[i:i + n])
-                # 跳过纯停用词 n-gram
                 if not all(w in self._STOP_WORDS for w in words[i:i + n]):
                     self.core_phrases.append(gram)
 
     def rank(self, results: list[SearchResult], query: str = "") -> list[SearchResult]:
-        """用 BM25 计算分数并排序"""
+        """用 BM25 + 短语匹配 计算分数并排序"""
         if query:
             self.query_terms = _tokenize(query)
             self._extract_phrases(query)
@@ -151,12 +146,14 @@ class RankingService:
         corpus = [self._build_document(r) for r in results]
         self._bm25 = BM25(corpus)
 
-        query_set = set(self.query_terms)
+        # BM25 原始分 + 短语匹配加分
         raw_scores = []
         for i, r in enumerate(results):
             bm25_score = self._bm25.score(i, self.query_terms)
-            raw_scores.append(bm25_score)
+            phrase_bonus = self._phrase_match_bonus(r)
+            raw_scores.append(bm25_score + phrase_bonus)
 
+        # 归一化到 0~1
         max_score = max(raw_scores) if raw_scores else 1.0
         if max_score == 0:
             max_score = 1.0
@@ -173,25 +170,19 @@ class RankingService:
         return results
 
     def _phrase_match_bonus(self, r: SearchResult) -> float:
-        """短语匹配加分：标题或摘要包含完整查询短语时返回较大值"""
-        if not self.query_phrase:
+        """短语匹配加分：标题或摘要包含查询子短语（2-gram/3-gram）时加分"""
+        if not self.core_phrases:
             return 0.0
 
         title = (r.title or "").lower()
         abstract = (r.abstract or "").lower()
 
         bonus = 0.0
-        if self.query_phrase in title:
-            bonus += 2.0  # 标题包含完整短语，加 200%
-        if self.query_phrase in abstract:
-            bonus += 1.0  # 摘要包含完整短语，加 100%
-
-        # 也检查核心子短语（去掉停用词后的核心部分）
         for sub in self.core_phrases:
             if sub in title:
-                bonus += 0.5
+                bonus += 1.0  # 标题匹配，高权重
             elif sub in abstract:
-                bonus += 0.2
+                bonus += 0.3  # 摘要匹配，低权重
 
         return bonus
 
@@ -213,12 +204,15 @@ class RankingService:
                 tokens.extend(_tokenize(text) * repeat)
         return tokens
 
-    def _compute_quality(self, r: SearchResult) -> float:
+    def compute_quality(self, r: SearchResult) -> float:
         """质量分：引用数 75% + 引用速度 10% + 新近性 15%"""
         citation = self._citation_norm(r.citations)
         velocity = self._citation_velocity(r)
         recency = self._recency_score(r.year)
         return 0.75 * citation + 0.10 * velocity + 0.15 * recency
+
+    # 兼容旧调用
+    _compute_quality = compute_quality
 
     def _citation_velocity(self, r: SearchResult) -> float:
         if not r.citations or r.citations <= 0:

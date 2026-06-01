@@ -1,0 +1,137 @@
+.page {
+  padding: var(--space-lg) var(--space-xl);
+  animation: fade-in 0.3s ease;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+}
+
+.pageTitle {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.headerActions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  flex: 1;
+  max-width: 360px;
+  color: var(--text-muted);
+  transition: border-color var(--transition-fast);
+}
+
+.searchBox:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.searchInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.filters {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.filterBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+  border: 1px solid transparent;
+}
+
+.filterBtn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+}
+
+.filterBtn.filterActive {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-color: var(--border-accent);
+}
+
+.filterCount {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.statsBar {
+  display: flex;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-sm) 0;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.statIconGreen { color: var(--green); }
+.statIconRed { color: var(--red); }
+.statIconAmber { color: var(--accent); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-md);
+}

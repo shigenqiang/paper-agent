@@ -19,7 +19,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-  <img src="https://img.shields.io/badge/tests-166%20passed-brightgreen.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-438%20passed-brightgreen.svg" alt="Tests">
 </p>
 
 ---
@@ -151,30 +151,32 @@ qa.answer(project_id, "这个方向有什么创新空间？", {
 
 ### 搜索排序算法
 
-搜索结果使用 **查询词覆盖率 × 字段加权 TF + 多维质量评分** 进行排序。
+搜索结果使用 **BM25 相关性 + 短语匹配加分 + 多维质量评分** 进行排序。
 
-#### 相关性（TF + 覆盖率）
+#### 相关性（BM25 + 短语匹配）
 
-不依赖 BM25（小语料下 IDF 无意义），直接衡量查询词在论文各字段中的出现程度：
+使用 Okapi BM25 算法计算查询词在论文各字段中的相关性，并对标题/摘要中的连续短语匹配给予额外加分：
 
 ```
-relevance = weighted_tf × coverage
+relevance = BM25(query, doc) + phrase_bonus
 
-weighted_tf = Σ (字段词频 × 字段权重)
-coverage    = 匹配到的查询词数 / 总查询词数
+BM25 = Σ IDF(qi) × (f(qi) × (k1 + 1)) / (f(qi) + k1 × (1 - b + b × |d| / avgdl))
+phrase_bonus = Σ (标题匹配 × 1.0 + 摘要匹配 × 0.3)
 ```
 
-各字段权重：
+各字段权重（控制 token 重复次数，等效于字段权重）：
 
 | 字段 | 权重 | 说明 |
 |------|------|------|
-| title | 3.0 | 标题最能反映论文主题 |
-| keywords | 2.5 | 关键词高度相关 |
-| abstract | 1.5 | 摘要是核心内容 |
+| abstract | 3.5 | 摘要是核心内容 |
+| title | 2.0 | 标题最能反映论文主题 |
+| keywords | 2.0 | 关键词高度相关 |
 | concepts | 1.0 | OpenAlex 概念标签 |
 | venue | 0.5 | 期刊/会议名 |
 
-覆盖率惩罚只匹配少量查询词的论文：如果查询有 4 个词，某论文只匹配到 1 个，分数仅为匹配 4 个的 1/4。
+BM25 参数：k1=1.5, b=0.4（从 config.yaml 读取）。
+
+短语匹配提取查询的 2-gram 和 3-gram，在标题中匹配加 1.0 分，摘要中匹配加 0.3 分。
 
 #### 质量评分
 
@@ -198,9 +200,9 @@ final = 0.55 × relevance + 0.25 × quality + 0.20 × source_priority
 
 | 维度 | 权重 | 说明 |
 |------|------|------|
-| 相关性 | 55% | 查询词覆盖率 × 字段加权 TF |
-| 质量 | 25% | 引用数 + 引用速度 + 完整度 + 新近性 |
-| 来源优先级 | 20% | 数据源可信度（OpenAlex > arXiv > S2） |
+| 相关性 | 55% | BM25 分数 + 短语匹配加分 |
+| 质量 | 25% | 引用数 + 引用速度 + 新近性 |
+| 来源优先级 | 20% | 数据源可信度（OpenAlex > Semantic Scholar > arXiv） |
 
 ---
 
@@ -212,11 +214,11 @@ final = 0.55 × relevance + 0.25 × quality + 0.20 × source_priority
 git clone https://github.com/shigenqiang/paper-agent.git
 cd paper-agent
 
-# 安装依赖
+# 后端依赖
 pip install -e .
 
-# 或仅安装核心依赖
-pip install pydantic loguru pdfplumber fastapi uvicorn
+# 前端依赖
+cd frontend && npm install && cd ..
 ```
 
 ### 配置
@@ -237,26 +239,30 @@ S2_API_KEY=your-semantic-scholar-api-key
 ### 启动服务
 
 ```bash
-# 使用 Makefile（默认 anaconda Python，端口 8000）
+# 启动后端（端口 8000）
 make service
 
-# 指定端口
-make service PORT=9000
+# 启动前端（端口 3000，另一个终端）
+make frontend-dev
 
-# 直接启动
-python -m src.service --port 8000
+# 或直接启动
+python -m src.service --port 8000       # 后端
+cd frontend && npm run dev              # 前端
 ```
+
+前端访问 `http://localhost:3000`，后端 API 文档访问 `http://localhost:8000/docs`。
 
 ### Makefile 命令
 
 | 命令 | 说明 |
 |------|------|
-| `make service` | 启动服务（推荐） |
-| `make install` | 安装项目依赖 |
+| `make service` | 启动后端服务 |
+| `make frontend-dev` | 启动前端开发服务器 |
+| `make frontend-build` | 构建前端生产包 |
+| `make install` | 安装后端依赖 |
 | `make test` | 运行测试 |
 | `make lint` | 代码检查 |
 | `make clean` | 清理缓存和日志 |
-| `make migrate` | 迁移平铺 JSON 到项目目录隔离 |
 | `make docker-build` | 构建 Docker 镜像 |
 | `make help` | 查看所有命令 |
 
@@ -405,6 +411,14 @@ src/
 │       ├── search/                    # 多源搜索（arXiv/OpenAlex/Semantic Scholar）
 │       ├── evaluation/                # 评估与质量门
 │       └── api/                       # FastAPI 路由
+frontend/                              # React 前端
+├── src/
+│   ├── pages/                         # 论文库 / 知识图谱 / 研究QA / 成果报告
+│   ├── components/                    # 布局 / 论文卡片 / 命令面板 / 抽屉
+│   ├── stores/                        # Zustand 状态管理
+│   └── api/                           # 后端 API 封装
+├── index.html
+└── vite.config.js
 scripts/
 ├── migrate_storage.py                 # 存储迁移脚本（项目目录隔离）
 └── migrate_paper_model.py             # 论文模型迁移脚本（扁平→子模型）
@@ -472,15 +486,17 @@ class Paper(BaseModel):
 |------|------|------|
 | 语言 | Python 3.11+ | 类型注解、现代语法 |
 | HTTP 服务 | FastAPI + Uvicorn | 异步 Web 框架，自动 Swagger 文档 |
+| 前端框架 | React 18 + Vite | SPA，CSS Modules，Zustand 状态管理 |
+| 图谱可视化 | D3.js | 力导向图谱，交互式节点/边 |
 | LLM | LLMService（可配置） | 统一 LLM 调用接口 |
 | 数据模型 | Pydantic v2 | 强类型、自动验证 |
 | 存储 | PostgreSQL + JSON 文件 | PostgreSQL 存储结构化数据，JSON 作为轻量备选 |
 | 向量存储 | Qdrant | 存储论文分块嵌入，支持向量检索 |
-| 搜索 | OpenAlex / arXiv / Semantic Scholar | 多源学术搜索 + TF 覆盖率排序 + 去重 |
+| 搜索 | OpenAlex / arXiv / Semantic Scholar | 多源学术搜索 + BM25 排序 + 短语匹配 + 去重 |
 | PDF 解析 | pdfplumber / PyMuPDF / pdfminer | 多解析器 fallback，自动分块和清洗 |
 | 知识图谱 | NetworkX | 实体关系图 + Gap 分析 |
 | 日志 | Loguru | 结构化日志 |
-| 测试 | pytest | 130+ 测试用例 |
+| 测试 | pytest | 438 测试用例 |
 | 代码质量 | Ruff | 格式化和 lint |
 | 容器化 | Docker + GHCR | 多阶段构建 |
 

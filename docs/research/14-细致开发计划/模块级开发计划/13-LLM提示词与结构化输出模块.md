@@ -1,6 +1,46 @@
 # LLM 提示词与结构化输出模块专项开发报告
 
-更新时间：2026-05-29
+更新时间：2026-06-01
+
+## 0. 与产品方案的关联
+
+### 0.1 可借鉴技术
+
+本模块可借鉴的产品与技术方案（来源：`当前产品方案.md` + `学术报告生成系统产品借鉴与技术方案调研.md` + `Agent提示词工程指南`）：
+
+| 借鉴来源 | 借鉴内容 | 落地位置 |
+| --- | --- | --- |
+| LettuceDetect | Token-level 幻觉检测（ModernBERT），F1=79.22%，MIT 开源 | §9 结构化输出 + §11 错误处理 |
+| PapersFlow | Chain of Verification (CoVe)：提取声明→逐条验证→标记状态 | §8 Prompt 管理 |
+| GPT-Researcher | Review-Revise 循环（Writer→Reviewer→Revisor） | §8 Prompt 管理 + §14 模块接入 |
+| Atlas | H/V ratio 质量指标（目标 < 0.1） | §12 日志与指标 |
+| PRISMA-trAIce | AI 辅助 SR 透明报告检查清单（12 项） | §12 日志与指标 |
+| Anthropic | Prompt Engineering 最佳实践：Few-Shot、CoT、角色设定 | §8 Prompt 管理 |
+| RAGFlow | Parent-Child Chunking 上下文管理 | §13 模型路由与预算 |
+| OpenAI Structured Outputs | JSON Schema 强制、function calling | §9 结构化输出 |
+| Instructor | Pydantic schema → LLM structured output | §9 结构化输出 |
+
+### 0.2 代码对齐状态
+
+| 产品方案要求 | 代码现状 | 对齐状态 |
+| --- | --- | --- |
+| LLMService.invoke / invoke_json / invoke_structured | 已实现 | ✅ 已对齐 |
+| PromptRegistry + PromptTemplateSpec | 已实现（4 个内置 prompt） | ✅ 已对齐 |
+| JSON 提取（markdown/包围文本/尾逗号修复） | 已实现 extract_json + repair_json_with_llm | ✅ 已对齐 |
+| 8 种错误类型 | 已实现 llm_errors.py | ✅ 已对齐 |
+| 日志脱敏（截断 + API key 检测） | 已实现 redact_text + hash_text | ✅ 已对齐 |
+| FakeLLMService 测试注入 | 已实现 | ✅ 已对齐 |
+| LLMCallResult 调用元数据 | 已实现 | ✅ 已对齐 |
+| 幻觉检测集成（LettuceDetect） | 未实现 | ❌ 未对齐 |
+| Chain of Verification prompt 模板 | 未实现 | ❌ 未对齐 |
+| Review-Revise prompt 模板 | 未实现 | ❌ 未对齐 |
+| H/V ratio 记录到 LLMCallResult | 未实现 | ❌ 未对齐 |
+| Few-Shot 示例管理 | 未实现 | ❌ 未对齐 |
+| CoT (Chain of Thought) 模板 | 未实现 | ❌ 未对齐 |
+| Token budget 估算 | 未实现 | ❌ 未对齐 |
+| ModelRouter 任务路由 | 未实现 | ❌ 未对齐 |
+| 上下文压缩 prompt | 未实现 | ❌ 未对齐 |
+| Prompt Golden Tests 自动回归 | 未实现 | ❌ 未对齐 |
 
 ## 实现状态
 
@@ -851,6 +891,55 @@ class PromptRegistry:
 输出 JSON schema
 引用规则
 失败时行为
+```
+
+### 8.2.1 Prompt Engineering 最佳实践（借鉴 Anthropic）
+
+产品方案和调研报告要求 Prompt 采用结构化工程方法：
+
+**5 部分结构（System Prompt 标准模板）**：
+
+```text
+1. Role（角色设定）：明确任务身份和专业领域
+2. Context（上下文）：输入数据、Scope、可用 evidence
+3. Task（任务描述）：具体要做什么、输出格式
+4. Constraints（约束）：禁止事项、引用规则、不确定性处理
+5. Examples（示例）：Few-Shot 示例（可选）
+```
+
+**Few-Shot 示例管理**：
+
+```text
+每个关键 prompt 应提供 1-3 个 Few-Shot 示例：
+  - 示例输入：真实的 evidence 摘要
+  - 示例输出：符合 schema 的 JSON
+  - 示例应覆盖：正常情况、边界情况、拒答情况
+
+示例存储：
+  prompts/examples/{prompt_name}_{version}.json
+  PromptTemplateSpec.few_shot_examples: list[dict]
+```
+
+**Chain of Thought (CoT)**：
+
+```text
+对于复杂推理任务（综述、创新点），在 JSON 输出前要求模型先推理：
+  - "在输出 JSON 前，先分析以下几点："
+  - 1. 证据是否充分？
+  - 2. 结论是否有来源支撑？
+  - 3. 是否存在反证？
+  - 4. 不确定性有多大？
+
+CoT 推理过程不进入最终 JSON，但可记录到 debug 日志。
+```
+
+**JSON 降级策略**：
+
+```text
+当模型无法输出完整 JSON 时：
+  1. 要求模型至少输出 {"answer": "...", "confidence": 0.x}
+  2. 如果仍然失败，invoke_json 返回 {"raw_response": "..."}
+  3. 业务层从 raw_response 提取 answer，标记 generation_mode=fallback
 ```
 
 ### 8.3 禁止事项模板
@@ -2013,25 +2102,195 @@ OpenTelemetry:
 https://opentelemetry.io/docs/
 ```
 
-## 当前代码对齐深化（2026-05-29）
+## 23. 研究借鉴增强
+
+### 23.1 幻觉检测 Prompt 集成（借鉴 LettuceDetect）
+
+产品方案要求 QA 和报告使用 LettuceDetect 进行 token-level 幻觉检测。LLM 层需要提供集成接口：
+
+```text
+1. 在 invoke_structured() 返回后，新增可选的 hallucination_check 参数
+2. 如果启用，将 context + response 传入 LettuceDetect 模型
+3. 检测结果写入 LLMCallResult：
+   - hallucination_tokens: list[int]
+   - hallucination_ratio: float
+   - supported_ratio: float
+4. 业务模块可根据 hallucination_ratio 决定是否提升 uncertainty 或拒答
+
+MVP 降级：
+  如果 LettuceDetect 未部署，使用规则检查：
+  - 统计 response 中未被 evidence_id 引用的关键断言
+  - 计算 citation_coverage
+  - citation_coverage < 0.5 视为等效 hallucination_ratio > 0.3
+```
+
+### 23.2 Chain of Verification Prompt 模板（借鉴 PapersFlow）
+
+产品方案要求 QA 和创新点使用 Chain of Verification 确保断言有文献支撑。
+
+Prompt 模板设计：
+
+```text
+System Prompt 附加指令：
+  "在输出 JSON 前，请执行以下验证步骤：
+   1. 列出你计划在 answer 中做出的关键声明
+   2. 对每个声明，检查是否有对应的 evidence_id 支撑
+   3. 对无 evidence 支撑的声明，标记为 unverified
+   4. 如果发现与 evidence 矛盾的声明，标记为 contradicted
+   5. 在输出中包含 verification_results 字段"
+
+输出 schema 新增：
+  "verification_results": [
+    {"claim": "声明内容", "status": "supported|unverified|contradicted", "evidence_ids": ["ev1"]}
+  ]
+```
+
+### 23.3 Review-Revise Prompt 模板（借鉴 GPT-Researcher）
+
+产品方案要求综述和创新点使用 Review-Revise 循环。
+
+Prompt 模板设计：
+
+```text
+Writer Prompt（初始生成）：
+  "基于以下证据和 Scope，生成 [综述/创新点]..."
+
+Reviewer Prompt（审核）：
+  "请审查以下 [综述/创新点]，检查：
+   1. 结构完整性：是否覆盖所有必要部分
+   2. 证据覆盖：每个结论是否有 evidence_id 支撑
+   3. 引用准确性：引用的 evidence_id 是否存在于上下文
+   4. 逻辑连贯性：各部分之间是否有逻辑衔接
+   5. 泛化表达：是否使用了空泛短语
+   输出 JSON：{issues: [{type, description, severity}], overall_quality: 0-1}"
+
+Revisor Prompt（修订）：
+  "根据以下审查意见修订 [综述/创新点]：
+   审查意见：{reviewer_output}
+   原始内容：{original_output}
+   修订时保留有效的 evidence_id 引用，修正不准确的引用。"
+```
+
+### 23.4 上下文压缩 Prompt（借鉴 GPT-Researcher）
+
+大范围论文（>20 篇）的 prompt 可能超出 token 限制。需要压缩策略：
+
+```text
+分层压缩策略：
+  - L0 元数据：始终包含（论文标题、作者、年份）
+  - L1 摘要：大范围时用摘要替代 PaperCard 全文
+  - L2 PaperCard：中等范围
+  - L3 EvidenceRecord：精确问答
+  - L4 source_quote：深度引用
+
+压缩 prompt 模板：
+  "以下是 {n} 篇论文的证据摘要。请按主题分组总结关键发现、方法和局限。
+   每组保留最相关的 {top_k} 条证据的完整信息，其余用一句话概括。
+   输出格式：{groups: [{topic, key_findings, key_limitations, top_evidence_ids}]}"
+```
+
+### 23.5 H/V Ratio 记录（借鉴 Atlas）
+
+产品方案要求将 H/V ratio 作为质量指标。LLM 层需要支持记录：
+
+```text
+LLMCallResult 新增字段：
+  - h_v_ratio: float | None — 幻觉/验证比（由业务层计算后回写）
+  - verification_score: float | None — 已验证声明占比
+
+记录位置：
+  - QA history
+  - Report metadata
+  - evaluation metrics
+
+目标：
+  - h_v_ratio < 0.1（优秀）
+  - h_v_ratio < 0.2（可接受）
+  - h_v_ratio >= 0.3（需要 Review-Revise）
+```
+
+### 23.6 透明报告元数据（借鉴 PRISMA-trAIce）
+
+产品方案要求记录透明元数据。LLM 层需要提供：
+
+```text
+每次 LLM 调用记录（已有 LLMCallResult）：
+  - model_name / provider
+  - prompt_name / prompt_version / prompt_hash
+  - latency_ms / token_usage
+  - success / error_type / error_message
+  - repair_count / generation_mode
+
+新增记录：
+  - hallucination_check: LettuceDetect 检测结果
+  - verification_result: CoVe 验证结果
+  - h_v_ratio: 幻觉/验证比
+  - context_compression: 是否使用了上下文压缩
+  - few_shot_examples: 使用的 Few-Shot 示例数量
+
+汇总到 Report.metadata.transparency：
+  - total_llm_calls: 总 LLM 调用次数
+  - total_repair_count: 总修复次数
+  - avg_h_v_ratio: 平均幻觉/验证比
+  - model_info: 使用的模型和参数
+```
+
+## 当前代码对齐深化（2026-06-01）
 
 ### 当前实现确认
 
 ```text
-LLM 能力已从旧的 llm_service.py 设计演进到 llm/ 子包：service.py、prompts.py、json_utils.py、errors.py、logging.py。
-LLMService 已提供 invoke、invoke_json、invoke_structured，FakeLLMService 支持测试。
-PromptRegistry 与 PromptTemplateSpec 已存在，可承接 prompt name/version/module/schema。
+llm/ 子包已实现：
+  - service.py（219 行）：LLMService（invoke/invoke_json/invoke_structured）、FakeLLMService、LLMConfig、LLMCallResult
+  - errors.py：8 种错误类型（LLMServiceError/LLMProviderError/LLMTimeoutError/LLMRateLimitError/EmptyLLMResponseError/JsonExtractionError/StructuredOutputError/JsonRepairError）
+  - json_utils.py：extract_json（direct/markdown/surrounding text）+ _try_fix_json + repair_json_with_llm
+  - prompts.py：PromptTemplateSpec + PromptRegistry + 4 个内置 prompt（paper_card/scope_qa/review/innovation）
+  - logging.py：redact_text + hash_text + log_llm_call
+
+invoke_structured 已实现：JSON 提取 → schema 校验 → repair → 日志记录。
+FakeLLMService 已支持测试注入。
+PromptRegistry 已支持 prompt name/version/module/schema。
 ```
+
+### 与产品方案的 Gap 分析
+
+| 产品方案要求 | 代码现状 | Gap 严重度 |
+| --- | --- | --- |
+| LettuceDetect 幻觉检测集成 | 未实现 | 高（QA/报告可信度） |
+| Chain of Verification prompt 模板 | 未实现 | 高（声明验证） |
+| Review-Revise prompt 模板 | 未实现 | 中（综述/创新点质量） |
+| Few-Shot 示例管理 | 未实现 | 中（prompt 质量） |
+| CoT (Chain of Thought) 模板 | 未实现 | 中（复杂推理） |
+| 上下文压缩 prompt | 未实现 | 中（大范围论文） |
+| H/V ratio 记录到 LLMCallResult | 未实现 | 中（质量监控） |
+| Token budget 估算 | 未实现 | 中（token 控制） |
+| ModelRouter 任务路由 | 未实现 | 低（优化成本） |
+| Prompt Golden Tests 自动回归 | 未实现 | 中（prompt 稳定性） |
+| JSON 降级策略文档化 | 已有基础实现 | ⚠️ 部分对齐 |
+| 透明报告元数据 | 已有 LLMCallResult 基础字段 | ⚠️ 部分对齐 |
 
 ### 下一步深化任务
 
 ```text
-1. 全量调用方迁移到 invoke_structured：PaperCard、ScopeQA、Review、Innovation 都必须传入明确 Pydantic schema。
-2. PromptRegistry 成为唯一 prompt 入口，prompt version 写入 PaperCard/Report/QA 日志。
-3. 结构化输出失败分层处理：empty response、JSON extraction、repair failed、schema validation、provider timeout、rate limit。
-4. LLM logging 默认 redaction/hash，不保存完整论文正文和用户问题原文，除非显式 debug 模式。
-5. 记录 token、latency、model、temperature、repair_count、schema_name、prompt_version 到 MetricsCollector。
-6. 为每个 LLM 模块准备 golden fixtures，保证 prompt 调整后能看见结构化字段退化。
+优先级 P0（阻塞 QA/报告质量）：
+1. 全量调用方迁移到 invoke_structured：PaperCard、ScopeQA、Review、Innovation 都必须传入明确 Pydantic schema
+2. PromptRegistry 成为唯一 prompt 入口，prompt version 写入 PaperCard/Report/QA 日志
+3. 结构化输出失败分层处理：empty response → JSON extraction → repair → schema validation → provider timeout → rate limit
+4. LLM logging 默认 redaction/hash，不保存完整论文正文和用户问题原文
+
+优先级 P1（增强 prompt 质量）：
+5. 实现 Few-Shot 示例管理：PromptTemplateSpec.few_shot_examples + 示例文件存储
+6. 实现 Chain of Verification prompt 模板（QA 和创新点专用）
+7. 实现 Review-Revise prompt 模板（综述和创新点专用）
+8. 实现 CoT 推理指令（复杂任务附加）
+9. 实现 H/V ratio 字段到 LLMCallResult
+
+优先级 P2（高级能力）：
+10. 实现 Token budget 估算（estimate_tokens + check_budget）
+11. 实现 ModelRouter 任务路由
+12. 实现上下文压缩 prompt
+13. 实现 Prompt Golden Tests 自动回归
+14. 集成 LettuceDetect 幻觉检测
 ```
 
 ### 验收证据
@@ -2039,7 +2298,14 @@ PromptRegistry 与 PromptTemplateSpec 已存在，可承接 prompt name/version/
 ```text
 pytest tests/agents_v3/research_workspace/test_llm_service.py 通过。
 PaperCard/QA/Review/Innovation 的测试均可用 FakeLLMService 注入，无需真实 API key。
-新增测试覆盖 prompt version 落库、schema validation error、redaction 不泄露长文本。
+新增测试覆盖：
+  - prompt version 落库
+  - schema validation error
+  - redaction 不泄露长文本
+  - Few-Shot 示例正确注入
+  - CoVe prompt 模板生成正确
+  - Review-Revise prompt 模板生成正确
+  - H/V ratio 记录正确
 ```
 
 ### 风险与阻塞
@@ -2047,4 +2313,7 @@ PaperCard/QA/Review/Innovation 的测试均可用 FakeLLMService 注入，无需
 ```text
 如果不同模块继续各自拼 prompt 和解析 JSON，后续评估无法判断失败来自 prompt、模型还是 schema。
 日志中保存完整论文文本有隐私与体积风险，默认必须截断、脱敏或哈希。
+LettuceDetect 集成需要额外依赖（transformers + torch），MVP 可先用规则降级。
+Few-Shot 示例需要持续维护，过时的示例可能导致模型输出退化。
+CoT 推理会增加 token 消耗，需要在质量和成本之间权衡。
 ```

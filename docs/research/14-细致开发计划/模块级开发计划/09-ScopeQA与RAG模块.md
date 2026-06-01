@@ -1,6 +1,48 @@
 # 09-Scope QA 与 RAG 模块专项开发计划
 
-更新时间：2026-05-29
+更新时间：2026-06-01
+
+## 0. 与产品方案的关联
+
+### 0.1 可借鉴技术
+
+本模块可借鉴的产品与技术方案（来源：`当前产品方案.md` + `学术报告生成系统产品借鉴与技术方案调研.md`）：
+
+| 借鉴来源 | 借鉴内容 | 落地位置 |
+| --- | --- | --- |
+| Anthropic Contextual Retrieval | 上下文嵌入 + BM25 混合检索，减少 67% 失败检索 | §8 检索策略 |
+| LettuceDetect | Token-level 幻觉检测（ModernBERT），F1=79.22%，MIT 开源 | §12 校验与拒答 |
+| PapersFlow | Critic Agent 反证检测 + Chain of Verification (CoVe) | §12 声明验证 |
+| Atlas | H/V ratio 质量指标（目标 < 0.1） | §18 评估方案 |
+| GPT-Researcher | Review-Revise 循环（Writer→Reviewer→Revisor） | §11 生成与结构化输出 |
+| PRISMA-trAIce | AI 辅助 SR 透明报告检查清单（12 项） | §13 QA 会话与历史 |
+| Consensus | Claims & Evidence Table、Consensus Meter | §8 检索策略 |
+| NotebookLM | Sources + QA + Artifact 交互模式 | §16 前端交互契约 |
+| RAGFlow | Parent-Child Chunking、DeepDoc 解析器 | §8 检索策略 |
+| Microsoft GraphRAG | local/global 图谱检索、社区摘要 | §9 GraphRAG 集成 |
+
+### 0.2 代码对齐状态
+
+| 产品方案要求 | 代码现状 | 对齐状态 |
+| --- | --- | --- |
+| Scope 先于检索 | `answer()` 先调 `scope_service.resolve()` | ✅ 已对齐 |
+| 规则意图分类 | `classify_intent()` 支持 9 种意图 | ✅ 已对齐 |
+| Evidence 打分排序 | `_score_evidence()` 已实现字段打分 | ✅ 已对齐 |
+| LLM JSON 结构化输出 | `invoke_json()` 已实现 | ✅ 已对齐 |
+| ScopeGuard 校验 | `_validate_response()` 已实现基础校验 | ⚠️ 部分对齐 |
+| 空范围拒答 | `_empty_scope_response()` 已实现 | ✅ 已对齐 |
+| 证据不足拒答 | `len(evidence) < 2` 时拒答 | ✅ 已对齐 |
+| QA 历史保存 | `_save_qa_history()` 已实现 | ✅ 已对齐 |
+| BM25 混合检索 | 未实现，仅有字段打分 | ❌ 未对齐 |
+| Contextual Retrieval | 未实现 | ❌ 未对齐 |
+| 幻觉检测（LettuceDetect） | 未实现 | ❌ 未对齐 |
+| Chain of Verification | 未实现 | ❌ 未对齐 |
+| H/V ratio 质量指标 | 未实现 | ❌ 未对齐 |
+| Review-Revise 循环 | 未实现 | ❌ 未对齐 |
+| GraphRAG local/global | 未实现，仅有基础 graph_context | ❌ 未对齐 |
+| 上下文压缩（大范围论文） | 未实现 | ❌ 未对齐 |
+| Retrieval diagnostics | 已有基础 diagnostics | ⚠️ 部分对齐 |
+| Context budget 控制 | 未实现 | ❌ 未对齐 |
 
 本文档基于 `docs/research` 下的产品方案、当前开发计划、学术 QA/RAG 调研、RAG 与知识图谱评估调研、证据表计划、知识图谱计划、RetrievalScope 计划、Token 成本分析和当前代码实现，重新细化 Scope QA 与 RAG 模块的开发方案。
 
@@ -1036,6 +1078,111 @@ P0 规则：
 如果 answer 很长但 evidence_ids 很少，警告 low_citation_coverage。
 ```
 
+### 12.3.1 幻觉检测（借鉴 LettuceDetect）
+
+产品方案要求 QA 回答使用 LettuceDetect 进行 token-level 幻觉检测。
+
+LettuceDetect 技术参数：
+
+```text
+模型：ModernBERT-based（17-68M 参数 tiny variants）
+训练数据：RAGTruth 数据集
+精度：F1=79.22%（token-level）
+许可证：MIT 开源
+支持长度：8192 tokens
+多语言：EuroBERT 版本支持
+```
+
+集成方案：
+
+```text
+输入：
+  - context: 检索到的 evidence 文本（拼接）
+  - response: LLM 生成的回答文本
+
+步骤：
+  1. 将 context 和 response 拼接为 LettuceDetect 输入格式
+  2. 模型对 response 中每个 token 标注：SUPPORTED / NOT_SUPPORTED / UNKNOWN
+  3. 统计 NOT_SUPPORTED token 占比
+
+输出：
+  - hallucination_tokens: list[int] — 幻觉 token 位置
+  - hallucination_ratio: float — 幻觉 token 占比
+  - supported_ratio: float — 有支撑 token 占比
+  - h_v_ratio: float — 幻觉断言数 / 总断言数（目标 < 0.1）
+
+集成位置：
+  - generate_answer() 返回前调用
+  - 结果写入 QAResponse.validation_warnings
+  - h_v_ratio > 0.3 时标记 high_hallucination_risk
+  - h_v_ratio > 0.5 时触发拒答或强制 uncertainty 提升
+```
+
+MVP 降级方案：
+
+```text
+如果 LettuceDetect 模型未部署：
+  1. 使用规则检查：answer 中未被 evidence_id 引用的关键断言
+  2. 计算 citation_coverage = 有引用的断言数 / 总断言数
+  3. citation_coverage < 0.5 视为等效 hallucination_ratio > 0.3
+```
+
+### 12.3.2 Chain of Verification（借鉴 PapersFlow）
+
+产品方案要求 QA 和报告使用 Chain of Verification 确保断言有文献支撑。
+
+实现方案：
+
+```text
+步骤：
+  1. 从 answer 中提取关键声明（key_points）
+  2. 对每个声明，检查是否有对应的 evidence_id
+  3. 对有 evidence_id 的声明，验证 evidence 是否支持该声明
+  4. 对无 evidence_id 的声明，标记为 unverified
+
+验证状态：
+  - supported: 有 evidence_id 且 evidence 支持
+  - partially_supported: 有 evidence_id 但 evidence 部分支持
+  - unverified: 无 evidence_id
+  - contradicted: evidence 与声明矛盾（需要 CONTRADICTS 边）
+
+输出：
+  - verification_results: list[dict] — 每个 key_point 的验证状态
+  - unverified_claims: list[str] — 未验证的声明
+  - verification_score: float — 已验证声明占比
+```
+
+P2 增强：
+
+```text
+1. 使用 LLM 做 claim-level 证据匹配（而非仅靠 evidence_id 存在性）
+2. 自动搜索反证：在 Scope 内搜索与声明矛盾的 evidence
+3. 反证结果写入 QAResponse.counter_evidence
+```
+
+### 12.3.3 H/V Ratio 质量指标（借鉴 Atlas）
+
+Atlas 在 200 篇论文语料库上测试，H/V ratio = 0.05（最低）。本产品应将此作为 QA 质量指标。
+
+```text
+H/V ratio = 幻觉断言数 / 总断言数
+
+计算：
+  1. 总断言数 = len(key_points)
+  2. 幻觉断言数 = len(unverified_claims) + len(contradicted_claims)
+  3. H/V ratio = 幻觉断言数 / 总断言数
+
+目标：
+  - H/V ratio < 0.1（优秀）
+  - H/V ratio < 0.2（可接受）
+  - H/V ratio >= 0.3（需要 Review-Revise）
+
+写入：
+  - QAResponse.metadata.h_v_ratio
+  - QA history 记录
+  - 评估方案统计
+```
+
 P2 可增加 LLM judge：
 
 ```text
@@ -1631,26 +1778,199 @@ LangChain RAG:
 https://python.langchain.com/docs/tutorials/rag/
 ```
 
-## 当前代码对齐深化（2026-05-29）
+## 25. 研究借鉴增强
+
+### 25.1 Contextual Retrieval 集成（借鉴 Anthropic）
+
+Anthropic 的 Contextual Retrieval 是当前最先进的 RAG 检索优化方案：
+
+```text
+效果数据：
+  - 仅 Contextual Embeddings → 减少 35% 失败检索
+  - + BM25 混合检索 → 减少 49% 失败检索
+  - + Reranking → 减少 67% 失败检索
+```
+
+本项目落地：
+
+```text
+P0（当前）：
+  字段打分 + intent 匹配 + evidence_strength 加权
+
+P1（BM25 集成）：
+  1. 对 Scope 内 EvidenceRecord 构建 BM25 索引
+  2. 查询：question + intent keywords
+  3. 融合：field_score * 0.4 + BM25_score * 0.4 + quality_score * 0.2
+  4. 不需要向量库，纯 Python 实现（rank_bm25 库）
+
+P1（Contextual 增强）：
+  1. EvidenceRecord 的 claim_text 生成时 prepend 上下文摘要
+  2. 上下文格式：”[论文标题][章节类型][主题] {claim_text}”
+  3. 与 PaperChunk 的 context 字段对齐
+
+P2（Hybrid + Reranking）：
+  1. BM25 候选 50 + Vector 候选 50
+  2. RRF (Reciprocal Rank Fusion) 融合
+  3. Cross-encoder rerank top 20
+  4. Graph proximity 加权
+```
+
+### 25.2 幻觉检测集成（借鉴 LettuceDetect）
+
+产品方案要求使用 LettuceDetect 进行 token-level 幻觉检测：
+
+```text
+技术选型：
+  - 模型：LettuceDetect-v0.1（ModernBERT-based）
+  - 精度：F1=79.22%（RAGTruth 数据集）
+  - 大小：tiny variants 17-68M 参数
+  - 许可：MIT 开源
+  - 部署：HuggingFace 直接加载
+
+集成位置：
+  - QA 回答后、返回前
+  - 综述生成后、返回前
+  - 创新点报告生成后、返回前
+
+输出：
+  - hallucination_ratio: 幻觉 token 占比
+  - h_v_ratio: 幻觉断言 / 总断言（目标 < 0.1）
+  - 标记 high_hallucination_risk 时触发 uncertainty 提升或拒答
+```
+
+### 25.3 反证检测（借鉴 PapersFlow Critic Agent）
+
+PapersFlow 的 Critic Agent 专门寻找反对证据，避免只展示支持证据的偏见。
+
+本项目落地：
+
+```text
+1. 在 generate_answer() 后新增 _search_counter_evidence() 步骤
+2. 在 Scope 内搜索与 key_points 矛盾的 evidence
+3. 搜索条件：evidence_direction == “contrasting” 或 Finding CONTRADICTS Finding 边
+4. 反证结果写入 QAResponse.counter_evidence
+5. 如果存在反证，uncertainty 自动提升，confidence 下调
+```
+
+### 25.4 Review-Revise 循环（借鉴 GPT-Researcher）
+
+GPT-Researcher 的 Review-Revise 循环确保输出质量：
+
+```text
+WriterAgent 生成初稿
+  -> ReviewerAgent 审查（结构完整性、证据覆盖、引用准确性、逻辑连贯性）
+  -> RevisorAgent 根据审查意见修订
+  -> 可配置迭代轮数（默认 1 轮）
+```
+
+本项目落地（P1）：
+
+```text
+1. generate_answer() 生成初版回答
+2. _review_answer() 检查：
+   - 是否所有 key_points 都有 evidence_id
+   - 是否存在 scope 外引用
+   - 是否存在未验证断言
+   - uncertainty 是否充分
+3. 如果 review 发现问题，_revise_answer() 修订
+4. 最大迭代 1 轮（避免过度消耗 token）
+```
+
+### 25.5 上下文压缩（借鉴 GPT-Researcher）
+
+大范围论文（>20 篇）的 QA 上下文可能超出 token 限制：
+
+```text
+方案：
+  1. 按 topic 对 evidence 分组
+  2. 每组取 top evidence（按 score）
+  3. 组内低分 evidence 用摘要替代全文
+  4. 总 context 控制在 max_context_tokens 以内
+
+分层压缩策略（借鉴 Token 调研）：
+  - L0 元数据：始终包含（论文标题、作者、年份）
+  - L1 摘要：大范围时用摘要替代 PaperCard 全文
+  - L2 PaperCard：中等范围
+  - L3 EvidenceRecord：精确问答
+  - L4 source_quote：深度引用
+```
+
+### 25.6 透明报告元数据（借鉴 PRISMA-trAIce）
+
+产品方案要求 QA 和报告记录透明元数据：
+
+```text
+QA 响应元数据：
+  - prompt_version: 使用的 prompt 版本
+  - scope_snapshot: 范围快照（paper_ids、evidence_ids）
+  - retrieval_snapshot: 检索结果快照（candidate_count、selected_count、scores）
+  - model_info: LLM 模型和参数
+  - validation_result: ScopeGuard 校验结果
+  - hallucination_check: LettuceDetect 检测结果
+  - verification_result: Chain of Verification 结果
+  - h_v_ratio: 幻觉/验证比
+  - generated_at: 生成时间
+```
+
+## 当前代码对齐深化（2026-06-01）
 
 ### 当前实现确认
 
 ```text
-scope_qa.py 当前包含 ScopeQAService，支持 answer 与 generate_answer。
-API 层已有 ask_question 路由，入参通过 QARequest 承接问题和 scope。
-evaluation/evaluator.py 已有 refusal_correctness_check、citation_coverage_check 等可用于 QA 质量验收的函数。
-vector_storage.py 已存在但配置默认 vector_storage: none，当前 RAG 需要支持无向量后端的证据检索路径。
+scope_qa.py（451 行）当前包含 ScopeQAService，已实现：
+  - answer() — 主入口：resolve scope → classify intent → retrieve → generate → validate → save
+  - classify_intent() — 9 种规则意图分类
+  - retrieve_context() — Scope 内 evidence/cards/graph 聚合
+  - _score_evidence() — 字段打分排序（intent 匹配 + 关键词 + strength + source_quote）
+  - generate_answer() — LLM JSON 结构化输出
+  - _validate_response() — ScopeGuard 基础校验
+  - _save_qa_history() — QA 历史保存
+  - _fallback_answer() — LLM 失败时规则降级
+
+API 层已有 ask_question 路由。
+evaluation/evaluator.py 已有 refusal_correctness_check、citation_coverage_check 等评估函数。
+vector_storage.py 已存在但配置默认 vector_storage: none。
 ```
+
+### 与产品方案的 Gap 分析
+
+| 产品方案要求 | 代码现状 | Gap 严重度 |
+| --- | --- | --- |
+| BM25 混合检索 | 仅有字段打分，无 BM25 | 高（检索质量） |
+| Contextual Retrieval | 未实现 | 高（检索质量） |
+| LettuceDetect 幻觉检测 | 未实现 | 高（输出可信度） |
+| Chain of Verification | 未实现 | 高（输出可信度） |
+| H/V ratio 质量指标 | 未实现 | 中（质量监控） |
+| Review-Revise 循环 | 未实现 | 中（输出质量） |
+| 反证检测 | 未实现 | 中（避免偏见） |
+| 上下文压缩 | 未实现 | 中（大范围论文） |
+| Context budget 控制 | 未实现 | 中（token 控制） |
+| GraphRAG local/global | 仅有基础 graph_context | 中（图谱增强） |
+| 透明报告元数据 | 已有基础 diagnostics | ⚠️ 部分对齐 |
+| ScopeGuard 完整校验 | 已有基础校验 | ⚠️ 部分对齐 |
 
 ### 下一步深化任务
 
 ```text
-1. QA 执行前强制解析 RetrievalScope，并拒绝空 scope、跨项目 paper_id 和 rejected evidence。
-2. 检索诊断返回 candidate_count、selected_evidence_count、excluded_by_scope_count、low_confidence_count。
-3. 回答必须输出 citations/evidence_ids/source_span_ids，引用缺失时触发 citation_coverage_check。
-4. 对 scope 内证据不足的问题返回 refusal，而不是让 LLM 生成常识性回答。
-5. 无向量后端时采用 evidence/chunk 的关键词和结构字段检索；启用向量后端时记录 embedding_model 与 index_snapshot。
-6. QA 日志记录 prompt_version、scope_snapshot、retrieval_snapshot、validation_result，但敏感正文需 redaction/hash。
+优先级 P0（阻塞 QA 质量）：
+1. 增强 _score_evidence()：加入 review_status 过滤（rejected 排除）、evidence_direction 加权
+2. 实现 Context budget 控制：max_context_tokens 参数，超出时按 score 截断
+3. 增强 ScopeGuard：校验 source_quote 是否来自 context 中的 evidence
+4. 实现 Retrieval diagnostics 增强：low_confidence_count、excluded_by_scope_count
+
+优先级 P1（增强检索和可信度）：
+5. 实现 BM25 检索：使用 rank_bm25 库对 evidence claim_text 做 BM25 打分
+6. 实现 Contextual 增强：claim_text prepend 上下文摘要
+7. 集成 LettuceDetect：QA 回答后 token-level 幻觉检测
+8. 实现 Chain of Verification：key_points 逐条验证
+9. 实现 H/V ratio 计算并写入 response metadata
+10. 实现反证检测：在 Scope 内搜索 CONTRADICTS 证据
+
+优先级 P2（高级能力）：
+11. 实现 Review-Revise 循环（1 轮）
+12. 实现上下文压缩（按 topic 分组截断）
+13. 实现 Hybrid Retrieval（BM25 + Vector + RRF + Rerank）
+14. 实现 GraphRAG local/global 上下文增强
 ```
 
 ### 验收证据
@@ -1658,12 +1978,23 @@ vector_storage.py 已存在但配置默认 vector_storage: none，当前 RAG 需
 ```text
 pytest tests/agents_v3/research_workspace/test_scope_qa.py 通过。
 pytest tests/agents_v3/research_workspace/test_evaluation.py 通过相关 QA 评估。
-新增测试覆盖证据不足拒答、引用越界失败、vector_storage none 路径可用。
+新增测试覆盖：
+  - 证据不足拒答
+  - 引用越界失败
+  - vector_storage none 路径可用
+  - BM25 检索结果正确性
+  - LettuceDetect 幻觉标记
+  - Chain of Verification 状态正确
+  - H/V ratio 计算正确
+  - 反证检测结果正确
 ```
 
 ### 风险与阻塞
 
 ```text
-QA 最主要风险是“看似合理但不在 Scope 内”。ScopeGuard、citation coverage 和 refusal correctness 必须成为默认门禁。
+QA 最主要风险是”看似合理但不在 Scope 内”。ScopeGuard、citation coverage 和 refusal correctness 必须成为默认门禁。
 向量检索启用前，不应让系统对 ChromaDB 形成硬依赖。
+LettuceDetect 模型部署需要额外依赖（transformers + torch），MVP 可先用规则降级。
+BM25 索引在 evidence 数量大时可能有性能问题，需要评估是否需要持久化索引。
+Chain of Verification 增加 LLM 调用次数，需要控制 token 成本。
 ```

@@ -124,3 +124,102 @@ def truncate_query(query: str, max_chars: int = 250) -> str:
         truncated = truncated[:last_space]
 
     return truncated
+
+
+# ── Multi-Query 多查询变体 ──────────────────────────────
+
+_MULTI_QUERY_PROMPT = """## 角色
+你是学术论文搜索查询改写专家。
+
+## 任务
+将用户查询改写为 {n} 个不同的搜索变体，每个变体从不同角度表达相同的研究需求。
+
+## 规则
+1. 保留核心学术概念（如 "sparse functional data" 是一个整体，不能拆开）
+2. 每个变体使用不同的同义词、相关术语或表达方式
+3. 变体之间应有差异，不要只是调换词序
+4. 适合在 OpenAlex、arXiv、Semantic Scholar 上搜索
+5. 每个变体不超过 10 个词
+
+## 示例
+输入：sparse functional data for deep learning
+输出：
+sparse functional regression neural network
+functional data analysis sparsity regularization deep learning
+irregular functional data representation learning
+sparse sampling functional estimation deep learning
+
+## 输出格式
+每行一个变体，不要编号、不要解释。"""
+
+
+def multi_query(query: str, n: int = 4) -> list[str]:
+    """生成多个查询变体（Multi-Query 策略）
+
+    Returns:
+        变体列表（不含原始查询）
+    """
+    try:
+        from src.agents_v3.research_workspace.llm.service import get_llm_service
+        llm = get_llm_service()
+
+        user_prompt = f"改写以下查询为 {n} 个变体：\n{query}"
+        result = llm.invoke(_MULTI_QUERY_PROMPT.format(n=n), user_prompt).strip()
+
+        variants = []
+        for line in result.strip().split("\n"):
+            line = line.strip().strip('"').strip("'")
+            # 去掉可能的编号前缀
+            line = __import__("re").sub(r"^\d+[\.\)]\s*", "", line)
+            if line and line.lower() != query.lower() and len(line.split()) >= 2:
+                variants.append(line)
+
+        logger.info(f"Multi-Query: \"{query}\" → {len(variants)} variants")
+        for i, v in enumerate(variants):
+            logger.info(f"  [{i+1}] {v}")
+        return variants[:n]
+
+    except Exception as e:
+        logger.warning(f"Multi-Query failed: {e}")
+        return []
+
+
+# ── HyDE 假设性文档 ────────────────────────────────────
+
+_HYDE_PROMPT = """## 角色
+你是学术论文摘要撰写专家。
+
+## 任务
+根据用户的研究查询，撰写一篇**假设性论文摘要**（150-200词），描述一篇理想中完全匹配该查询的论文。
+
+## 规则
+1. 摘要应包含查询中的核心学术概念
+2. 使用标准的学术论文摘要语言风格
+3. 包含方法、数据、结果等关键要素
+4. 使用该领域的专业术语
+5. 不要编造具体的数字或引用
+
+## 输出格式
+直接输出摘要文本，不要加标题、不要加解释。"""
+
+
+def hyde_query(query: str) -> str:
+    """生成假设性论文摘要（HyDE 策略）
+
+    Returns:
+        假设性摘要文本，用于增强搜索
+    """
+    try:
+        from src.agents_v3.research_workspace.llm.service import get_llm_service
+        llm = get_llm_service()
+
+        user_prompt = f"为以下研究查询撰写假设性论文摘要：\n{query}"
+        result = llm.invoke(_HYDE_PROMPT, user_prompt).strip().strip('"').strip("'")
+
+        if result and len(result) > 50:
+            logger.info(f"HyDE: generated {len(result)} chars hypothetical abstract")
+            return result
+    except Exception as e:
+        logger.warning(f"HyDE failed: {e}")
+
+    return ""

@@ -40,6 +40,13 @@ class ProjectService:
         education_level: str = "",
         research_goal: str = "",
     ) -> Project:
+        # 检查项目名是否已存在
+        existing = self.list_projects()
+        for p in existing:
+            if p.name == name:
+                from src.agents_v3.research_workspace.api.errors import ConflictError
+                raise ConflictError("project", "name", name)
+
         project_id = f"proj_{uuid.uuid4().hex[:8]}"
         dir_name = sanitize_dirname(name)
 

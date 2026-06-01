@@ -42,6 +42,16 @@ class ValidationError(APIError):
         super().__init__(code="validation_failed", message=message, status_code=422, details=details)
 
 
+class ConflictError(APIError):
+    def __init__(self, resource: str, field: str, value: str):
+        super().__init__(
+            code=f"{resource}_conflict",
+            message=f"{resource.title()} already exists with {field}: {value}",
+            status_code=409,
+            details={"resource": resource, "field": field, "value": value},
+        )
+
+
 class ScopeEmptyError(APIError):
     def __init__(self, reason: str = ""):
         super().__init__(

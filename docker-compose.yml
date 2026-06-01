@@ -48,6 +48,21 @@ services:
     networks:
       - paper-network
 
+  # ---- 前端 ----
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: paper-agent-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      paper-agent:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - paper-network
+
   # ---- 主服务 ----
   paper-agent:
     build:

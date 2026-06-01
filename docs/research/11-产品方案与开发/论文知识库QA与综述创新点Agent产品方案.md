@@ -1,8 +1,9 @@
 # 论文知识库 QA 与综述创新点 Agent 产品方案
 
-> 日期：2026-05-27  
-> 目标：基于当前项目已有能力，设计一个聚焦于“论文库 + 知识图谱 QA + 文献综述 + 创新点报告”的学术 Agent 产品。  
+> 日期：2026-05-27（更新：2026-06-01）
+> 目标：基于当前项目已有能力，设计一个聚焦于”论文库 + 知识图谱 QA + 文献综述 + 创新点报告”的学术 Agent 产品。
 > 核心边界：不做完整论文代写、不做全文修改润色、不做降重排版，聚焦研究分析与成果输出。
+> 代码落地目录：`src/agents_v3/research_workspace/`
 
 ---
 
@@ -672,6 +673,65 @@ PDF
 
 ```text
 论文卡片 -> 证据表 -> 知识图谱 -> 综述/创新点
+```
+
+### 8.8 GPT-Researcher：多 Agent 研究工作流
+
+GPT-Researcher（GitHub 21.1k stars）的核心启发是多角色协作的研究流程。
+
+可借鉴点：
+
+| GPT-Researcher 能力 | 对本产品的借鉴 |
+|---|---|
+| Review-Revise 循环（Writer→Reviewer→Revisor） | 综述和创新点生成后增加审查-修订环节 |
+| 树状图谱探索（递归遍历 knowledge graph） | 创新点发现时递归探索图谱找 gap |
+| 上下文压缩（按主题分组摘要后再生成） | 大范围论文综述时分组压缩避免超长 |
+| 7 个 Agent 角色分工 | 不照搬角色数，但借鉴"规划→检索→分析→写作→审查"流程 |
+
+本产品可做：
+
+```text
+综述生成：WriterAgent -> ReviewReviewerAgent -> ReviewRevisorAgent
+创新点报告：InnovationWriterAgent -> InnovationReviewerAgent
+图谱探索：_explore_graph_recursive() 递归找 gap
+```
+
+### 8.9 PapersFlow：反证检测与多 Agent 协作
+
+PapersFlow（474M+ 论文）的核心启发是自动寻找反证。
+
+可借鉴点：
+
+| PapersFlow 能力 | 对本产品的借鉴 |
+|---|---|
+| 反证检测（自动寻找支持/反对论文） | 创新点报告中增加"反对证据"信号 |
+| 多 Agent 协作 | 综述生成中的 Writer-Reviewer 分工 |
+| 结构化证据提取 | 强化 EvidenceRecord 的字段完整性 |
+
+本产品可做：
+
+```text
+创新点信号类型增加：findings_contradictions（反证信号）
+每个创新点必须列出：supporting_evidence + limiting_evidence
+```
+
+### 8.10 Atlas：跨论文综合与幻觉检测
+
+Atlas 的核心启发是跨论文综合和生成质量控制。
+
+可借鉴点：
+
+| Atlas 能力 | 对本产品的借鉴 |
+|---|---|
+| 跨论文综合 | 综述不是单篇摘要拼接，而是跨论文主题聚合 |
+| 幻觉-验证比率 | 对生成内容进行事实核查，确保引用准确 |
+| 思维导图可视化 | 知识图谱的时间线和主题展示 |
+
+本产品可做：
+
+```text
+综述质量指标：hallucination_ratio = 无来源断言数 / 总断言数
+创新点验证：每个创新点的 evidence_coverage = 有来源支撑的要点数 / 总要点数
 ```
 
 ---

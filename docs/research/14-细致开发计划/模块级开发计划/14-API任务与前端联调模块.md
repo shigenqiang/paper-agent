@@ -1,6 +1,47 @@
 # API 任务与前端联调模块专项开发计划
 
-更新时间：2026-05-29
+更新时间：2026-06-01
+
+## 0. 与产品方案的关联
+
+### 0.1 可借鉴技术
+
+本模块可借鉴的产品与技术方案（来源：`当前产品方案.md` + `前端设计方案.md` + `前端实施方案.md`）：
+
+| 借鉴来源 | 借鉴内容 | 落地位置 |
+| --- | --- | --- |
+| NotebookLM | Sources + QA + Artifact 三栏交互模式 | §12 前端页面契约 |
+| Elicit | 证据表工作流、sentence-level 引用 | §12 QA 页面 |
+| Connected Papers | 力导向图谱、节点大小=引用数 | §12 知识图谱页 |
+| Consensus | 共识度量表 | §12 证据表展示 |
+| PRISMA-trAIce | AI 辅助 SR 透明报告检查清单（12 项） | §15 日志与监控 |
+| GPT-Researcher | 任务进度和事件流 | §9 TaskService + §11 事件流 |
+| 前端设计方案 | 深空实验室视觉系统、4 核心页面、键盘优先 | §12 前端页面契约 |
+| 前端实施方案 | 组件树、路由、状态管理、API 对接 | §13 前端 Store 建议 |
+| FastAPI | OpenAPI 自动生成、依赖注入、后台任务 | §7 API 基础契约 |
+| SSE | Server-Sent Events 实时推送任务进度 | §11 事件流设计 |
+
+### 0.2 代码对齐状态
+
+| 产品方案要求 | 代码现状 | 对齐状态 |
+| --- | --- | --- |
+| FastAPI app + CORS + request_id 中间件 | 已实现 api/app.py | ✅ 已对齐 |
+| request/response DTO | 已实现 api/models.py | ✅ 已对齐 |
+| 统一错误处理（APIError 等） | 已实现 api/errors.py | ✅ 已对齐 |
+| service 依赖注入 | 已实现 api/deps.py | ✅ 已对齐 |
+| 任务状态持久化 | 已实现 api/tasks.py | ✅ 已对齐 |
+| 全部 API 端点（30+ 个） | 已实现 | ✅ 已对齐 |
+| 健康检查 /health | 已实现基础版本 | ⚠️ 部分对齐 |
+| 长任务异步语义 | 部分路由仍是同步包装 | ⚠️ 部分对齐 |
+| SSE 事件流推送 | 未实现 | ❌ 未对齐 |
+| 任务进度 step/progress | 未实现细粒度进度 | ❌ 未对齐 |
+| 前端 4 核心页面 | 未实现 | ❌ 未对齐 |
+| 前端 Zustand 状态管理 | 未实现 | ❌ 未对齐 |
+| 前端 API Client 封装 | 未实现 | ❌ 未对齐 |
+| OpenAPI examples | 未实现 | ❌ 未对齐 |
+| Demo Pipeline | 未实现 | ❌ 未对齐 |
+| 透明报告元数据 API | 未实现 | ❌ 未对齐 |
+| 前端证据追溯交互 | 未实现 | ❌ 未对齐 |
 
 ## 实现状态
 
@@ -2344,26 +2385,232 @@ Ant Design:
 https://ant.design/
 ```
 
-## 当前代码对齐深化（2026-05-29）
+## 23. 研究借鉴增强
+
+### 23.1 NotebookLM 三栏交互模式
+
+产品方案借鉴 NotebookLM 的 Sources + QA + Artifact 模式。前端设计方案已将此落地为：
+
+```text
+三栏布局：
+  左栏：论文库 / 证据表 / 图谱节点列表（Sources）
+  中栏：QA 对话 / 综述 / 创新点（Chat + Artifact）
+  右栏：来源追溯 / 证据详情 / 图谱路径（Traceability）
+
+交互流程：
+  1. 用户在左栏选择论文/主题/方法作为 Scope
+  2. 中栏展示 QA 回答或报告内容
+  3. 点击中栏的引用标记，右栏展示对应证据来源
+  4. 右栏可进一步跳转到论文原文或图谱节点
+```
+
+API 层需要支持：
+
+```text
+1. Scope 选择 API：POST /scope/resolve 返回 paper_ids、evidence_ids、graph_node_ids
+2. 来源追溯 API：GET /evidence/{evidence_id} 返回完整证据详情
+3. 图谱路径 API：POST /kg/paths 返回 node_ids、edge_ids、explanation
+4. 引用高亮 API：QA 响应中每个 key_point 必须包含 evidence_ids 和 source_quotes
+```
+
+### 23.2 证据表工作流（借鉴 Elicit）
+
+Elicit 的证据表工作流是核心交互模式之一。前端需要支持：
+
+```text
+1. 证据表视图：按 topic × method × year 矩阵展示
+2. Sentence-level 引用：点击证据表中的单元格，跳转到论文原文位置
+3. 纳入/排除：用户可以标记证据的 review_status
+4. 导出：证据表可导出为 CSV/JSON
+
+API 层需要支持：
+  GET /evidence/matrix?group_by=topic,method&project_id=xxx
+  PATCH /evidence/{evidence_id} — 更新 review_status
+  GET /evidence/{evidence_id}/source — 返回 source_chunk 和原文位置
+```
+
+### 23.3 知识图谱可视化（借鉴 Connected Papers）
+
+Connected Papers 的力导向图谱是图谱页面的参考。前端设计方案已定义：
+
+```text
+可视化方案：
+  - 力导向布局（D3-force 或 vis-network）
+  - 节点大小 = 引用数 / evidence 数量
+  - 节点颜色 = 节点类型（Paper/Topic/Method/Gap 等）
+  - 边粗细 = evidence_strength
+  - 边颜色 = edge_type
+  - 点击节点展示详情面板
+  - 框选多个节点创建子图 Scope
+
+API 层需要支持：
+  GET /kg?project_id=xxx — 返回 nodes + edges（已实现）
+  POST /kg/subgraph — 返回子图（已实现）
+  GET /kg/nodes/{node_id}/evidence — 返回节点关联证据
+  POST /scope/preview — 基于选中节点预览 Scope
+```
+
+### 23.4 共识度量表（借鉴 Consensus）
+
+Consensus 的共识度量表展示多个研究结论的一致性程度。前端证据表页面可借鉴：
+
+```text
+展示方式：
+  - 每个 evidence 的 evidence_direction 用图标标记（supporting↑ / contrasting↓ / mentioning—）
+  - 每个 Gap 的 consensus_level 用颜色标记（agreement=绿 / mixed=黄 / disagreement=红）
+  - 聚合视图：同一 topic 下的 evidence 方向分布
+
+API 层需要支持：
+  GET /evidence/consensus?project_id=xxx&topic=xxx
+  返回：{topic, total_evidence, supporting_count, contrasting_count, mentioning_count, consensus_level}
+```
+
+### 23.5 任务进度实时推送（借鉴 GPT-Researcher）
+
+GPT-Researcher 的任务执行过程需要实时反馈给用户。前端设计方案要求：
+
+```text
+任务进度展示：
+  - 步骤条：显示当前步骤和总步骤数
+  - 进度条：显示当前步骤的完成百分比
+  - 事件列表：显示已完成、进行中、失败的事件
+  - 实时更新：使用 SSE (Server-Sent Events) 推送
+
+API 层需要支持：
+  GET /tasks/{task_id} — 返回任务状态（已实现）
+  GET /tasks/{task_id}/events — 返回任务事件列表（已实现）
+  GET /tasks/{task_id}/stream — SSE 实时推送任务事件（新增）
+
+SSE 事件格式：
+  event: step_update
+  data: {"step": "parsing", "progress": 0.6, "message": "正在解析第 3/5 篇论文"}
+
+  event: task_complete
+  data: {"task_id": "xxx", "status": "completed", "result_ref": "/reports/xxx"}
+
+  event: task_error
+  data: {"task_id": "xxx", "error_type": "llm_timeout", "retryable": true}
+```
+
+### 23.6 透明报告元数据 API（借鉴 PRISMA-trAIce）
+
+产品方案要求报告记录透明元数据。API 层需要暴露：
+
+```text
+GET /reports/{report_id}/metadata
+返回：
+  - prompt_version
+  - scope_snapshot（paper_ids、evidence_ids）
+  - model_info（model_name、provider、temperature）
+  - generation_time
+  - quality_metrics（h_v_ratio、evidence_coverage）
+  - validation_result
+  - excluded_candidates（创新点报告专用）
+  - human_confirmations（人工确认记录）
+```
+
+### 23.7 前端设计方案落地
+
+前端设计方案（2026-06-01）已定义完整的视觉系统和组件架构：
+
+```text
+视觉系统：深空实验室（深色背景 + 暖光高亮 + 纸张质感）
+4 核心页面：项目论文库、知识图谱、研究 QA、成果报告
+键盘优先：命令面板 + 快捷键
+非模态交互：侧边抽屉 > 弹窗
+
+组件树：
+  App
+  ├── CommandPalette (Cmd+K)
+  ├── Sidebar (项目切换)
+  ├── ProjectPaperLibrary
+  │   ├── PaperTable
+  │   ├── SearchPanel
+  │   ├── PaperDetailDrawer
+  │   └── BatchActionBar
+  ├── KnowledgeGraph
+  │   ├── GraphCanvas (力导向图)
+  │   ├── NodeDetailPanel
+  │   ├── TypeFilter
+  │   └── SubgraphSelector
+  ├── ResearchQA
+  │   ├── ScopeSelector
+  │   ├── QAChat
+  │   ├── SourcePanel
+  │   └── SuggestedActions
+  └── Reports
+      ├── ReportList
+      ├── ReviewViewer
+      ├── InnovationViewer
+      └── ExportPanel
+
+API 对接层：
+  api/client.ts — 统一 API Client（fetch wrapper + error handling）
+  api/types.ts — TypeScript 类型定义（从 OpenAPI 生成）
+  stores/ — Zustand 状态管理
+```
+
+## 当前代码对齐深化（2026-06-01）
 
 ### 当前实现确认
 
 ```text
-API 能力已从旧的 api.py/api_models.py 设计演进到 api/ 子包：app.py、models.py、deps.py、errors.py、tasks.py。
-create_app 已挂载 /api/rw 下的项目、论文、搜索、PDF、卡片、证据、图谱、Scope、QA、报告、任务路由。
+api/ 子包已实现：
+  - app.py：FastAPI app + lifespan + CORS + request_id 中间件 + 统一错误处理
+  - models.py：request/response DTO
+  - errors.py：APIError/NotFoundError/ValidationError/ScopeEmptyError + 异常处理器
+  - deps.py：service 依赖注入 + storage backend 配置读取
+  - tasks.py：任务状态持久化（create/get/update/list/add_event）
+
+已挂载 30+ API 端点，覆盖项目、论文、搜索、PDF、卡片、证据、图谱、Scope、QA、报告、任务。
 TaskService 当前提供 create_task、get_task、update_task、add_event、list_tasks。
-api/deps.py 已根据配置选择 JSONStorage/PostgresStorage，并为各业务 service 提供依赖注入。
+api/deps.py 已根据配置选择 JSONStorage/PostgresStorage。
 ```
+
+### 与产品方案的 Gap 分析
+
+| 产品方案要求 | 代码现状 | Gap 严重度 |
+| --- | --- | --- |
+| /health 完整状态 | 已有基础版本，缺 storage_backend/vector_storage/llm_configured | 中 |
+| 长任务异步语义 | 部分路由仍是同步包装 | 高（前端体验） |
+| SSE 事件流推送 | 未实现 | 高（实时反馈） |
+| 任务进度 step/progress | 已有基础 events，缺细粒度进度 | 中 |
+| 前端 4 核心页面 | 未实现 | 高（产品可见性） |
+| 前端 Zustand 状态管理 | 未实现 | 高（前端架构） |
+| 前端 API Client 封装 | 未实现 | 高（前端架构） |
+| OpenAPI examples | 未实现 | 中（文档质量） |
+| Demo Pipeline | 未实现 | 中（演示和测试） |
+| 透明报告元数据 API | 未实现 | 中（质量可见性） |
+| 前端证据追溯交互 | 未实现 | 中（用户体验） |
+| 前端图谱可视化 | 未实现 | 中（用户体验） |
+| 搜索 API 完整响应 | 已有基础 SearchResponse | ⚠️ 部分对齐 |
+| API 错误码稳定化 | 已有基础错误类型 | ⚠️ 部分对齐 |
 
 ### 下一步深化任务
 
 ```text
-1. /health 返回 storage_backend、postgres_available、vector_storage_enabled、search_sources、llm_configured、schema_version。
-2. 搜索 API 返回完整 SearchResponse，而不是只返回论文列表；前端需要展示来源诊断、缓存、限流、去重和排序分。
-3. 长任务统一异步语义：download/parse/cards/evidence/graph/review/innovation 返回 task_id，并可轮询 progress/events。
-4. API 错误码稳定化：not_found、validation_error、scope_empty、task_failed、llm_error、storage_error、search_error。
-5. OpenAPI examples 覆盖 create project、search、commit、parse、generate card、resolve scope、QA、review export。
-6. 前端契约按 ApiResponse/ApiListResponse 固化，分页、过滤、排序字段不要由各路由临时定义。
+优先级 P0（阻塞前端联调）：
+1. 长任务统一异步语义：parse/cards/evidence/graph/review/innovation 返回 task_id
+2. /health 返回完整状态：storage_backend、postgres_available、vector_storage、llm_configured
+3. API 错误码稳定化：not_found、validation_error、scope_empty、task_failed、llm_error
+4. 前端 API Client 封装：统一 fetch wrapper + error handling
+5. 前端 TypeScript 类型定义：从 OpenAPI schema 生成
+
+优先级 P1（前端核心页面）：
+6. 前端项目论文库页面：PaperTable + SearchPanel + BatchActionBar
+7. 前端研究 QA 页面：ScopeSelector + QAChat + SourcePanel
+8. 前端知识图谱页面：GraphCanvas + NodeDetailPanel + TypeFilter
+9. 前端成果报告页面：ReportList + ReviewViewer + ExportPanel
+10. Zustand 状态管理：projectStore、paperStore、qaStore、reportStore
+
+优先级 P2（增强体验）：
+11. SSE 事件流推送：GET /tasks/{task_id}/stream
+12. 任务进度细粒度：step/progress/estimated_remaining
+13. OpenAPI examples 覆盖全部端点
+14. Demo Pipeline：POST /projects/demo + POST /projects/{id}/demo/run
+15. 透明报告元数据 API：GET /reports/{report_id}/metadata
+16. 前端证据追溯交互：点击引用跳转到证据详情
+17. 前端图谱可视化：D3-force 力导向图
 ```
 
 ### 验收证据
@@ -2371,7 +2618,17 @@ api/deps.py 已根据配置选择 JSONStorage/PostgresStorage，并为各业务 
 ```text
 pytest tests/agents_v3/research_workspace/test_api.py 通过。
 pytest tests/agents_v3/research_workspace/test_e2e_smoke.py 通过。
-新增测试覆盖 /health 后端状态、search diagnostics、task events、统一错误响应。
+新增测试覆盖：
+  - /health 完整状态
+  - 长任务异步语义
+  - SSE 事件流
+  - 统一错误响应
+  - OpenAPI schema 验证
+前端验证：
+  - 4 核心页面可访问
+  - QA 页面可提问并展示来源
+  - 图谱页面可展示节点和边
+  - 报告页面可导出 Markdown
 ```
 
 ### 风险与阻塞
@@ -2379,4 +2636,7 @@ pytest tests/agents_v3/research_workspace/test_e2e_smoke.py 通过。
 ```text
 API 当前已经能跑主流程，但部分路由仍是同步包装。大 PDF、批量卡片和报告生成需要任务化，否则前端体验不稳定。
 若默认配置强依赖 PostgreSQL，本地前端联调会被环境服务阻塞。
+前端开发需要先确定技术栈（React/Vue + UI 库），当前产品方案建议 Ant Design。
+SSE 实现需要 uvicorn 支持异步流式响应，需要验证当前部署环境。
+前端 TypeScript 类型从 OpenAPI 生成需要额外工具链（openapi-typescript）。
 ```

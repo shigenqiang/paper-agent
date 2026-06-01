@@ -21,7 +21,7 @@ STRATEGIES: dict[str, SearchStrategy] = {
     ),
     "literature_review": SearchStrategy(
         name="literature_review",
-        sources=["openalex", "arxiv", "semantic_scholar"],
+        sources=["openalex", "arxiv", "europepmc"],
         limit=50,
     ),
     "doi_import": SearchStrategy(
@@ -31,7 +31,7 @@ STRATEGIES: dict[str, SearchStrategy] = {
     ),
     "precise": SearchStrategy(
         name="precise",
-        sources=["openalex", "arxiv", "semantic_scholar"],
+        sources=["openalex", "arxiv", "europepmc"],
         limit=20,
     ),
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from datetime import datetime
@@ -18,6 +19,11 @@ from src.agents_v3.research_workspace.models import (
 )
 from src.agents_v3.research_workspace.scope import RetrievalScopeService
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+
+# ── 论文数量限制（从环境变量读取）──────────────────────
+REVIEW_MAX_PAPERS = int(os.getenv("REVIEW_MAX_PAPERS", "40"))
+REVIEW_LOCAL_MAX = int(os.getenv("REVIEW_LOCAL_MAX", "20"))
+REVIEW_REMOTE_MAX = int(os.getenv("REVIEW_REMOTE_MAX", "20"))
 
 # ── Prompt ──────────────────────────────────────────
 
@@ -108,24 +114,28 @@ class LiteratureReviewGenerator:
         if empty_reason:
             return self._empty_scope_report(project_id, scope, empty_reason)
 
-        # 3. Collect materials
+        # 3. 论文数量限制：超过上限时按分数排序截断
+        if len(scope.paper_ids) > REVIEW_MAX_PAPERS:
+            scope = self._truncate_scope_papers(scope)
+
+        # 4. Collect materials
         materials = self.collect_materials(scope)
 
-        # 4. Check evidence sufficiency
+        # 5. Check evidence sufficiency
         evidence = materials.get("evidence_records", [])
         if len(evidence) < 2:
             return self._insufficient_evidence_report(project_id, scope, len(evidence))
 
-        # 5. Build evidence matrix
+        # 6. Build evidence matrix
         matrix = self._build_evidence_matrix(evidence, materials.get("paper_cards", []))
 
-        # 6. Generate content
+        # 7. Generate content
         sections, overall_limitations = self._generate_sections(materials, matrix, opts)
 
-        # 7. Render
+        # 8. Render
         content = self._render_review(sections, materials)
 
-        # 8. Build section_sources
+        # 9. Build section_sources
         section_sources = {}
         for s in sections:
             section_sources[s["section_id"]] = {
@@ -133,10 +143,10 @@ class LiteratureReviewGenerator:
                 "evidence_ids": s.get("evidence_ids", []),
             }
 
-        # 9. Validate
+        # 10. Validate
         validation = self._validate_review(sections, scope, materials)
 
-        # 10. Build report
+        # 11. Build report
         report = Report(
             report_id=f"report_{uuid.uuid4().hex[:8]}",
             project_id=project_id,
@@ -160,6 +170,60 @@ class LiteratureReviewGenerator:
             f"source_coverage={validation.get('source_coverage', 0):.2f})"
         )
         return report
+
+    # ── 论文数量限制 ───────────────────────────────
+
+    @staticmethod
+    def _paper_score(paper: dict) -> float:
+        """论文综合得分 = 0.6 * relevance + 0.4 * quality"""
+        rel = paper.get("relevance_score", 0.0) or 0.0
+        qual = paper.get("quality_score", 0.0) or 0.0
+        return 0.6 * rel + 0.4 * qual
+
+    def _truncate_scope_papers(self, scope: RetrievalScope) -> RetrievalScope:
+        """当 scope 论文超过上限时，按本地/联网分组排序截断。
+
+        本地论文（upload/bibtex/doi）最多 REVIEW_LOCAL_MAX 篇，
+        联网论文（arxiv/openalex/semantic_scholar 等）最多 REVIEW_REMOTE_MAX 篇，
+        本地不足时联网补上，总数不超过 REVIEW_MAX_PAPERS。
+        """
+        local_platforms = {"upload", "bibtex", "doi", "ris"}
+
+        # 加载论文元数据，按来源分组
+        local_papers: list[tuple[str, float]] = []  # (paper_id, score)
+        remote_papers: list[tuple[str, float]] = []
+
+        for pid in scope.paper_ids:
+            p = self.storage.get_item("papers", pid)
+            if not p:
+                continue
+            score = self._paper_score(p)
+            platform = (p.get("source_platform") or "").lower()
+            if platform in local_platforms:
+                local_papers.append((pid, score))
+            else:
+                remote_papers.append((pid, score))
+
+        # 按分数降序排序
+        local_papers.sort(key=lambda x: x[1], reverse=True)
+        remote_papers.sort(key=lambda x: x[1], reverse=True)
+
+        # 选取：本地最多 LOCAL_MAX，剩余名额给联网
+        selected_local = [pid for pid, _ in local_papers[:REVIEW_LOCAL_MAX]]
+        remaining = REVIEW_MAX_PAPERS - len(selected_local)
+        selected_remote = [pid for pid, _ in remote_papers[:remaining]]
+
+        selected = selected_local + selected_remote
+        logger.info(
+            f"Paper truncation: {len(scope.paper_ids)} total -> "
+            f"{len(selected_local)} local + {len(selected_remote)} remote = {len(selected)} selected"
+        )
+
+        original_count = len(scope.paper_ids)
+        scope.paper_ids = selected
+        scope.metadata["truncated"] = True
+        scope.metadata["original_paper_count"] = original_count
+        return scope
 
     # ── 材料收集 ──────────────────────────────────
 

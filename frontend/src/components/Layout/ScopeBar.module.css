@@ -1,0 +1,47 @@
+.scopeBar {
+  height: var(--scopebar-height);
+  background: var(--bg-deepest);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-lg);
+  flex-shrink: 0;
+}
+
+.scopeInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.78rem;
+}
+
+.icon {
+  color: var(--accent);
+}
+
+.scopeType {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.divider {
+  color: var(--text-muted);
+}
+
+.count {
+  color: var(--text-secondary);
+}
+
+.changeBtn {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.changeBtn:hover {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
