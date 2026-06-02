@@ -30,7 +30,8 @@ def imported_papers(pg_storage, adapters):
         "project_id": PROJECT_ID, "name": "解析测试项目",
     })
     query = SearchQuery(query="chain of thought prompting", limit=5)
-    papers = library.search_and_import(PROJECT_ID, query, min_score=0.1)
+    library.search_candidates(PROJECT_ID, query, min_score=0.1)
+    papers = library.list_papers(PROJECT_ID)
     with_pdf = []
     for p in papers:
         pdf_url = p.open_access.pdf_url if p.open_access else ""

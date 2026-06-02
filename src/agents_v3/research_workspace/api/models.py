@@ -93,13 +93,7 @@ class SearchPapersRequest(BaseModel):
     field: str = "all"
     use_cache: bool = True
     force_refresh: bool = False
-
-
-class SearchCommitRequest(BaseModel):
-    query_text: str
-    selected_result_ids: list[str] = Field(default_factory=list)
-    min_score: float = 0.3  # 最低重要性分数阈值，低于此值的论文不入库
-    source: str = "candidate"  # candidate / review
+    min_score: float = 0.3  # 最低分数阈值，低于此值的论文不入库
 
 
 # ── Scope ─────────────────────────────────────────

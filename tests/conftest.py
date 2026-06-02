@@ -39,4 +39,5 @@ def service(pg_storage, adapters):
         storage=pg_storage,
         search_adapters=list(adapters.values()),
         global_storage=pg_storage,
+        pg_storage=pg_storage,
     )

@@ -42,7 +42,6 @@ from src.agents_v3.research_workspace.api.models import (
     QARequest,
     ReportGenerateRequest,
     ScopeResolveRequest,
-    SearchCommitRequest,
     SearchPapersRequest,
     TaskResponse,
 )
@@ -53,7 +52,7 @@ __all__ = [
     "ApiResponse", "NotFoundError", "PageInfo", "PaperImportBibtexRequest",
     "PaperImportDoiRequest", "PaperUpdateRequest", "PaperUploadRequest",
     "ProjectCreateRequest", "ProjectUpdateRequest", "QARequest", "ReportGenerateRequest",
-    "ScopeEmptyError", "ScopeResolveRequest", "SearchCommitRequest", "SearchPapersRequest",
+    "ScopeEmptyError", "ScopeResolveRequest", "SearchPapersRequest",
     "TaskNotFoundError", "TaskResponse", "TaskService", "ValidationError",
     "api_error_handler", "app", "create_app", "generic_error_handler",
     "get_card_generator", "get_evidence_service", "get_graph_service",

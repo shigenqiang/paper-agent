@@ -86,7 +86,7 @@ class PaperLibraryService:
         self.search_adapters = search_adapters or []
         self.global_storage = global_storage or get_storage()
         self.pg = pg_storage  # PostgresStorage instance (optional)
-        self._pending_searches: dict[str, list[SearchResult]] = {}  # query_text → results (临时缓存)
+
 
     # ── 论文池操作 ──────────────────────────────────────
 
@@ -406,43 +406,6 @@ class PaperLibraryService:
 
         return merged
 
-
-    def search_and_import(
-        self,
-        project_id: str,
-        query: SearchQuery,
-        min_score: float = 0.3,
-    ) -> list[Paper]:
-        """搜索并导入到项目（自动去重，低于阈值的论文跳过）"""
-        results = self.search_papers(query)
-
-        papers = []
-        skipped = 0
-        topic = query.query
-        for r in results:
-            if r.final_score < min_score:
-                skipped += 1
-                logger.info(f"Skipped (score={r.final_score:.3f} < {min_score}): {r.title[:50]}")
-                continue
-            meta = search_result_to_meta(r)
-            scores = {
-                "dense_score": r.dense_score,
-                "quality_score": r.quality_score,
-            }
-            pool_pid = r.source_payload.get("pool_paper_id", "")
-            paper = self.add_paper_metadata(
-                project_id, meta, source=r.source, scores=scores, topic=topic,
-                pool_paper_id=pool_pid,
-            )
-            if paper:
-                papers.append(paper)
-        logger.info(f"Imported {len(papers)} papers (skipped {skipped} below {min_score})")
-
-        # 将筛选后的论文摘要向量化存入 Qdrant
-        if papers:
-            self._index_paper_profiles(papers)
-
-        return papers
 
     def _index_paper_profiles(self, papers: list[Paper]) -> None:
         """将论文摘要向量化存入 Qdrant paper_profiles 集合"""
@@ -986,102 +949,49 @@ class PaperLibraryService:
         self,
         project_id: str,
         query: SearchQuery,
+        min_score: float = 0.3,
     ) -> SearchResponse:
-        """搜索候选论文，返回结果（不持久化，结果缓存在内存中供 commit 使用）"""
+        """搜索候选论文并直接入库（papers_pool + papers + queries + paper_queries + Qdrant）"""
         results = self.search_papers(query)
 
-        # 缓存搜索结果供 commit 使用
-        self._pending_searches[query.query] = results
+        # 写 queries 表
+        query_id = self._ensure_query(query.query)
 
-        logger.info(f"Search candidates: {len(results)} results for \"{query.query}\"")
+        # 遍历结果，直接入库
+        imported = []
+        skipped = 0
+        for r in results:
+            if (r.dense_score or 0) < min_score:
+                skipped += 1
+                continue
+
+            meta = search_result_to_meta(r)
+            scores = {
+                "dense_score": r.dense_score,
+                "quality_score": r.quality_score,
+            }
+            pool_pid = r.source_payload.get("pool_paper_id", "")
+            paper = self.add_paper_metadata(
+                project_id, meta, source=r.source, scores=scores,
+                topic=query.query, pool_paper_id=pool_pid, query_id=query_id,
+            )
+            if paper:
+                imported.append(paper)
+                self._link_paper_query(paper.paper_id, query_id, r.final_score, "candidate")
+
+        # 写 Qdrant search_queries 向量
+        self._save_query_vector(query_id, query.query)
+
+        # 写 Qdrant paper_profiles 向量
+        if imported:
+            self._index_paper_profiles(imported)
+
+        logger.info(f"Search & import: {len(imported)} papers imported, {skipped} skipped (min_score={min_score})")
         return SearchResponse(
             query=query,
             results=results,
             total_count=len(results),
         )
-
-    def commit_search_results(
-        self,
-        project_id: str,
-        query_text: str,
-        result_ids: list[str],
-        topic: str = "",
-        min_score: float = 0.3,
-        source: str = "candidate",
-    ) -> list[Paper]:
-        """将选中的搜索结果提交入库
-
-        写入：
-        1. queries 表（UNIQUE query_text 去重）
-        2. paper_queries 表（论文与查询的多对多关联）
-        3. Qdrant search_queries 向量
-
-        从 _pending_searches 缓存中获取搜索结果。
-        """
-        if not topic:
-            topic = query_text
-
-        # 从缓存获取搜索结果
-        results = self._pending_searches.get(query_text, [])
-        if not results:
-            logger.warning(f"No pending search results for \"{query_text}\", commit may be incomplete")
-
-        results_by_id = {r.result_id: r for r in results}
-
-        # ── Step 1: 写 queries 表（去重）──
-        query_id = self._ensure_query(query_text)
-
-        papers = []
-        skipped = 0
-        for rid in result_ids:
-            r = results_by_id.get(rid)
-            if not r:
-                continue
-
-            scores = {
-                "dense_score": r.dense_score,
-                "quality_score": r.quality_score,
-            }
-
-            if r.final_score < min_score:
-                skipped += 1
-                logger.info(f"Skipped (score={r.final_score:.3f} < {min_score}): {r.title[:50]}")
-                continue
-
-            # 从论文池读取元数据
-            pool_paper_id = r.source_payload.get("pool_paper_id")
-            if pool_paper_id:
-                pool_data = self.get_from_pool(pool_paper_id)
-                if pool_data:
-                    meta = self._pool_data_to_meta(pool_data)
-                    paper = self.add_paper_metadata(
-                        project_id, meta, source=r.source, scores=scores, topic=topic,
-                        pool_paper_id=pool_paper_id, query_id=query_id,
-                    )
-                    if paper:
-                        papers.append(paper)
-                        # ── Step 2: 写 paper_queries ──
-                        self._link_paper_query(paper.paper_id, query_id, r.final_score, source)
-                    continue
-
-            # fallback: 直接用搜索结果
-            meta = search_result_to_meta(r)
-            paper = self.add_paper_metadata(
-                project_id, meta, source=r.source, scores=scores, topic=topic,
-                query_id=query_id,
-            )
-            if paper:
-                papers.append(paper)
-                self._link_paper_query(paper.paper_id, query_id, r.final_score, source)
-
-        # ── Step 3: 写 Qdrant search_queries 向量 ──
-        self._save_query_vector(query_id, query_text)
-
-        # 清理缓存
-        self._pending_searches.pop(query_text, None)
-
-        logger.info(f"Committed {len(papers)} papers for query \"{query_text}\" (skipped {skipped} below {min_score})")
-        return papers
 
     def _ensure_query(self, query_text: str) -> str:
         """确保查询存在于 queries 表，返回 query_id（去重）"""
@@ -1128,28 +1038,6 @@ class PaperLibraryService:
             vs.add_search_query(query_id, query_text)
         except Exception as e:
             logger.warning(f"Failed to save query vector to Qdrant: {e}")
-
-    def _pool_data_to_meta(self, pool_data: dict[str, Any]) -> dict[str, Any]:
-        """将论文池数据转换为入库元数据格式"""
-        return {
-            "title": pool_data.get("title", ""),
-            "authors": pool_data.get("authors", []),
-            "abstract": pool_data.get("abstract", ""),
-            "year": pool_data.get("year"),
-            "venue": pool_data.get("venue", ""),
-            "doi": pool_data.get("doi", ""),
-            "arxiv_id": pool_data.get("arxiv_id", ""),
-            "pubmed_id": pool_data.get("pubmed_id", ""),
-            "openalex_id": pool_data.get("openalex_id", ""),
-            "semantic_scholar_id": pool_data.get("semantic_scholar_id", ""),
-            "url": pool_data.get("url", ""),
-            "pdf_url": pool_data.get("pdf_url", ""),
-            "citations": pool_data.get("citations"),
-            "topics": pool_data.get("topics", []),
-            "keywords": pool_data.get("keywords", []),
-            "language": pool_data.get("language", ""),
-            "publication_type": pool_data.get("publication_type", ""),
-        }
 
     # ── 主题相关重要性得分 ──────────────────────────────────
 
