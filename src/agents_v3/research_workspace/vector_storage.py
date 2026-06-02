@@ -48,12 +48,12 @@ class VectorStorage:
         self,
         host: str = "localhost",
         port: int = 6333,
-        vector_size: int = 384,
+        vector_size: int = 512,
         distance: str = "cosine",
         cloud_url: str | None = None,
         cloud_api_key: str | None = None,
         cloud_inference: bool = False,
-        dense_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+        dense_model: str = "BAAI/bge-small-zh-v1.5",
         sparse_model: str = "Qdrant/bm25",
     ):
         if not HAS_QDRANT:
@@ -297,10 +297,12 @@ class VectorStorage:
         texts: list[str],
         metadatas: list[dict[str, Any]] | None = None,
         collection: str = "paper_profiles",
+        embeddings: list[list[float]] | None = None,
+        sparse_embeddings: list[dict[int, float]] | None = None,
     ) -> None:
         """存储论文级向量（title + abstract）
 
-        云端推理模式下自动嵌入，本地模式需预计算 embeddings。
+        云端推理模式下自动嵌入，本地模式需传入 embeddings。
         """
         self._ensure_collection(collection)
 
@@ -315,8 +317,12 @@ class VectorStorage:
                     "dense": Document(text=text, model=self.dense_model),
                     "sparse": Document(text=text, model=self.sparse_model),
                 }
+            elif embeddings and i < len(embeddings):
+                vector = {"dense": embeddings[i]}
+                if sparse_embeddings and i < len(sparse_embeddings):
+                    vector["sparse"] = sparse_embeddings[i]
             else:
-                raise ValueError("Local mode not supported for paper_profiles, use cloud_inference=True")
+                raise ValueError("Local mode requires pre-computed embeddings")
 
             points.append(PointStruct(id=_to_point_id(paper_id), vector=vector, payload=payload))
 
@@ -705,11 +711,11 @@ class VectorStorage:
 def get_vector_storage(
     host: str = "localhost",
     port: int = 6333,
-    vector_size: int = 384,
+    vector_size: int = 512,
     cloud_url: str | None = None,
     cloud_api_key: str | None = None,
     cloud_inference: bool = False,
-    dense_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+    dense_model: str = "BAAI/bge-small-zh-v1.5",
     sparse_model: str = "Qdrant/bm25",
 ) -> VectorStorage:
     """获取向量存储实例（优先使用云端配置）"""

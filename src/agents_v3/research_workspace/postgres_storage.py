@@ -66,7 +66,6 @@ TABLE_SCHEMAS = {
         CREATE TABLE IF NOT EXISTS papers (
             paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             project_id VARCHAR(64) REFERENCES projects(project_id) ON DELETE CASCADE,
-            importance_score FLOAT DEFAULT 0.0,
             relevance_score FLOAT DEFAULT 0.0,
             quality_score FLOAT DEFAULT 0.0,
             included BOOLEAN DEFAULT TRUE,
@@ -249,7 +248,6 @@ TABLE_SCHEMAS = {
         CREATE TABLE IF NOT EXISTS topic_scores (
             paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             topic VARCHAR(255),
-            importance_score FLOAT DEFAULT 0.0,
             relevance_score FLOAT DEFAULT 0.0,
             quality_score FLOAT DEFAULT 0.0,
             scored_at TIMESTAMP DEFAULT NOW(),
@@ -275,6 +273,25 @@ TABLE_SCHEMAS = {
             PRIMARY KEY (paper_id, query_id)
         )
     """,
+    "search_sessions": """
+        CREATE TABLE IF NOT EXISTS search_sessions (
+            session_id VARCHAR(64) PRIMARY KEY,
+            project_id VARCHAR(64) REFERENCES projects(project_id) ON DELETE CASCADE,
+            name VARCHAR(255) DEFAULT '',
+            status VARCHAR(32) DEFAULT 'active',
+            paper_count INT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """,
+    "session_papers": """
+        CREATE TABLE IF NOT EXISTS session_papers (
+            session_id VARCHAR(64) REFERENCES search_sessions(session_id) ON DELETE CASCADE,
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (session_id, paper_id)
+        )
+    """,
 }
 
 # 表名到 ID 字段的映射
@@ -297,6 +314,8 @@ TABLE_ID_FIELDS = {
     "topic_scores": "paper_id",
     "queries": "query_id",
     "paper_queries": "paper_id",
+    "search_sessions": "session_id",
+    "session_papers": "session_id",
 }
 
 # 复合唯一约束表（ON CONFLICT 需要列出所有列）
@@ -304,6 +323,7 @@ TABLE_UNIQUE_CONSTRAINTS = {
     "papers": ["paper_id", "project_id"],
     "topic_scores": ["paper_id", "topic"],
     "paper_queries": ["paper_id", "query_id"],
+    "session_papers": ["session_id", "paper_id"],
 }
 
 
@@ -359,6 +379,17 @@ class PostgresStorage:
                 except Exception:
                     pass  # 列已存在
 
+            # 删除废弃列
+            _drop_columns = [
+                ("papers", "importance_score"),
+                ("topic_scores", "importance_score"),
+            ]
+            for table, col in _drop_columns:
+                try:
+                    cur.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {col}")
+                except Exception:
+                    pass
+
             # 创建索引
             _indexes = [
                 "CREATE INDEX IF NOT EXISTS idx_paper_refs_citing ON paper_references(citing_paper_id)",
@@ -377,11 +408,37 @@ class PostgresStorage:
         """获取表的主键字段名"""
         return TABLE_ID_FIELDS.get(table, "id")
 
+    @staticmethod
+    def _get_table_columns(table: str) -> set[str]:
+        """从 TABLE_SCHEMAS 中解析表的列名集合"""
+        schema = TABLE_SCHEMAS.get(table, "")
+        import re
+        # 匹配 "column_name TYPE ..." 模式，排除约束行和 CREATE 行
+        col_types = (
+            "VARCHAR", "INT", "INTEGER", "FLOAT", "BOOLEAN", "TEXT",
+            "JSONB", "JSON", "TIMESTAMP", "SERIAL", "BIGINT", "DOUBLE",
+        )
+        cols = set()
+        for line in schema.split("\n"):
+            line = line.strip().rstrip(",")
+            # 跳过约束行
+            if re.match(r"^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)", line, re.I):
+                continue
+            m = re.match(r"^(\w+)\s+(\w+)", line)
+            if m and m.group(2).upper() in col_types:
+                cols.add(m.group(1))
+        return cols
+
     def upsert(self, table: str, item_id: str, data: dict[str, Any]) -> None:
         """插入或更新一条记录"""
         id_field = self._get_id_field(table)
         # 将嵌套 dict 转为 JSON 字符串用于 JSONB 字段
         processed = self._process_data_for_db(data)
+
+        # 过滤：只保留表实际拥有的列
+        valid_cols = self._get_table_columns(table)
+        if valid_cols:
+            processed = {k: v for k, v in processed.items() if k in valid_cols}
 
         # 复合主键表：确保 data 中包含所有主键字段
         conflict_cols = TABLE_UNIQUE_CONSTRAINTS.get(table, [id_field])

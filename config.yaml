@@ -41,7 +41,7 @@ agent:
 database:
   # PostgreSQL 配置
   postgres:
-    enabled: false  # 设为 true 启用 PostgreSQL
+    enabled: true  # 设为 true 启用 PostgreSQL
     host: localhost
     port: 5432
     database: paper_agent
@@ -52,7 +52,7 @@ database:
 
   # Qdrant 向量数据库配置
   qdrant:
-    enabled: false
+    enabled: true
     # 本地模式
     host: localhost
     port: 6333
@@ -60,11 +60,11 @@ database:
     cloud:
       enabled: false
     collection: paper_chunks
-    vector_size: 384
+    vector_size: 512
     distance: cosine
     # 推理模型配置
     inference:
-      dense_model: "sentence-transformers/all-MiniLM-L6-v2"
+      dense_model: "BAAI/bge-small-zh-v1.5"
       sparse_model: "Qdrant/bm25"
 
 # 存储后端选择

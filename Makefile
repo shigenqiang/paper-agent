@@ -1,4 +1,5 @@
-.PHONY: service test install lint clean
+.PHONY: service install lint clean
+.PHONY: test test-all test-01 test-02 test-03 test-04 test-05 test-06 test-07 test-08 test-09 test-10 test-11 test-12 test-13 test-14 test-15
 .PHONY: frontend-dev frontend-build frontend-install
 .PHONY: docker-build docker-push docker-login
 .PHONY: ghcr-build ghcr-push ghcr-login ghcr hub
@@ -57,9 +58,6 @@ frontend-build:
 install:
 	$(PYTHON) -m pip install -e .
 
-test:
-	$(PYTHON) -m pytest tests/ -v
-
 lint:
 	$(PYTHON) -m ruff check src/ --fix
 
@@ -67,6 +65,59 @@ clean:
 	rm -rf .pytest_cache __pycache__ src/**/__pycache__ **/__pycache__
 	find . -name "*.pyc" -delete
 	rm -rf logs/*.log output/monitoring/*.json
+
+# ============ Tests ============
+# 通过 run_tests.py 解决 Windows 中文路径编码问题
+
+test: test-all
+
+test-all:
+	$(PYTHON) run_tests.py
+
+test-01:
+	$(PYTHON) run_tests.py 01
+
+test-02:
+	$(PYTHON) run_tests.py 02
+
+test-03:
+	$(PYTHON) run_tests.py 03
+
+test-04:
+	$(PYTHON) run_tests.py 04
+
+test-05:
+	$(PYTHON) run_tests.py 05
+
+test-06:
+	$(PYTHON) run_tests.py 06
+
+test-07:
+	$(PYTHON) run_tests.py 07
+
+test-08:
+	$(PYTHON) run_tests.py 08
+
+test-09:
+	$(PYTHON) run_tests.py 09
+
+test-10:
+	$(PYTHON) run_tests.py 10
+
+test-11:
+	$(PYTHON) run_tests.py 11
+
+test-12:
+	$(PYTHON) run_tests.py 12
+
+test-13:
+	$(PYTHON) run_tests.py 13
+
+test-14:
+	$(PYTHON) run_tests.py 14
+
+test-15:
+	$(PYTHON) run_tests.py 15
 
 # ============ Docker ============
 
@@ -119,9 +170,26 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make install        安装项目依赖"
-	@echo "  make test           运行测试"
 	@echo "  make lint           代码检查"
 	@echo "  make clean          清理缓存和日志"
+	@echo ""
+	@echo "Tests:"
+	@echo "  make test           运行全部测试 (= test-all)"
+	@echo "  make test-01        01-核心模型与存储"
+	@echo "  make test-02        02-项目服务"
+	@echo "  make test-03        03-论文库搜索导入"
+	@echo "  make test-04        04-PDF解析与分块"
+	@echo "  make test-05        05-论文卡片生成"
+	@echo "  make test-06        06-证据表"
+	@echo "  make test-07        07-知识图谱"
+	@echo "  make test-08        08-RetrievalScope"
+	@echo "  make test-09        09-ScopeQA与RAG"
+	@echo "  make test-10        10-综述生成"
+	@echo "  make test-11        11-创新点报告"
+	@echo "  make test-12        12-报告版本与导出"
+	@echo "  make test-13        13-LLM提示词与结构化输出"
+	@echo "  make test-14        14-API任务与前端联调"
+	@echo "  make test-15        15-评估日志监控"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build   构建镜像"

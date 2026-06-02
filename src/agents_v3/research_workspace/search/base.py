@@ -85,6 +85,24 @@ class QueryRecord(BaseModel):
     created_at: str = Field(default_factory=lambda: __import__("datetime").datetime.now().isoformat())
 
 
+class SessionPaper(BaseModel):
+    """搜索会话与论文的关联"""
+    session_id: str
+    paper_id: str
+    created_at: str = Field(default_factory=lambda: __import__("datetime").datetime.now().isoformat())
+
+
+class SearchSession(BaseModel):
+    """论文工作会话 — 当前使用哪些论文"""
+    session_id: str = Field(default_factory=lambda: f"ss_{uuid.uuid4().hex[:8]}")
+    project_id: str
+    name: str = ""
+    status: str = "active"  # active / archived
+    paper_count: int = 0
+    created_at: str = Field(default_factory=lambda: __import__("datetime").datetime.now().isoformat())
+    updated_at: str = Field(default_factory=lambda: __import__("datetime").datetime.now().isoformat())
+
+
 class BaseSearchAdapter(ABC):
     """搜索源适配器基类"""
 

@@ -204,6 +204,7 @@ class PaperLibraryService:
         source: str = "import",
         scores: dict[str, float] | None = None,
         topic: str = "",
+        pool_paper_id: str = "",
     ) -> Paper | None:
         # 去重检查
         existing = self.storage.query("papers", {"project_id": project_id})
@@ -219,7 +220,8 @@ class PaperLibraryService:
             logger.info(f"Duplicate skipped: {metadata.get('title', '')[:50]}")
             return None
 
-        paper_id = f"paper_{uuid.uuid4().hex[:8]}"
+        # 优先使用 pool_paper_id（来自论文池），否则生成新 ID
+        paper_id = pool_paper_id if pool_paper_id else f"paper_{uuid.uuid4().hex[:8]}"
 
         # 兼容处理：authors 可能是 list[str] 或 list[Author] 或 list[dict]
         authors_raw = metadata.get("authors", [])
@@ -297,10 +299,10 @@ class PaperLibraryService:
         else:
             citation = CitationInfo(citation_count=metadata.get("citations"))
 
-        # 提取重要性得分
-        importance_score = 0.0
+        # 提取相关性得分
+        relevance_score = 0.0
         if scores:
-            importance_score = scores.get("importance_score", 0.0)
+            relevance_score = scores.get("relevance_score", 0.0)
 
         paper = Paper(
             paper_id=paper_id,
@@ -319,7 +321,7 @@ class PaperLibraryService:
             url=metadata.get("url", ""),
             source_platform=source if isinstance(source, str) else "",
             status=PaperStatus.IMPORTED,
-            importance_score=importance_score,
+            relevance_score=relevance_score,
         )
         self.storage.upsert_item("papers", paper_id, paper.model_dump())
 
@@ -451,17 +453,62 @@ class PaperLibraryService:
                 continue
             meta = search_result_to_meta(r)
             scores = {
-                "importance_score": r.final_score,
                 "relevance_score": r.relevance_score,
                 "quality_score": r.quality_score,
             }
+            pool_pid = r.source_payload.get("pool_paper_id", "")
             paper = self.add_paper_metadata(
                 project_id, meta, source=r.source, scores=scores, topic=topic,
+                pool_paper_id=pool_pid,
             )
             if paper:
                 papers.append(paper)
         logger.info(f"Imported {len(papers)} papers (skipped {skipped} below {min_score})")
+
+        # 将筛选后的论文摘要向量化存入 Qdrant
+        if papers:
+            self._index_paper_profiles(papers)
+
         return papers
+
+    def _index_paper_profiles(self, papers: list[Paper]) -> None:
+        """将论文摘要向量化存入 Qdrant paper_profiles 集合"""
+        try:
+            from src.agents_v3.research_workspace.vector_storage import get_vector_storage
+            from src.agents_v3.research_workspace.embedding_service import get_embedding_service
+
+            vs = get_vector_storage()
+            es = get_embedding_service()
+
+            paper_ids = []
+            texts = []
+            metadatas = []
+            for p in papers:
+                abstract = p.abstract or ""
+                if not abstract:
+                    continue
+                text = f"{p.title or ''} {abstract}"
+                paper_ids.append(p.paper_id)
+                texts.append(text)
+                metadatas.append({
+                    "title": p.title or "",
+                    "abstract": abstract[:500],
+                    "source_platform": p.source_platform or "",
+                })
+
+            if not paper_ids:
+                return
+
+            embeddings = es.embed_texts(texts)
+            vs.add_paper_profiles(
+                paper_ids=paper_ids,
+                texts=texts,
+                metadatas=metadatas,
+                embeddings=embeddings,
+            )
+            logger.info(f"Indexed {len(paper_ids)} paper profiles to Qdrant")
+        except Exception as e:
+            logger.warning(f"Paper profile indexing failed (non-fatal): {e}")
 
     # ── 文献综述专用搜索 ──────────────────────────────
 
@@ -542,7 +589,6 @@ class PaperLibraryService:
         project_id: str,
         query: str,
         max_count: int,
-        relevance_threshold: float = 0.15,
     ) -> list[dict[str, Any]]:
         """从项目论文库中搜索：历史查询匹配 → Qdrant hybrid 检索
 
@@ -577,18 +623,9 @@ class PaperLibraryService:
             logger.warning("Qdrant hybrid search failed, falling back to BM25")
             paper_scores = self._bm25_fallback(query, papers, candidate_ids)
 
-        # 过滤低相关性
-        filtered = [
-            (pid, score) for pid, score in paper_scores
-            if score >= relevance_threshold
-        ]
-        if len(filtered) < 3 and len(paper_scores) >= 3:
-            filtered = paper_scores[:3]
-        logger.info(f"Relevance filter: {len(paper_scores)} → {len(filtered)} (threshold={relevance_threshold})")
-
-        # 返回 top-N
+        # 直接取 top-N（RRF 融合后无需 relevance 过滤）
         selected = []
-        for pid, score in filtered[:max_count]:
+        for pid, score in paper_scores[:max_count]:
             selected.append({
                 "paper_id": pid,
                 "score": round(score, 3),
@@ -1060,7 +1097,6 @@ class PaperLibraryService:
                 continue
 
             scores = {
-                "importance_score": r.final_score,
                 "relevance_score": r.relevance_score,
                 "quality_score": r.quality_score,
             }
@@ -1078,6 +1114,7 @@ class PaperLibraryService:
                     meta = self._pool_data_to_meta(pool_data)
                     paper = self.add_paper_metadata(
                         project_id, meta, source=r.source, scores=scores, topic=topic,
+                        pool_paper_id=pool_paper_id,
                     )
                     if paper:
                         papers.append(paper)
@@ -1185,7 +1222,6 @@ class PaperLibraryService:
         score_record = {
             "paper_id": paper_id,
             "topic": topic,
-            "importance_score": scores.get("importance_score", 0.0),
             "relevance_score": scores.get("relevance_score", 0.0),
             "quality_score": scores.get("quality_score", 0.0),
             "scored_at": _dt.now().isoformat(),
@@ -1203,16 +1239,16 @@ class PaperLibraryService:
             records.append(score_record)
 
         self.storage.save_collection("topic_scores", records)
-        logger.debug(f"Saved topic score: {paper_id} @ {topic[:30]} = {scores.get('importance_score', 0):.3f}")
+        logger.debug(f"Saved topic score: {paper_id} @ {topic[:30]} = {scores.get('relevance_score', 0):.3f}")
 
     def get_topic_scores(
         self,
         project_id: str,
         topic: str,
     ) -> list[dict[str, Any]]:
-        """获取某主题下所有论文的重要性得分
+        """获取某主题下所有论文的相关性得分
 
-        返回按 importance_score 降序排列的得分记录列表。
+        返回按 relevance_score 降序排列的得分记录列表。
         """
         paper_ids = {p.paper_id for p in self.list_papers(project_id)}
         records = self.storage.load_collection("topic_scores")
@@ -1220,7 +1256,7 @@ class PaperLibraryService:
             r for r in records
             if r.get("paper_id") in paper_ids and r.get("topic") == topic
         ]
-        matched.sort(key=lambda r: r.get("importance_score", 0), reverse=True)
+        matched.sort(key=lambda r: r.get("relevance_score", 0), reverse=True)
         return matched
 
     def get_paper_topic_scores(
@@ -1278,7 +1314,6 @@ class PaperLibraryService:
         scored_records = []
         for r in ranked:
             scores = {
-                "importance_score": r.final_score,
                 "relevance_score": r.relevance_score,
                 "quality_score": r.quality_score,
             }
@@ -1286,7 +1321,6 @@ class PaperLibraryService:
             scored_records.append({
                 "paper_id": r.result_id,
                 "topic": topic,
-                "importance_score": r.final_score,
                 "relevance_score": r.relevance_score,
                 "quality_score": r.quality_score,
             })

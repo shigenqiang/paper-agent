@@ -222,7 +222,6 @@ class Paper(BaseModel):
     error_message: str = ""
     included: bool = True
     exclude_reason: str = ""
-    importance_score: float = 0.0  # 主题相关重要性得分（项目级临时数据，不入库论文池）
     relevance_score: float = 0.0  # 搜索相关性得分（入库时记录）
     quality_score: float = 0.0  # 论文质量得分（引用、期刊等综合）
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
