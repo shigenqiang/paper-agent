@@ -6,8 +6,8 @@
 import os
 import pytest
 
-from src.agents_v3.research_workspace.postgres_storage import PostgresStorage
-from src.agents_v3.research_workspace.paper_library import PaperLibraryService
+from src.agents_v3.research_workspace.storage.postgres import PostgresStorage
+from src.agents_v3.research_workspace.services.paper_library import PaperLibraryService
 from src.agents_v3.research_workspace.search.factory import create_default_adapters
 
 PG_DSN = os.environ.get(

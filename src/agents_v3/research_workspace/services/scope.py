@@ -13,14 +13,7 @@ from src.agents_v3.research_workspace.models import (
     ScopeType,
 )
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
-
-
-def normalize_label(text: str) -> str:
-    """归一化标签：小写、去标点、压缩空格"""
-    t = text.strip().lower()
-    t = re.sub(r"[_\-]+", " ", t)
-    t = re.sub(r"\s+", " ", t)
-    return t
+from src.agents_v3.research_workspace.utils import normalize_label
 
 
 def _split_multi(text: str) -> set[str]:
@@ -248,7 +241,7 @@ class RetrievalScopeService:
 
     def _find_papers_from_graph_topics(self, project_id: str, targets: set[str]) -> set[str]:
         """从图谱 Topic 节点找相关论文"""
-        from src.agents_v3.research_workspace.graph_service import GraphService
+        from src.agents_v3.research_workspace.services.graph_service import GraphService
         gs = GraphService(storage=self.storage)
         graph = gs.get_graph(project_id)
         if not graph.nodes:
@@ -284,7 +277,7 @@ class RetrievalScopeService:
     def _find_papers_by_graph_nodes(
         self, project_id: str, node_ids: list[str], hops: int, included_ids: set[str]
     ) -> list[str]:
-        from src.agents_v3.research_workspace.graph_service import GraphService
+        from src.agents_v3.research_workspace.services.graph_service import GraphService
         gs = GraphService(storage=self.storage)
         subgraph = gs.get_subgraph(project_id, node_ids, hops=hops)
 
@@ -457,7 +450,7 @@ class RetrievalScopeService:
         return cards
 
     def to_graph_context(self, scope: RetrievalScope, hops: int = 1) -> dict[str, Any]:
-        from src.agents_v3.research_workspace.graph_service import GraphService
+        from src.agents_v3.research_workspace.services.graph_service import GraphService
         gs = GraphService(storage=self.storage)
 
         if scope.graph_node_ids:
@@ -521,7 +514,7 @@ class RetrievalScopeService:
         ]
 
         # Topics from graph or evidence
-        from src.agents_v3.research_workspace.graph_service import GraphService
+        from src.agents_v3.research_workspace.services.graph_service import GraphService
         gs = GraphService(storage=self.storage)
         graph = gs.get_graph(project_id)
 

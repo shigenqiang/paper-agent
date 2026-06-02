@@ -6,7 +6,7 @@
 
 import pytest
 
-from src.agents_v3.research_workspace.project_service import ProjectService
+from src.agents_v3.research_workspace.services.project_service import ProjectService
 
 
 class TestProjectServiceE2E:

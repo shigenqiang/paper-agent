@@ -16,7 +16,8 @@ from src.agents_v3.research_workspace.models import (
     ReportType,
     RetrievalScope,
 )
-from src.agents_v3.research_workspace.scope import RetrievalScopeService, normalize_label
+from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
+from src.agents_v3.research_workspace.utils import normalize_label
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
 
 # ── 泛化检测 ──────────────────────────────────────────

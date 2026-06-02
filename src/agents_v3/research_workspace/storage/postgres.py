@@ -50,7 +50,8 @@ TABLE_SCHEMAS = {
             url TEXT,
             pdf_url TEXT,
             citations INTEGER,
-            concepts JSONB DEFAULT '[]',
+            topics JSONB DEFAULT '[]',
+            topics_score JSONB DEFAULT '[]',
             keywords JSONB DEFAULT '[]',
             language VARCHAR(16),
             publication_type VARCHAR(32),
@@ -66,7 +67,7 @@ TABLE_SCHEMAS = {
         CREATE TABLE IF NOT EXISTS papers (
             paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             project_id VARCHAR(64) REFERENCES projects(project_id) ON DELETE CASCADE,
-            relevance_score FLOAT DEFAULT 0.0,
+            dense_score FLOAT DEFAULT 0.0,
             quality_score FLOAT DEFAULT 0.0,
             included BOOLEAN DEFAULT TRUE,
             exclude_reason TEXT DEFAULT '',
@@ -83,6 +84,7 @@ TABLE_SCHEMAS = {
         CREATE TABLE IF NOT EXISTS paper_chunks (
             chunk_id VARCHAR(64) PRIMARY KEY,
             paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
+            section_id VARCHAR(64) DEFAULT '',
             chunk_index INTEGER DEFAULT 0,
             section_title TEXT,
             section_type VARCHAR(32),
@@ -216,6 +218,57 @@ TABLE_SCHEMAS = {
             created_at TIMESTAMP DEFAULT NOW()
         )
     """,
+    "citation_contexts": """
+        CREATE TABLE IF NOT EXISTS citation_contexts (
+            context_id VARCHAR(64) PRIMARY KEY,
+            citing_paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
+            cited_paper_id VARCHAR(128) DEFAULT '',
+            ref_id VARCHAR(64) DEFAULT '',
+            citation_context TEXT NOT NULL,
+            surrounding_text TEXT DEFAULT '',
+            citation_type VARCHAR(20) DEFAULT 'mentioning',
+            section VARCHAR(64) DEFAULT '',
+            source_chunk_id VARCHAR(64) DEFAULT '',
+            page_number INTEGER,
+            paragraph_index INTEGER,
+            confidence FLOAT DEFAULT 0.0,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """,
+    "paper_sections": """
+        CREATE TABLE IF NOT EXISTS paper_sections (
+            section_id VARCHAR(64) PRIMARY KEY,
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
+            section_type VARCHAR(32) DEFAULT 'unknown',
+            section_title TEXT DEFAULT '',
+            section_index INTEGER DEFAULT 0,
+            page_start INTEGER DEFAULT 0,
+            page_end INTEGER DEFAULT 0,
+            text TEXT DEFAULT '',
+            summary TEXT DEFAULT '',
+            token_count INTEGER DEFAULT 0,
+            claims JSONB DEFAULT '[]',
+            entities JSONB DEFAULT '[]',
+            figures JSONB DEFAULT '[]',
+            tables JSONB DEFAULT '[]',
+            background_points JSONB DEFAULT '[]',
+            motivation_points JSONB DEFAULT '[]',
+            gap_points JSONB DEFAULT '[]',
+            contribution_points JSONB DEFAULT '[]',
+            prior_work_refs JSONB DEFAULT '[]',
+            methods_used JSONB DEFAULT '[]',
+            datasets_used JSONB DEFAULT '[]',
+            model_details JSONB DEFAULT '[]',
+            key_results JSONB DEFAULT '[]',
+            limitations JSONB DEFAULT '[]',
+            future_work JSONB DEFAULT '[]',
+            implications JSONB DEFAULT '[]',
+            chunk_ids JSONB DEFAULT '[]',
+            extraction_status VARCHAR(16) DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """,
     "kg_nodes": """
         CREATE TABLE IF NOT EXISTS kg_nodes (
             node_id VARCHAR(128) PRIMARY KEY,
@@ -244,16 +297,6 @@ TABLE_SCHEMAS = {
             created_at TIMESTAMP DEFAULT NOW()
         )
     """,
-    "topic_scores": """
-        CREATE TABLE IF NOT EXISTS topic_scores (
-            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
-            topic VARCHAR(255),
-            relevance_score FLOAT DEFAULT 0.0,
-            quality_score FLOAT DEFAULT 0.0,
-            scored_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE (paper_id, topic)
-        )
-    """,
     "queries": """
         CREATE TABLE IF NOT EXISTS queries (
             query_id VARCHAR(64) PRIMARY KEY,
@@ -261,6 +304,17 @@ TABLE_SCHEMAS = {
             metadata JSONB DEFAULT '{}',
             created_at TIMESTAMP DEFAULT NOW(),
             UNIQUE(query_text)
+        )
+    """,
+    "topic_scores": """
+        CREATE TABLE IF NOT EXISTS topic_scores (
+            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
+            topic VARCHAR(255),
+            query_id VARCHAR(64) REFERENCES queries(query_id) ON DELETE SET NULL,
+            dense_score FLOAT DEFAULT 0.0,
+            quality_score FLOAT DEFAULT 0.0,
+            scored_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (paper_id, topic)
         )
     """,
     "paper_queries": """
@@ -364,7 +418,7 @@ class PostgresStorage:
             _migrations = [
                 ("papers_pool", "is_pdf_downloaded", "BOOLEAN DEFAULT FALSE"),
                 ("papers_pool", "is_parsed", "BOOLEAN DEFAULT FALSE"),
-                ("papers", "relevance_score", "FLOAT DEFAULT 0.0"),
+                ("papers", "dense_score", "FLOAT DEFAULT 0.0"),
                 ("papers", "quality_score", "FLOAT DEFAULT 0.0"),
                 ("paper_chunks", "parent_id", "VARCHAR(64) DEFAULT ''"),
                 ("paper_chunks", "quality_score", "FLOAT DEFAULT 0.0"),
@@ -372,6 +426,7 @@ class PostgresStorage:
                 ("parse_results", "table_count", "INTEGER DEFAULT 0"),
                 ("parse_results", "figure_count", "INTEGER DEFAULT 0"),
                 ("parse_results", "diagnostics", "JSONB DEFAULT '{}'"),
+                ("topic_scores", "query_id", "VARCHAR(64) REFERENCES queries(query_id) ON DELETE SET NULL"),
             ]
             for table, col, col_def in _migrations:
                 try:
@@ -395,6 +450,13 @@ class PostgresStorage:
                 "CREATE INDEX IF NOT EXISTS idx_paper_refs_citing ON paper_references(citing_paper_id)",
                 "CREATE INDEX IF NOT EXISTS idx_paper_refs_cited ON paper_references(cited_paper_id)",
                 "CREATE INDEX IF NOT EXISTS idx_paper_queries_query ON paper_queries(query_id)",
+                "CREATE INDEX IF NOT EXISTS idx_topic_scores_query ON topic_scores(query_id)",
+                "CREATE INDEX IF NOT EXISTS idx_citation_ctx_citing ON citation_contexts(citing_paper_id)",
+                "CREATE INDEX IF NOT EXISTS idx_citation_ctx_cited ON citation_contexts(cited_paper_id)",
+                "CREATE INDEX IF NOT EXISTS idx_citation_ctx_type ON citation_contexts(citation_type)",
+                "CREATE INDEX IF NOT EXISTS idx_citation_ctx_section ON citation_contexts(section)",
+                "CREATE INDEX IF NOT EXISTS idx_paper_sections_paper ON paper_sections(paper_id)",
+                "CREATE INDEX IF NOT EXISTS idx_paper_sections_type ON paper_sections(section_type)",
             ]
             for idx_sql in _indexes:
                 try:

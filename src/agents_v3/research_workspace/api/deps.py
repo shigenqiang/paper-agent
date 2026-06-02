@@ -6,18 +6,18 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents_v3.research_workspace.evidence_table import EvidenceTableService
-from src.agents_v3.research_workspace.graph_service import GraphService
-from src.agents_v3.research_workspace.innovation_generator import InnovationReportGenerator
+from src.agents_v3.research_workspace.services.evidence_table import EvidenceTableService
+from src.agents_v3.research_workspace.services.graph_service import GraphService
+from src.agents_v3.research_workspace.services.innovation_generator import InnovationReportGenerator
 from src.agents_v3.research_workspace.llm.service import LLMService, get_llm_service
-from src.agents_v3.research_workspace.paper_card import PaperCardGenerator
-from src.agents_v3.research_workspace.paper_library import PaperLibraryService
-from src.agents_v3.research_workspace.parser_service import ParserService
-from src.agents_v3.research_workspace.project_service import ProjectService
-from src.agents_v3.research_workspace.report_service import ReportService
-from src.agents_v3.research_workspace.review_generator import LiteratureReviewGenerator
-from src.agents_v3.research_workspace.scope import RetrievalScopeService
-from src.agents_v3.research_workspace.scope_qa import ScopeQAService
+from src.agents_v3.research_workspace.services.paper_card import PaperCardGenerator
+from src.agents_v3.research_workspace.services.paper_library import PaperLibraryService
+from src.agents_v3.research_workspace.parser.service import ParserService
+from src.agents_v3.research_workspace.services.project_service import ProjectService
+from src.agents_v3.research_workspace.services.report_service import ReportService
+from src.agents_v3.research_workspace.services.review_generator import LiteratureReviewGenerator
+from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
+from src.agents_v3.research_workspace.services.scope_qa import ScopeQAService
 from src.agents_v3.research_workspace.storage import (
     JSONStorage,
     get_project_storage,
@@ -55,7 +55,7 @@ def _get_postgres_storage():
         return None
 
     try:
-        from src.agents_v3.research_workspace.postgres_storage import PostgresStorage
+        from src.agents_v3.research_workspace.storage.postgres import PostgresStorage
         dsn = pg_config.get("dsn")
         if dsn:
             _postgres_storage = PostgresStorage(dsn=dsn)

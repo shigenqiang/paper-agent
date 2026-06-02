@@ -7,7 +7,7 @@
 
 import pytest
 
-from src.agents_v3.research_workspace.graph_service import GraphService
+from src.agents_v3.research_workspace.services.graph_service import GraphService
 
 
 class TestGraphServiceE2E:

@@ -9,7 +9,7 @@
 import os
 import pytest
 
-from src.agents_v3.research_workspace.innovation_generator import InnovationReportGenerator
+from src.agents_v3.research_workspace.services.innovation_generator import InnovationReportGenerator
 
 
 HAS_LLM_KEY = bool(os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("OPENAI_API_KEY"))

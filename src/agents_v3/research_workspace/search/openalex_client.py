@@ -134,8 +134,8 @@ class OpenAlexClient(BaseSearchAdapter):
         # Citations
         citations = work.get("cited_by_count")
 
-        # Concepts
-        concepts = [c.get("display_name", "") for c in work.get("concepts", []) if c.get("display_name")]
+        # Topics (OpenAlex concepts → topics)
+        topics = [c.get("display_name", "") for c in work.get("concepts", []) if c.get("display_name")]
 
         # OpenAlex ID
         openalex_id = (work.get("id") or "").replace("https://openalex.org/", "")
@@ -155,7 +155,7 @@ class OpenAlexClient(BaseSearchAdapter):
             url=work.get("id", ""),
             pdf_url=pdf_url,
             citations=citations,
-            concepts=concepts,
+            topics=topics,
             language=language,
             publication_type=publication_type,
             source="openalex",

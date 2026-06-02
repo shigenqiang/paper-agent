@@ -17,7 +17,6 @@ from src.agents_v3.research_workspace.search.base import (
 )
 from src.agents_v3.research_workspace.search.merger import SearchResultMerger
 from src.agents_v3.research_workspace.search.rate_limit import RateManager
-from src.agents_v3.research_workspace.search.ranking import RankingService
 
 
 class SearchOrchestrator:
@@ -28,12 +27,10 @@ class SearchOrchestrator:
         adapters: dict[str, BaseSearchAdapter],
         rate_manager: RateManager | None = None,
         merger: SearchResultMerger | None = None,
-        ranking: RankingService | None = None,
     ):
         self.adapters = adapters
         self.rate_manager = rate_manager or RateManager()
         self.merger = merger or SearchResultMerger()
-        self.ranking = ranking or RankingService()
 
     def _search_single_source(
         self, source_name: str, adapter: BaseSearchAdapter, query: SearchQuery
@@ -114,19 +111,16 @@ class SearchOrchestrator:
         # Merge and dedup
         merged = self.merger.merge(all_results)
 
-        # Rank (pass query for relevance scoring)
-        ranked = self.ranking.rank(merged, query=query.query)
-
         total_elapsed = int((time.time() - start) * 1000)
 
         response = SearchResponse(
             query=query,
-            results=ranked,
+            results=merged,
             source_stats=source_stats,
             errors=errors,
             cache_hit=False,
             elapsed_ms=total_elapsed,
         )
 
-        logger.info(f"Search complete: {len(ranked)} results from {len(active_adapters)} sources in {total_elapsed}ms")
+        logger.info(f"Search complete: {len(merged)} results from {len(active_adapters)} sources in {total_elapsed}ms")
         return response

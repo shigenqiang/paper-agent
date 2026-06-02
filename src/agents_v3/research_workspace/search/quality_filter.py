@@ -1,6 +1,6 @@
 """两阶段过滤 — 先相关性，再质量
 
-Stage 1: filter_by_relevance() — 按 relevance_score 阈值过滤
+Stage 1: filter_by_relevance() — 按 dense_score 阈值过滤
 Stage 2: filter_by_quality()   — 按 quality_score 阈值过滤
 """
 
@@ -83,11 +83,11 @@ def filter_by_relevance(
     threshold: float = 0.5,
     min_results: int = 3,
 ) -> list[SearchResult]:
-    """阶段1：按 relevance_score 过滤
+    """阶段1：按 dense_score 过滤
 
     Args:
-        results: 搜索结果列表（需已按 relevance_score 排序）
-        threshold: relevance_score 阈值，低于此值的论文被过滤
+        results: 搜索结果列表（需已按 dense_score 排序）
+        threshold: dense_score 阈值，低于此值的论文被过滤
         min_results: 最少保留的结果数（避免过滤过严）
 
     Returns:
@@ -96,7 +96,7 @@ def filter_by_relevance(
     if not results:
         return []
 
-    filtered = [r for r in results if (r.relevance_score or 0) >= threshold]
+    filtered = [r for r in results if (r.dense_score or 0) >= threshold]
 
     # 保底：如果过滤后太少，保留 top-N
     if len(filtered) < min_results and len(results) > min_results:

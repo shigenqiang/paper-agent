@@ -31,7 +31,6 @@ from src.agents_v3.research_workspace.search.orchestrator import SearchOrchestra
 from src.agents_v3.research_workspace.search.rate_limit import RateManager, SourceConfig
 from src.agents_v3.research_workspace.search.sparse_encoder import SparseEncoder
 from src.agents_v3.research_workspace.search.hybrid_ranker import HybridRanker
-from src.agents_v3.research_workspace.search.hyde_ranker import HyDERanker
 from src.agents_v3.research_workspace.search.quality_filter import (
     compute_quality,
     compute_quality_batch,
@@ -39,7 +38,6 @@ from src.agents_v3.research_workspace.search.quality_filter import (
     filter_by_relevance,
     two_stage_filter,
 )
-from src.agents_v3.research_workspace.search.ranking import RankingService
 from src.agents_v3.research_workspace.search.semantic_scholar_client import SemanticScholarClient
 from src.agents_v3.research_workspace.search.strategies import SearchStrategy, get_strategy
 
@@ -50,10 +48,8 @@ __all__ = [
     "DedupService",
     "EuropePMCClient",
     "HybridRanker",
-    "HyDERanker",
     "OpenAlexClient",
     "RateManager",
-    "RankingService",
     "QueryRecord",
     "SearchError",
     "SearchErrorCategory",

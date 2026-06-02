@@ -150,13 +150,9 @@ class SemanticScholarClient(BaseSearchAdapter):
         # Influential citations
         influential = paper.get("influentialCitationCount")
 
-        # Fields of study
+        # Fields of study → topics
         fields = paper.get("fieldsOfStudy") or []
-        concepts = [f for f in fields if f]
-
-        # TLDR
-        tldr_data = paper.get("tldr") or {}
-        tldr = tldr_data.get("text", "") or ""
+        topics = [f for f in fields if f]
 
         # Language & publication type
         language = paper.get("language", "") or ""
@@ -176,7 +172,7 @@ class SemanticScholarClient(BaseSearchAdapter):
             url=f"https://www.semanticscholar.org/paper/{s2_id}",
             pdf_url=pdf_url,
             citations=citations,
-            concepts=concepts,
+            topics=topics,
             language=language,
             publication_type=publication_type,
             source="semantic_scholar",

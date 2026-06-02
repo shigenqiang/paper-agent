@@ -15,7 +15,7 @@ from src.agents_v3.research_workspace.models import (
     RetrievalScope,
     ScopeType,
 )
-from src.agents_v3.research_workspace.scope import RetrievalScopeService
+from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
 
 # ── System Prompt ──────────────────────────────────────

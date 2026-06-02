@@ -9,7 +9,7 @@
 import os
 import pytest
 
-from src.agents_v3.research_workspace.paper_card import PaperCardGenerator
+from src.agents_v3.research_workspace.services.paper_card import PaperCardGenerator
 
 
 HAS_LLM_KEY = bool(os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("OPENAI_API_KEY"))

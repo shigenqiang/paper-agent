@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections import defaultdict
 from datetime import datetime
@@ -19,26 +18,7 @@ from src.agents_v3.research_workspace.models import (
     NodeType,
 )
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
-
-
-# ── 实体归一化 ──────────────────────────────────────
-
-def normalize_label(text: str) -> str:
-    """文本归一化：小写、去标点、压缩空格、去复数"""
-    t = text.strip().lower()
-    t = re.sub(r"[　]", " ", t)  # 全角空格
-    t = re.sub(r"[_\-]+", " ", t)
-    t = re.sub(r"\s+", " ", t)
-    t = t.rstrip(".,;:;")
-    # 简单去复数
-    if t.endswith("s") and not t.endswith("ss") and len(t) > 3:
-        t = t[:-1]
-    return t
-
-
-def stable_hash(text: str) -> str:
-    """生成稳定的短哈希"""
-    return hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+from src.agents_v3.research_workspace.utils import normalize_label, stable_hash
 
 
 # 同义词/缩写映射

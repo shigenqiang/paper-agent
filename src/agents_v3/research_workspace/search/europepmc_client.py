@@ -152,7 +152,7 @@ class EuropePMCClient(BaseSearchAdapter):
             url=f"https://europepmc.org/article/MED/{pmid}" if pmid else "",
             pdf_url=pdf_url,
             citations=citations,
-            concepts=keywords,
+            topics=keywords,
             keywords=keywords,
             source="europepmc",
             source_payload={

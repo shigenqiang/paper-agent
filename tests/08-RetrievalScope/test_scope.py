@@ -7,7 +7,7 @@
 
 import pytest
 
-from src.agents_v3.research_workspace.scope import RetrievalScopeService
+from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
 from src.agents_v3.research_workspace.models import ScopeType
 
 

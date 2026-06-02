@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import contextlib
-import hashlib
-import re
 import time
 from contextvars import ContextVar
 from typing import Any
 
 from loguru import logger
+
+from src.agents_v3.research_workspace.utils import hash_text, redact_text
 
 # ── 请求上下文 ──────────────────────────────────────
 
@@ -79,36 +79,6 @@ def log_operation(operation: str, **extra: Any):
         elapsed_ms = int((time.time() - start) * 1000)
         log_event(f"{operation}.failed", elapsed_ms=elapsed_ms, error=str(e)[:200], **extra)
         raise
-
-
-# ── 脱敏 ──────────────────────────────────────────
-
-_SENSITIVE_PATTERNS = [
-    (re.compile(r"sk-[a-zA-Z0-9]{20,}"), "[REDACTED_API_KEY]"),
-    (re.compile(r"Bearer\s+[a-zA-Z0-9\-._~+/]+=*", re.IGNORECASE), "Bearer [REDACTED_TOKEN]"),
-    (re.compile(r"(api_key|apikey|authorization|cookie)\s*[:=]\s*\S+", re.IGNORECASE), r"\1=[REDACTED]"),
-    (re.compile(r"[A-Z]:\\Users\\[^\s]+"), "[REDACTED_PATH]"),
-    (re.compile(r"/home/[^\s]+"), "[REDACTED_PATH]"),
-]
-
-
-def redact_text(text: str | None, max_len: int = 200) -> str | None:
-    """脱敏文本：移除敏感信息后截断"""
-    if not text:
-        return text
-    result = text
-    for pattern, replacement in _SENSITIVE_PATTERNS:
-        result = pattern.sub(replacement, result)
-    if len(result) > max_len:
-        result = result[:max_len] + f"...[{len(text)}chars]"
-    return result
-
-
-def hash_text(text: str | None) -> str | None:
-    """生成文本哈希（用于日志关联，不泄露原文）"""
-    if not text:
-        return text
-    return hashlib.md5(text.encode("utf-8")).hexdigest()[:12]
 
 
 def truncate_text(text: str | None, max_len: int = 200) -> str | None:

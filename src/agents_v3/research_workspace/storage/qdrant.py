@@ -22,6 +22,7 @@ COLLECTIONS = {
         "sparse": True,  # 启用 sparse vector
         "payload_indexes": [
             ("paper_id", PayloadSchemaType.KEYWORD),
+            ("section_id", PayloadSchemaType.KEYWORD),
             ("project_id", PayloadSchemaType.KEYWORD),
             ("section_type", PayloadSchemaType.KEYWORD),
             ("chunk_type", PayloadSchemaType.KEYWORD),
@@ -44,6 +45,30 @@ COLLECTIONS = {
         "sparse": True,
         "payload_indexes": [
             ("query_id", PayloadSchemaType.KEYWORD),
+        ],
+    },
+    "citation_contexts": {
+        "description": "引用上下文的语义向量，用于引用语义检索和立场分析",
+        "vector_size": 384,
+        "distance": Distance.COSINE,
+        "sparse": True,
+        "payload_indexes": [
+            ("citing_paper_id", PayloadSchemaType.KEYWORD),
+            ("cited_paper_id", PayloadSchemaType.KEYWORD),
+            ("citation_type", PayloadSchemaType.KEYWORD),
+            ("section", PayloadSchemaType.KEYWORD),
+            ("project_id", PayloadSchemaType.KEYWORD),
+        ],
+    },
+    "paper_sections": {
+        "description": "论文章节级全文向量，用于章节语义检索",
+        "vector_size": 384,
+        "distance": Distance.COSINE,
+        "sparse": True,
+        "payload_indexes": [
+            ("paper_id", PayloadSchemaType.KEYWORD),
+            ("section_type", PayloadSchemaType.KEYWORD),
+            ("project_id", PayloadSchemaType.KEYWORD),
         ],
     },
 }

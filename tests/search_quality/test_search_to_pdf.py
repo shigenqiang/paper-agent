@@ -133,14 +133,14 @@ def llm_judge(results: list, query: str) -> tuple[list[bool], list[str]]:
 
 # ── 搜索 ──────────────────────────────────────────────
 
-def search_raw() -> tuple[list, float, str]:
-    """原始搜索"""
+def search_hybrid() -> tuple[list, float, str]:
+    """Hybrid 搜索（dense + sparse + RRF）"""
     from src.agents_v3.research_workspace.search.base import SearchQuery
     from src.agents_v3.research_workspace.search.openalex_client import OpenAlexClient
     from src.agents_v3.research_workspace.search.arxiv_client import ArxivClient
     from src.agents_v3.research_workspace.search.semantic_scholar_client import SemanticScholarClient
     from src.agents_v3.research_workspace.search.merger import SearchResultMerger
-    from src.agents_v3.research_workspace.search.ranking import RankingService
+    from src.agents_v3.research_workspace.search.hybrid_ranker import HybridRanker
     from src.agents_v3.research_workspace.search.query_optimizer import refine_query
 
     t0 = time.time()
@@ -161,46 +161,11 @@ def search_raw() -> tuple[list, float, str]:
             logger.error(f"{adapter.source_name} failed: {e}")
 
     merged = merger.merge(all_results)
-    ranking = RankingService(query=optimized_query)
-    ranked = ranking.rank(merged, query=optimized_query)
+    hybrid_ranker = HybridRanker()
+    ranked = hybrid_ranker.rank(merged, TEST_QUERY)
 
     elapsed = time.time() - t0
     return ranked, elapsed, optimized_query
-
-
-def search_hyde() -> tuple[list, float, str]:
-    """HyDE 搜索（假设性摘要增强排序）"""
-    from src.agents_v3.research_workspace.search.base import SearchQuery
-    from src.agents_v3.research_workspace.search.openalex_client import OpenAlexClient
-    from src.agents_v3.research_workspace.search.arxiv_client import ArxivClient
-    from src.agents_v3.research_workspace.search.semantic_scholar_client import SemanticScholarClient
-    from src.agents_v3.research_workspace.search.merger import SearchResultMerger
-    from src.agents_v3.research_workspace.search.ranking import RankingService
-    from src.agents_v3.research_workspace.search.query_optimizer import refine_query, hyde_query
-
-    t0 = time.time()
-    hypothetical = hyde_query(TEST_QUERY)
-    logger.info(f"HyDE: generated {len(hypothetical)} chars")
-
-    optimized = refine_query(TEST_QUERY)
-    sq = SearchQuery(query=optimized, sources=SOURCES, limit=LIMIT)
-    adapters = [OpenAlexClient(), ArxivClient(), SemanticScholarClient()]
-    merger = SearchResultMerger()
-
-    all_results = []
-    for adapter in adapters:
-        try:
-            results = adapter.search(sq)
-            all_results.extend(results)
-        except Exception as e:
-            logger.error(f"{adapter.source_name} failed: {e}")
-
-    merged = merger.merge(all_results)
-    ranking = RankingService(query=hypothetical)
-    ranked = ranking.rank(merged, query=hypothetical)
-
-    elapsed = time.time() - t0
-    return ranked, elapsed, hypothetical
 
 
 # ── PDF 下载与解析 ─────────────────────────────────────
@@ -238,7 +203,7 @@ def _search_result_to_paper_data(result, project_id: str) -> dict:
         "source_platform": result.source or "",
         "status": "imported",
         "pdf_path": "",
-        "relevance_score": result.relevance_score or 0,
+        "dense_score": result.dense_score or 0,
         "quality_score": result.quality_score or 0,
     }
 
@@ -252,7 +217,7 @@ def download_and_parse_papers(
     Returns:
         每篇论文的解析结果列表
     """
-    from src.agents_v3.research_workspace.parser_service import ParserService
+    from src.agents_v3.research_workspace.parser.service import ParserService
 
     parser = ParserService(storage=storage)
     parse_results = []
@@ -381,25 +346,18 @@ def _analyze_chunks(chunks: list[dict], result: dict) -> None:
 # ── 报告生成 ──────────────────────────────────────────
 
 def build_report(
-    raw_results, raw_judgments, raw_reasons, raw_time, optimized_query,
-    hyde_results, hyde_judgments, hyde_reasons, hyde_time, hyde_abstract,
+    hybrid_results, hybrid_judgments, hybrid_reasons, hybrid_time, optimized_query,
     parse_results: list[dict],
 ) -> str:
     """生成完整测试报告"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     # 统计
-    n_raw = len(raw_results)
-    n_raw_rel = sum(raw_judgments)
-    n_hyde = len(hyde_results)
-    n_hyde_rel = sum(hyde_judgments)
+    n_hybrid = len(hybrid_results)
+    n_hybrid_rel = sum(hybrid_judgments)
 
-    # 合并去重的相关论文
     all_relevant_titles = set()
-    for r, j in zip(raw_results, raw_judgments):
-        if j:
-            all_relevant_titles.add(r.title)
-    for r, j in zip(hyde_results, hyde_judgments):
+    for r, j in zip(hybrid_results, hybrid_judgments):
         if j:
             all_relevant_titles.add(r.title)
 
@@ -429,39 +387,21 @@ def build_report(
         "",
         "| 搜索策略 | 总数 | LLM判定相关 | 精准率 |",
         "|----------|------|------------|--------|",
-        f"| 原始搜索 | {n_raw} | {n_raw_rel} | {n_raw_rel/max(n_raw,1):.0%} |",
-        f"| HyDE 排序 | {n_hyde} | {n_hyde_rel} | {n_hyde_rel/max(n_hyde,1):.0%} |",
-        f"| 合并去重 | - | {len(all_relevant_titles)} | - |",
+        f"| Hybrid | {n_hybrid} | {n_hybrid_rel} | {n_hybrid_rel/max(n_hybrid,1):.0%} |",
         "",
     ])
-
-    # HyDE 摘要
-    if hyde_abstract:
-        lines.extend([
-            "### HyDE 假设性摘要",
-            "",
-            f"> {hyde_abstract[:500]}",
-            "",
-        ])
 
     # 相关论文列表
     lines.extend([
         "## 2. LLM 判定相关论文",
         "",
-        "| # | 来源 | relevance | quality | pdf_url | 标题 |",
-        "|---|------|-----------|---------|---------|------|",
+        "| # | dense_score | quality | pdf_url | 标题 |",
+        "|---|-------------|---------|---------|------|",
     ])
-    idx = 0
-    for r, j, reason in zip(raw_results, raw_judgments, raw_reasons):
+    for idx, (r, j) in enumerate(zip(hybrid_results, hybrid_judgments), 1):
         if j:
-            idx += 1
             has_pdf = "Y" if r.pdf_url else "N"
-            lines.append(f"| {idx} | raw | {r.relevance_score:.3f} | {r.quality_score:.3f} | {has_pdf} | {r.title[:60]} |")
-    for r, j, reason in zip(hyde_results, hyde_judgments, hyde_reasons):
-        if j and r.title not in {rr.title for rr, jj in zip(raw_results, raw_judgments) if jj}:
-            idx += 1
-            has_pdf = "Y" if r.pdf_url else "N"
-            lines.append(f"| {idx} | hyde | {r.relevance_score:.3f} | {r.quality_score:.3f} | {has_pdf} | {r.title[:60]} |")
+            lines.append(f"| {idx} | {r.dense_score:.3f} | {r.quality_score:.3f} | {has_pdf} | {r.title[:60]} |")
 
     # PDF 解析结果
     lines.extend([
@@ -601,47 +541,34 @@ def main():
     storage.ensure_dirs()
     print(f"存储目录: {storage.data_dir}")
 
-    # 1. 原始搜索
-    print("\n[1/5] 正在执行原始搜索...")
-    raw_results, raw_time, optimized_query = search_raw()
+    # 1. Hybrid 搜索
+    print("\n[1/4] 正在执行 Hybrid 搜索...")
+    hybrid_results, hybrid_time, optimized_query = search_hybrid()
     print(f"  优化查询: \"{TEST_QUERY}\" → \"{optimized_query}\"")
-    print(f"  搜索完成: {len(raw_results)} 篇, 耗时 {raw_time:.1f}s")
+    print(f"  搜索完成: {len(hybrid_results)} 篇, 耗时 {hybrid_time:.1f}s")
 
-    if not raw_results:
+    if not hybrid_results:
         print("  搜索无结果，退出")
         return
 
-    # 2. LLM 判断原始搜索结果
-    print(f"\n[2/5] LLM 正在判断 {len(raw_results)} 篇论文相关性...")
-    raw_judgments, raw_reasons = llm_judge(raw_results, TEST_QUERY)
-    n_raw_rel = sum(raw_judgments)
-    print(f"  LLM判定: {n_raw_rel}/{len(raw_results)} 相关")
+    # 2. LLM 判断搜索结果
+    print(f"\n[2/4] LLM 正在判断 {len(hybrid_results)} 篇论文相关性...")
+    hybrid_judgments, hybrid_reasons = llm_judge(hybrid_results, TEST_QUERY)
+    n_hybrid_rel = sum(hybrid_judgments)
+    print(f"  LLM判定: {n_hybrid_rel}/{len(hybrid_results)} 相关")
 
-    # 3. HyDE 搜索
-    print("\n[3/5] 正在执行 HyDE 搜索...")
-    hyde_results, hyde_time, hyde_abstract = search_hyde()
-    print(f"  HyDE: {len(hyde_results)} 篇, 耗时 {hyde_time:.1f}s")
-    hyde_judgments, hyde_reasons = llm_judge(hyde_results, TEST_QUERY)
-    n_hyde_rel = sum(hyde_judgments)
-    print(f"  LLM判定: {n_hyde_rel}/{len(hyde_results)} 相关")
+    # 3. 收集相关论文，下载并解析 PDF
+    print("\n[3/4] 正在下载并解析相关论文 PDF...")
 
-    # 4. 收集相关论文（合并去重），下载并解析 PDF
-    print("\n[4/5] 正在下载并解析相关论文 PDF...")
-
-    # 收集所有 LLM 判定相关的论文
     relevant_results = []
     seen_titles = set()
-    for r, j in zip(raw_results, raw_judgments):
-        if j and r.title not in seen_titles:
-            relevant_results.append(r)
-            seen_titles.add(r.title)
-    for r, j in zip(hyde_results, hyde_judgments):
+    for r, j in zip(hybrid_results, hybrid_judgments):
         if j and r.title not in seen_titles:
             relevant_results.append(r)
             seen_titles.add(r.title)
 
     # 按是否有 pdf_url 排序（有 pdf_url 的优先）
-    relevant_results.sort(key=lambda r: (0 if r.pdf_url else 1, -(r.relevance_score or 0)))
+    relevant_results.sort(key=lambda r: (0 if r.pdf_url else 1, -(r.dense_score or 0)))
 
     n_with_pdf = sum(1 for r in relevant_results if r.pdf_url)
     print(f"  相关论文: {len(relevant_results)} 篇, 其中有 PDF URL: {n_with_pdf} 篇")
@@ -651,11 +578,10 @@ def main():
     n_parsed = sum(1 for p in parse_results if p.get("status") == "parsed")
     print(f"  解析完成: {n_parsed}/{len(parse_results)} 成功")
 
-    # 5. 生成报告
-    print("\n[5/5] 生成测试报告...")
+    # 4. 生成报告
+    print("\n[4/4] 生成测试报告...")
     report = build_report(
-        raw_results, raw_judgments, raw_reasons, raw_time, optimized_query,
-        hyde_results, hyde_judgments, hyde_reasons, hyde_time, hyde_abstract,
+        hybrid_results, hybrid_judgments, hybrid_reasons, hybrid_time, optimized_query,
         parse_results,
     )
     report_path = "docs/search-to-pdf-test-report.md"
@@ -667,8 +593,8 @@ def main():
     print(f"\n{'='*60}")
     print("汇总")
     print(f"{'='*60}")
-    print(f"搜索结果: {len(raw_results)} 篇 (原始), {len(hyde_results)} 篇 (HyDE)")
-    print(f"LLM相关: {n_raw_rel} 篇 (原始), {n_hyde_rel} 篇 (HyDE)")
+    print(f"搜索结果: {len(hybrid_results)} 篇 (Hybrid)")
+    print(f"LLM相关: {n_hybrid_rel} 篇 (Hybrid)")
     print(f"PDF下载解析: {n_parsed}/{len(parse_results)} 成功")
     total_chunks = sum(p.get("chunk_count", 0) for p in parse_results if p.get("status") == "parsed")
     print(f"总 chunks: {total_chunks}")

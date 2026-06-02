@@ -193,6 +193,8 @@ class JSONStorage:
             "graphs": "graph_id",
             "chunks": "paper_id",
             "paper_chunks": "chunk_id",
+            "paper_sections": "section_id",
+            "citation_contexts": "context_id",
             "parse_results": "parse_id",
             "qa_history": "qa_id",
             "tasks": "task_id",
@@ -315,6 +317,13 @@ def get_project_storage(project_dir_name: str, data_dir: Path | str | None = Non
 def remove_project_storage(project_dir_name: str) -> None:
     """从缓存中移除项目存储（删除项目时调用）"""
     _project_storages.pop(project_dir_name, None)
+
+
+def cleanup_storage_cache() -> int:
+    """清理所有项目存储缓存，返回清理数量（供 shutdown 调用）"""
+    count = len(_project_storages)
+    _project_storages.clear()
+    return count
 
 
 def rename_project_storage(old_dir_name: str, new_dir_name: str, data_dir: Path | str | None = None) -> None:

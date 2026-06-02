@@ -69,7 +69,7 @@ class HybridRanker:
         top_n: int = 30,
         quality_threshold: float = 0.3,
     ):
-        from src.agents_v3.research_workspace.embedding_service import get_embedding_service
+        from src.agents_v3.research_workspace.storage.embedding import get_embedding_service
         self.embedding_service = get_embedding_service()
         self.rrf_k = rrf_k
         self.top_k = top_k
@@ -126,12 +126,13 @@ class HybridRanker:
         if max_rrf > 0:
             rrf_scores = [s / max_rrf for s in rrf_scores]
 
-        # 10. 设置 relevance_score（RRF 分数）
+        # 10. 设置 dense_score（cosine similarity，用于入库）
         for i, r in enumerate(results):
-            r.relevance_score = round(rrf_scores[i], 3)
+            r.dense_score = round(dense_scores[i], 3)
 
-        # 11. 按 RRF 分数降序排列
-        results.sort(key=lambda r: r.relevance_score or 0, reverse=True)
+        # 11. 按 RRF 分数降序排列（排序用 RRF，入库用 dense_score）
+        rrf_order = sorted(range(len(results)), key=lambda i: rrf_scores[i], reverse=True)
+        results = [results[i] for i in rrf_order]
         for i, r in enumerate(results):
             r.source_rank = i + 1
 

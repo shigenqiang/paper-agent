@@ -9,7 +9,7 @@
 import os
 import pytest
 
-from src.agents_v3.research_workspace.scope_qa import ScopeQAService
+from src.agents_v3.research_workspace.services.scope_qa import ScopeQAService
 
 
 HAS_LLM_KEY = bool(os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("OPENAI_API_KEY"))

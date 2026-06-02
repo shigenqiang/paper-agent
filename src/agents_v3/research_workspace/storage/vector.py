@@ -24,6 +24,7 @@ try:
         Filter,
         Fusion,
         FusionQuery,
+        MatchAny,
         MatchValue,
         PointIdsList,
         PointStruct,
@@ -147,7 +148,7 @@ class VectorStorage:
                         ),
                     }
                 else:
-                    vector = emb
+                    vector = {"dense": emb}
 
             points.append(PointStruct(id=_to_point_id(doc_id), vector=vector, payload=payload))
 
@@ -279,6 +280,7 @@ class VectorStorage:
         metadatas = [
             {
                 "paper_id": c.get("paper_id", ""),
+                "section_id": c.get("section_id", ""),
                 "section_type": c.get("section_type", ""),
                 "chunk_type": c.get("chunk_type", ""),
                 "parent_id": c.get("parent_id", ""),
@@ -290,6 +292,36 @@ class VectorStorage:
         ]
         self.add_documents(collection, ids, documents, metadatas, child_embeddings, child_sparse)
         logger.info(f"Added {len(ids)} child chunks to {collection} (skipped {len(chunks) - len(ids)} parent chunks)")
+
+    def add_paper_sections(
+        self,
+        sections: list[dict[str, Any]],
+        embeddings: list[list[float]] | None = None,
+        collection: str = "paper_sections",
+        sparse_embeddings: list[dict[int, float]] | None = None,
+    ) -> None:
+        """存储论文章节级向量
+
+        Args:
+            sections: PaperSection 字典列表，需含 section_id/paper_id/section_type/text 等字段
+            embeddings: dense 向量列表
+            collection: 集合名
+            sparse_embeddings: 可选稀疏向量列表
+        """
+        ids = [s["section_id"] for s in sections]
+        documents = [s.get("summary", "") or s.get("text", "") for s in sections]
+        metadatas = [
+            {
+                "paper_id": s.get("paper_id", ""),
+                "section_type": s.get("section_type", "unknown"),
+                "section_title": s.get("section_title", ""),
+                "project_id": s.get("project_id", ""),
+                "token_count": s.get("token_count", 0),
+            }
+            for s in sections
+        ]
+        self.add_documents(collection, ids, documents, metadatas, embeddings, sparse_embeddings)
+        logger.info(f"Added {len(ids)} paper sections to {collection}")
 
     def add_paper_profiles(
         self,
@@ -328,6 +360,40 @@ class VectorStorage:
 
         self.client.upsert(collection_name=collection, points=points)
         logger.info(f"Added {len(paper_ids)} paper profiles to {collection}")
+
+    def add_citation_contexts(
+        self,
+        contexts: list[dict[str, Any]],
+        embeddings: list[list[float]],
+        collection: str = "citation_contexts",
+        sparse_embeddings: list[dict[int, float]] | None = None,
+    ) -> None:
+        """存储引用上下文向量
+
+        Args:
+            contexts: CitationContext 字典列表，需含 context_id/citing_paper_id/cited_paper_id/citation_context 等字段
+            embeddings: dense 向量列表
+            collection: 集合名
+            sparse_embeddings: 可选稀疏向量列表
+        """
+        ids = [c["context_id"] for c in contexts]
+        documents = [
+            f"{c.get('citation_context', '')} {c.get('surrounding_text', '')}".strip()
+            for c in contexts
+        ]
+        metadatas = [
+            {
+                "citing_paper_id": c.get("citing_paper_id", ""),
+                "cited_paper_id": c.get("cited_paper_id", ""),
+                "citation_type": c.get("citation_type", "mentioning"),
+                "section": c.get("section", ""),
+                "source_chunk_id": c.get("source_chunk_id", ""),
+                "project_id": c.get("project_id", ""),
+            }
+            for c in contexts
+        ]
+        self.add_documents(collection, ids, documents, metadatas, embeddings, sparse_embeddings)
+        logger.info(f"Added {len(ids)} citation contexts to {collection}")
 
     def add_search_query(
         self,
@@ -516,6 +582,7 @@ class VectorStorage:
         paper_ids: list[str] | None = None,
         collection: str = "paper_chunks",
         fusion: str = "rrf",
+        where: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Qdrant 原生混合检索：dense + sparse + RRF/DBSF 融合
 
@@ -526,6 +593,7 @@ class VectorStorage:
             paper_ids: 可选的论文 ID 过滤
             collection: 集合名
             fusion: 融合方式，"rrf" 或 "dbsf"
+            where: 额外 payload 过滤条件，如 {"project_id": "xxx"} 或 {"section_id": ["s1","s2"]}
 
         Returns:
             检索结果列表
@@ -533,16 +601,21 @@ class VectorStorage:
         self._ensure_collection(collection)
 
         # 构建过滤条件
-        query_filter = None
+        conditions = []
         if paper_ids:
-            from qdrant_client.models import MatchAny
-            conditions = [
+            conditions.append(
                 FieldCondition(
                     key="paper_id",
                     match=MatchAny(any=paper_ids) if len(paper_ids) > 1 else MatchValue(value=paper_ids[0]),
                 )
-            ]
-            query_filter = Filter(must=conditions)
+            )
+        if where:
+            for key, value in where.items():
+                if isinstance(value, list):
+                    conditions.append(FieldCondition(key=key, match=MatchAny(any=value)))
+                else:
+                    conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
+        query_filter = Filter(must=conditions) if conditions else None
 
         # 选择融合方式
         fusion_method = Fusion.RRF if fusion == "rrf" else Fusion.DBSF
@@ -592,6 +665,7 @@ class VectorStorage:
         paper_ids: list[str] | None = None,
         collection: str = "paper_chunks",
         fusion: str = "rrf",
+        where: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """文本版 hybrid 检索（云端推理自动向量化查询）
 
@@ -601,6 +675,7 @@ class VectorStorage:
             paper_ids: 可选的论文 ID 过滤
             collection: 集合名
             fusion: 融合方式，"rrf" 或 "dbsf"
+            where: 额外 payload 过滤条件
 
         Returns:
             检索结果列表
@@ -608,16 +683,21 @@ class VectorStorage:
         self._ensure_collection(collection)
 
         # 构建过滤条件
-        query_filter = None
+        conditions = []
         if paper_ids:
-            from qdrant_client.models import MatchAny
-            conditions = [
+            conditions.append(
                 FieldCondition(
                     key="paper_id",
                     match=MatchAny(any=paper_ids) if len(paper_ids) > 1 else MatchValue(value=paper_ids[0]),
                 )
-            ]
-            query_filter = Filter(must=conditions)
+            )
+        if where:
+            for key, value in where.items():
+                if isinstance(value, list):
+                    conditions.append(FieldCondition(key=key, match=MatchAny(any=value)))
+                else:
+                    conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
+        query_filter = Filter(must=conditions) if conditions else None
 
         fusion_method = Fusion.RRF if fusion == "rrf" else Fusion.DBSF
 

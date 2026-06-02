@@ -7,7 +7,7 @@
 
 import pytest
 
-from src.agents_v3.research_workspace.report_service import ReportService
+from src.agents_v3.research_workspace.services.report_service import ReportService
 
 
 class TestReportServiceE2E:

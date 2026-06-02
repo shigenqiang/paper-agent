@@ -7,7 +7,7 @@
 
 import pytest
 
-from src.agents_v3.research_workspace.evidence_table import EvidenceTableService
+from src.agents_v3.research_workspace.services.evidence_table import EvidenceTableService
 
 
 class TestEvidenceTableE2E:

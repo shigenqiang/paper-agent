@@ -17,7 +17,7 @@ from src.agents_v3.research_workspace.models import (
     ReportType,
     RetrievalScope,
 )
-from src.agents_v3.research_workspace.scope import RetrievalScopeService
+from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
 
 # ── 论文数量限制（从环境变量读取）──────────────────────
@@ -175,8 +175,8 @@ class LiteratureReviewGenerator:
 
     @staticmethod
     def _paper_score(paper: dict) -> float:
-        """论文综合得分 = 0.6 * relevance + 0.4 * quality"""
-        rel = paper.get("relevance_score", 0.0) or 0.0
+        """论文综合得分 = 0.6 * rrf + 0.4 * quality"""
+        rel = paper.get("dense_score", 0.0) or 0.0
         qual = paper.get("quality_score", 0.0) or 0.0
         return 0.6 * rel + 0.4 * qual
 

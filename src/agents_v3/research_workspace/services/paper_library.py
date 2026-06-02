@@ -25,7 +25,6 @@ from src.agents_v3.research_workspace.models import (
 )
 from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, QueryRecord, SearchQuery, SearchResult, SearchResponse
 from src.agents_v3.research_workspace.search.dedup import build_existing_keys, make_dedup_key
-from src.agents_v3.research_workspace.search.ranking import RankingService
 from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
 
 
@@ -49,7 +48,7 @@ def search_result_to_meta(r: SearchResult) -> dict[str, Any]:
         "url": r.url,
         "open_access": {"pdf_url": r.pdf_url},
         "classification": {
-            "concepts": r.concepts,
+            "topics": r.topics,
             "keywords": r.keywords,
         },
         "citation": {"citation_count": r.citations},
@@ -115,7 +114,7 @@ class PaperLibraryService:
             "url": result.url,
             "pdf_url": result.pdf_url,
             "citations": result.citations,
-            "concepts": result.concepts,
+            "topics": result.topics,
             "keywords": result.keywords,
             "language": result.language,
             "publication_type": result.publication_type,
@@ -205,6 +204,7 @@ class PaperLibraryService:
         scores: dict[str, float] | None = None,
         topic: str = "",
         pool_paper_id: str = "",
+        query_id: str = "",
     ) -> Paper | None:
         # 去重检查
         existing = self.storage.query("papers", {"project_id": project_id})
@@ -215,7 +215,7 @@ class PaperLibraryService:
                 dedup_key = make_dedup_key(metadata)
                 for p in existing:
                     if make_dedup_key(p) == dedup_key:
-                        self.save_topic_score(p["paper_id"], topic, scores)
+                        self.save_topic_score(p["paper_id"], topic, scores, query_id)
                         break
             logger.info(f"Duplicate skipped: {metadata.get('title', '')[:50]}")
             return None
@@ -286,7 +286,7 @@ class PaperLibraryService:
             classification = PaperClassification(**cls_raw)
         else:
             classification = PaperClassification(
-                concepts=metadata.get("concepts", []),
+                topics=metadata.get("topics", []),
                 keywords=metadata.get("keywords", []),
             )
 
@@ -299,10 +299,10 @@ class PaperLibraryService:
         else:
             citation = CitationInfo(citation_count=metadata.get("citations"))
 
-        # 提取相关性得分
-        relevance_score = 0.0
+        # 提取余弦相似度得分
+        dense_score = 0.0
         if scores:
-            relevance_score = scores.get("relevance_score", 0.0)
+            dense_score = scores.get("dense_score", 0.0)
 
         paper = Paper(
             paper_id=paper_id,
@@ -321,13 +321,13 @@ class PaperLibraryService:
             url=metadata.get("url", ""),
             source_platform=source if isinstance(source, str) else "",
             status=PaperStatus.IMPORTED,
-            relevance_score=relevance_score,
+            dense_score=dense_score,
         )
         self.storage.upsert_item("papers", paper_id, paper.model_dump())
 
         # 持久化主题相关分数到 topic_scores 集合
         if scores and topic:
-            self.save_topic_score(paper_id, topic, scores)
+            self.save_topic_score(paper_id, topic, scores, query_id)
 
         logger.info(f"Imported paper {paper_id}: {paper.title}")
         return paper
@@ -351,7 +351,6 @@ class PaperLibraryService:
         """调用已注册的搜索适配器，返回结果（去重 + HyDE 排序 + 质量过滤）"""
         from src.agents_v3.research_workspace.search.merger import SearchResultMerger
         from src.agents_v3.research_workspace.search.query_optimizer import refine_query
-        from src.agents_v3.research_workspace.search.hyde_ranker import HyDERanker
         from src.agents_v3.research_workspace.config import get_search_config
         merger = SearchResultMerger()
 
@@ -386,7 +385,7 @@ class PaperLibraryService:
         qual_threshold = search_cfg.get("quality_threshold", 0.3)
         top_n = hybrid_cfg.get("top_n", 30)
 
-        if hybrid_cfg.get("enabled", True) and merged:
+        if merged:
             try:
                 from src.agents_v3.research_workspace.search.hybrid_ranker import HybridRanker
                 hybrid_ranker = HybridRanker(
@@ -397,30 +396,8 @@ class PaperLibraryService:
                 )
                 merged = hybrid_ranker.rank(merged, original_query)
             except Exception as e:
-                logger.warning(f"Hybrid ranking failed, falling back to HyDE: {e}")
-                try:
-                    hyde_ranker = HyDERanker()
-                    merged = hyde_ranker.rank(merged, original_query)
-                    merged = _apply_quality_filter(merged[:top_n], qual_threshold)
-                except Exception as e2:
-                    logger.warning(f"HyDE ranking failed, falling back to BM25: {e2}")
-                    ranking = RankingService(query=original_query)
-                    merged = ranking.rank(merged, query=original_query)
-                    merged = _apply_quality_filter(merged[:top_n], qual_threshold)
-        elif search_cfg.get("enabled", True) and merged:
-            try:
-                hyde_ranker = HyDERanker()
-                merged = hyde_ranker.rank(merged, original_query)
+                logger.warning(f"Hybrid ranking failed, applying quality filter only: {e}")
                 merged = _apply_quality_filter(merged[:top_n], qual_threshold)
-            except Exception as e:
-                logger.warning(f"HyDE ranking failed, falling back to BM25: {e}")
-                ranking = RankingService(query=original_query)
-                merged = ranking.rank(merged, query=original_query)
-                merged = _apply_quality_filter(merged[:top_n], qual_threshold)
-        else:
-            ranking = RankingService(query=original_query)
-            merged = ranking.rank(merged, query=original_query)
-            merged = _apply_quality_filter(merged[:top_n], qual_threshold)
 
         # 存入论文池
         for r in merged:
@@ -439,10 +416,6 @@ class PaperLibraryService:
         """搜索并导入到项目（自动去重，低于阈值的论文跳过）"""
         results = self.search_papers(query)
 
-        # 排序以计算分数
-        ranking = RankingService(query=query.query)
-        results = ranking.rank(results, query=query.query)
-
         papers = []
         skipped = 0
         topic = query.query
@@ -453,7 +426,7 @@ class PaperLibraryService:
                 continue
             meta = search_result_to_meta(r)
             scores = {
-                "relevance_score": r.relevance_score,
+                "dense_score": r.dense_score,
                 "quality_score": r.quality_score,
             }
             pool_pid = r.source_payload.get("pool_paper_id", "")
@@ -474,8 +447,8 @@ class PaperLibraryService:
     def _index_paper_profiles(self, papers: list[Paper]) -> None:
         """将论文摘要向量化存入 Qdrant paper_profiles 集合"""
         try:
-            from src.agents_v3.research_workspace.vector_storage import get_vector_storage
-            from src.agents_v3.research_workspace.embedding_service import get_embedding_service
+            from src.agents_v3.research_workspace.storage.vector import get_vector_storage
+            from src.agents_v3.research_workspace.storage.embedding import get_embedding_service
 
             vs = get_vector_storage()
             es = get_embedding_service()
@@ -618,10 +591,8 @@ class PaperLibraryService:
             query, project_id, list(candidate_ids),
         )
 
-        # 如果 Qdrant 不可用，回退到 BM25
         if not paper_scores:
-            logger.warning("Qdrant hybrid search failed, falling back to BM25")
-            paper_scores = self._bm25_fallback(query, papers, candidate_ids)
+            logger.warning("Qdrant hybrid search failed, returning empty")
 
         # 直接取 top-N（RRF 融合后无需 relevance 过滤）
         selected = []
@@ -649,7 +620,7 @@ class PaperLibraryService:
             [(paper_id, score), ...] 按分数降序排列
         """
         try:
-            from src.agents_v3.research_workspace.vector_storage import get_vector_storage
+            from src.agents_v3.research_workspace.storage.vector import get_vector_storage
             vector_storage = get_vector_storage()
 
             # ── 优先搜 paper_profiles（论文级）──
@@ -742,33 +713,6 @@ class PaperLibraryService:
         logger.info(f"Qdrant {collection} (intersection): {len(scored)} papers (dense={len(dense_rank)}, sparse={len(sparse_rank)})")
         return scored
 
-    def _bm25_fallback(
-        self,
-        query: str,
-        papers: list,
-        candidate_ids: set[str],
-    ) -> list[tuple[str, float]]:
-        """BM25 兜底排序"""
-        from src.agents_v3.research_workspace.search.base import SearchResult
-        from src.agents_v3.research_workspace.search.ranking import RankingService
-
-        results = []
-        for p in papers:
-            if p.paper_id not in candidate_ids:
-                continue
-            r = SearchResult(
-                result_id=p.paper_id,
-                title=p.title,
-                authors=[a.name for a in p.authors],
-                year=p.dates.year,
-                abstract=p.abstract,
-            )
-            results.append(r)
-
-        ranking = RankingService(query=query)
-        ranked = ranking.rank(results, query=query)
-        return [(r.result_id, r.relevance_score or 0.0) for r in ranked]
-
     def _search_remote_papers(
         self,
         project_id: str,
@@ -807,7 +751,7 @@ class PaperLibraryService:
             new_results.append({
                 "paper_id": pool_id or r.result_id,
                 "score": round(r.final_score, 3),
-                "relevance_score": round(r.relevance_score, 3),
+                "dense_score": round(r.dense_score, 3),
                 "quality_score": round(r.quality_score, 3),
                 "source": r.source,
                 "title": r.title,
@@ -838,7 +782,7 @@ class PaperLibraryService:
 
         # ── 优先：Qdrant 向量相似度 ──
         try:
-            from src.agents_v3.research_workspace.vector_storage import get_vector_storage
+            from src.agents_v3.research_workspace.storage.vector import get_vector_storage
             vs = get_vector_storage()
             similar = vs.search_similar_queries(query_text, top_k=top_k)
             for item in similar:
@@ -1045,8 +989,6 @@ class PaperLibraryService:
     ) -> SearchResponse:
         """搜索候选论文，返回结果（不持久化，结果缓存在内存中供 commit 使用）"""
         results = self.search_papers(query)
-        ranking = RankingService(query=query.query)
-        results = ranking.rank(results, query=query.query)
 
         # 缓存搜索结果供 commit 使用
         self._pending_searches[query.query] = results
@@ -1097,7 +1039,7 @@ class PaperLibraryService:
                 continue
 
             scores = {
-                "relevance_score": r.relevance_score,
+                "dense_score": r.dense_score,
                 "quality_score": r.quality_score,
             }
 
@@ -1114,7 +1056,7 @@ class PaperLibraryService:
                     meta = self._pool_data_to_meta(pool_data)
                     paper = self.add_paper_metadata(
                         project_id, meta, source=r.source, scores=scores, topic=topic,
-                        pool_paper_id=pool_paper_id,
+                        pool_paper_id=pool_paper_id, query_id=query_id,
                     )
                     if paper:
                         papers.append(paper)
@@ -1126,6 +1068,7 @@ class PaperLibraryService:
             meta = search_result_to_meta(r)
             paper = self.add_paper_metadata(
                 project_id, meta, source=r.source, scores=scores, topic=topic,
+                query_id=query_id,
             )
             if paper:
                 papers.append(paper)
@@ -1180,7 +1123,7 @@ class PaperLibraryService:
     def _save_query_vector(self, query_id: str, query_text: str) -> None:
         """将查询文本写入 Qdrant search_queries 集合（向量化）"""
         try:
-            from src.agents_v3.research_workspace.vector_storage import get_vector_storage
+            from src.agents_v3.research_workspace.storage.vector import get_vector_storage
             vs = get_vector_storage()
             vs.add_search_query(query_id, query_text)
         except Exception as e:
@@ -1202,7 +1145,7 @@ class PaperLibraryService:
             "url": pool_data.get("url", ""),
             "pdf_url": pool_data.get("pdf_url", ""),
             "citations": pool_data.get("citations"),
-            "concepts": pool_data.get("concepts", []),
+            "topics": pool_data.get("topics", []),
             "keywords": pool_data.get("keywords", []),
             "language": pool_data.get("language", ""),
             "publication_type": pool_data.get("publication_type", ""),
@@ -1215,6 +1158,7 @@ class PaperLibraryService:
         paper_id: str,
         topic: str,
         scores: dict[str, float],
+        query_id: str = "",
     ) -> None:
         """保存论文在特定主题下的重要性得分"""
         from datetime import datetime as _dt
@@ -1222,7 +1166,8 @@ class PaperLibraryService:
         score_record = {
             "paper_id": paper_id,
             "topic": topic,
-            "relevance_score": scores.get("relevance_score", 0.0),
+            "query_id": query_id or None,
+            "dense_score": scores.get("dense_score", 0.0),
             "quality_score": scores.get("quality_score", 0.0),
             "scored_at": _dt.now().isoformat(),
         }
@@ -1239,7 +1184,7 @@ class PaperLibraryService:
             records.append(score_record)
 
         self.storage.save_collection("topic_scores", records)
-        logger.debug(f"Saved topic score: {paper_id} @ {topic[:30]} = {scores.get('relevance_score', 0):.3f}")
+        logger.debug(f"Saved topic score: {paper_id} @ {topic[:30]} = {scores.get('dense_score', 0):.3f}")
 
     def get_topic_scores(
         self,
@@ -1248,7 +1193,7 @@ class PaperLibraryService:
     ) -> list[dict[str, Any]]:
         """获取某主题下所有论文的相关性得分
 
-        返回按 relevance_score 降序排列的得分记录列表。
+        返回按 dense_score 降序排列的得分记录列表。
         """
         paper_ids = {p.paper_id for p in self.list_papers(project_id)}
         records = self.storage.load_collection("topic_scores")
@@ -1256,7 +1201,7 @@ class PaperLibraryService:
             r for r in records
             if r.get("paper_id") in paper_ids and r.get("topic") == topic
         ]
-        matched.sort(key=lambda r: r.get("relevance_score", 0), reverse=True)
+        matched.sort(key=lambda r: r.get("dense_score", 0), reverse=True)
         return matched
 
     def get_paper_topic_scores(
@@ -1272,13 +1217,13 @@ class PaperLibraryService:
         project_id: str,
         topic: str,
     ) -> list[dict[str, Any]]:
-        """重新计算某主题下所有论文的重要性得分
+        """重新计算某主题下所有论文的质量得分
 
-        基于论文的标题和摘要与主题的相关性，使用 BM25 重新评分。
+        基于引用数、引用速度、发表时间计算 quality_score。
         返回更新后的得分记录列表。
         """
-        from src.agents_v3.research_workspace.search.ranking import RankingService
         from src.agents_v3.research_workspace.search.base import SearchResult
+        from src.agents_v3.research_workspace.search.quality_filter import compute_quality_batch
 
         papers = self.list_papers(project_id)
         if not papers:
@@ -1301,28 +1246,27 @@ class PaperLibraryService:
                 semantic_scholar_id=p.identifiers.semantic_scholar_id,
                 openalex_id=p.identifiers.openalex_id,
                 citations=p.citation.citation_count,
-                concepts=p.classification.concepts,
+                topics=p.classification.topics,
                 keywords=p.classification.keywords,
             )
             results.append(r)
 
-        # 使用 RankingService 计算分数
-        ranking = RankingService(query=topic)
-        ranked = ranking.rank(results, query=topic)
+        # 计算质量分
+        quality_scores = compute_quality_batch(results)
 
         # 持久化分数
         scored_records = []
-        for r in ranked:
+        for i, r in enumerate(results):
             scores = {
-                "relevance_score": r.relevance_score,
-                "quality_score": r.quality_score,
+                "dense_score": 0.0,
+                "quality_score": quality_scores[i],
             }
             self.save_topic_score(r.result_id, topic, scores)
             scored_records.append({
                 "paper_id": r.result_id,
                 "topic": topic,
-                "relevance_score": r.relevance_score,
-                "quality_score": r.quality_score,
+                "dense_score": 0.0,
+                "quality_score": quality_scores[i],
             })
 
         logger.info(f"Recomputed topic scores for {len(scored_records)} papers @ {topic[:30]}")
