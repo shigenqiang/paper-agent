@@ -19,7 +19,7 @@ from src.agents_v3.research_workspace.models import (
     PaperStatus,
     SourceSpan,
 )
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 # ── Prompt ────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ class ContextSelector:
 class PaperCardGenerator:
     """从论文 chunks 生成结构化卡片"""
 
-    def __init__(self, storage: JSONStorage | None = None, llm_service: LLMService | None = None):
+    def __init__(self, storage=None, llm_service: LLMService | None = None):
         self.storage = storage or get_storage()
         self.llm = llm_service or get_llm_service()
         self.context_selector = ContextSelector()

@@ -27,10 +27,8 @@ from src.agents_v3.research_workspace.models import (
 
 # ── 存储 ──────────────────────────────────────────
 from src.agents_v3.research_workspace.storage import (
-    JSONStorage, StorageBackend, PostgresStorage, VectorStorage,
-    get_storage, get_project_storage, get_postgres_storage, get_vector_storage,
-    sanitize_dirname, unique_dirname, load_all_projects, resolve_project_ref,
-    list_project_dirs, remove_project_storage, rename_project_storage,
+    StorageBackend, PostgresStorage, VectorStorage,
+    get_storage, get_postgres_storage, get_vector_storage,
 )
 
 # ── 核心业务服务 ──────────────────────────────────
@@ -60,7 +58,7 @@ __all__ = [
     "ArxivClient", "BaseSearchAdapter", "CardQualityReport", "ChunkType",
     "EvaluationResult", "EvidenceRecord", "ExtractedClaim", "FakeLLMService",
     "GraphEdge", "GraphNode", "HierarchicalRetriever", "InnovationPoint", "InnovationReportGenerator",
-    "JSONStorage", "KnowledgeGraph", "LLMCallResult", "LLMConfig",
+    "KnowledgeGraph", "LLMCallResult", "LLMConfig",
     "LLMProviderError", "LLMRateLimitError", "LLMService", "LLMServiceError",
     "LLMTimeoutError", "LiteratureReviewGenerator", "MetricRecord",
     "MetricsCollector", "NodeType", "EdgeType", "Paper", "PaperCard",
@@ -73,6 +71,6 @@ __all__ = [
     "ScopeQAService", "ScopeType",
     "SearchQuery", "SearchResult", "StorageBackend", "TaskService",
     "VectorStorage", "app", "create_app", "get_llm_service", "get_postgres_storage",
-    "get_project_storage", "get_prompt_registry", "get_storage", "get_vector_storage",
+    "get_prompt_registry", "get_storage", "get_vector_storage",
     "reset_llm_service",
 ]

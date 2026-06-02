@@ -34,13 +34,13 @@ from src.agents_v3.research_workspace.parser.postprocess import (
     _SECTION_TO_CHUNK_TYPE,
     _SECTION_TYPE_MAP,
 )
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 
 class ParserService:
     """PDF 解析与分块"""
 
-    def __init__(self, storage: JSONStorage | None = None, enable_contextual_retrieval: bool = True):
+    def __init__(self, storage=None, enable_contextual_retrieval: bool = True):
         self.storage = storage or get_storage()
         self._adapters: list[ParserAdapter] = [
             PyMuPDF4LLMAdapter(),

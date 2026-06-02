@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from src.agents_v3.research_workspace.api.deps import (
-    _get_postgres_storage,
     get_project_service,
+    get_storage_dep,
 )
 from src.agents_v3.research_workspace.api.errors import NotFoundError
 from src.agents_v3.research_workspace.api.models import (
@@ -75,7 +75,7 @@ def get_project_stats(project_ref: str):
 def delete_project(project_ref: str):
     project = _resolve_project(project_ref)
     svc = get_project_service()
-    pg = _get_postgres_storage()
+    pg = get_storage_dep()
 
     paper_ids = []
     if pg:

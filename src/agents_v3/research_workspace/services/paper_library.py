@@ -25,7 +25,7 @@ from src.agents_v3.research_workspace.models import (
 )
 from src.agents_v3.research_workspace.search.base import BaseSearchAdapter, QueryRecord, SearchQuery, SearchResult, SearchResponse
 from src.agents_v3.research_workspace.search.dedup import build_existing_keys, make_dedup_key
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 
 def search_result_to_meta(r: SearchResult) -> dict[str, Any]:
@@ -77,9 +77,9 @@ class PaperLibraryService:
 
     def __init__(
         self,
-        storage: JSONStorage | None = None,
+        storage=None,
         search_adapters: list[BaseSearchAdapter] | None = None,
-        global_storage: JSONStorage | None = None,
+        global_storage=None,
         pg_storage: Any | None = None,
     ):
         self.storage = storage or get_storage()
@@ -990,7 +990,7 @@ class PaperLibraryService:
     def _ensure_query(self, query_text: str) -> str:
         """确保查询存在于 queries 表，返回 query_id（去重）"""
         if not self.pg:
-            # 无 PG 时用 JSONStorage 兜底
+            # 无 PG 时跳过
             query_id = f"qry_{uuid.uuid4().hex[:8]}"
             return query_id
 

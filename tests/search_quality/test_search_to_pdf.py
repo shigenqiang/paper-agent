@@ -529,17 +529,16 @@ def build_report(
 # ── 主流程 ────────────────────────────────────────────
 
 def main():
-    from src.agents_v3.research_workspace.storage import JSONStorage
+    from src.agents_v3.research_workspace.storage import get_storage
 
     print("=" * 60)
     print("搜索 → PDF解析 全链路测试")
     print("=" * 60)
     print(f"查询: {TEST_QUERY}")
 
-    # 初始化存储（使用独立项目目录避免污染正式数据）
-    storage = JSONStorage(project_dir_name=PROJECT_ID)
-    storage.ensure_dirs()
-    print(f"存储目录: {storage.data_dir}")
+    # 初始化存储
+    storage = get_storage()
+    print(f"存储: PostgreSQL")
 
     # 1. Hybrid 搜索
     print("\n[1/4] 正在执行 Hybrid 搜索...")

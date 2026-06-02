@@ -10,13 +10,13 @@ from typing import Any
 from loguru import logger
 
 from src.agents_v3.research_workspace.models import Report, ReportVersion
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 
 class ReportService:
     """报告 CRUD、版本管理、来源索引、校验和导出"""
 
-    def __init__(self, storage: JSONStorage | None = None):
+    def __init__(self, storage=None):
         self.storage = storage or get_storage()
 
     # ── 保存与查询 ──────────────────────────────

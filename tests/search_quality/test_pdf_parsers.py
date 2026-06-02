@@ -106,9 +106,9 @@ def parse_with_current(pdf_path: str) -> dict:
     """用当前 pdfplumber/PyMuPDF/pdfminer 解析链"""
     try:
         from src.agents_v3.research_workspace.parser.service import ParserService
-        from src.agents_v3.research_workspace.storage import JSONStorage
+        from src.agents_v3.research_workspace.storage import get_storage
 
-        storage = JSONStorage(project_dir_name="parser_test")
+        storage = get_storage()
         parser = ParserService(storage=storage)
 
         t0 = time.time()

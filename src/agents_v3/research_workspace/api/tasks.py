@@ -8,13 +8,13 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 
 class TaskService:
     """任务状态持久化"""
 
-    def __init__(self, storage: JSONStorage | None = None):
+    def __init__(self, storage=None):
         self.storage = storage or get_storage()
 
     def create_task(

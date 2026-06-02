@@ -18,7 +18,7 @@ from src.agents_v3.research_workspace.models import (
 )
 from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
 from src.agents_v3.research_workspace.utils import normalize_label
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 # ── 泛化检测 ──────────────────────────────────────────
 
@@ -75,7 +75,7 @@ INNOVATION_SYSTEM_PROMPT = """你是一个学术研究创新分析专家。根�
 class InnovationReportGenerator:
     """基于 Scope 生成创新点报告"""
 
-    def __init__(self, storage: JSONStorage | None = None, llm_service: LLMService | None = None):
+    def __init__(self, storage=None, llm_service: LLMService | None = None):
         self.storage = storage or get_storage()
         self.scope_service = RetrievalScopeService(storage=self.storage)
         self.llm = llm_service or get_llm_service()

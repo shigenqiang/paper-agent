@@ -16,7 +16,7 @@ from src.agents_v3.research_workspace.models import (
     ScopeType,
 )
 from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 # ── System Prompt ──────────────────────────────────────
 
@@ -76,7 +76,7 @@ _INTENT_FIELD_PREFS: dict[str, list[str]] = {
 class ScopeQAService:
     """基于选定范围的问答服务"""
 
-    def __init__(self, storage: JSONStorage | None = None, llm_service: LLMService | None = None):
+    def __init__(self, storage=None, llm_service: LLMService | None = None):
         self.storage = storage or get_storage()
         self.scope_service = RetrievalScopeService(storage=self.storage)
         self.llm = llm_service or get_llm_service()

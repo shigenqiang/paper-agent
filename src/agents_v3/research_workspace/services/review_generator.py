@@ -18,7 +18,7 @@ from src.agents_v3.research_workspace.models import (
     RetrievalScope,
 )
 from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 # ── 论文数量限制（从环境变量读取）──────────────────────
 REVIEW_MAX_PAPERS = int(os.getenv("REVIEW_MAX_PAPERS", "40"))
@@ -93,7 +93,7 @@ _REQUIRED_SECTIONS = {"background", "methods", "findings", "limitations", "futur
 class LiteratureReviewGenerator:
     """基于 Scope 生成文献综述"""
 
-    def __init__(self, storage: JSONStorage | None = None, llm_service: LLMService | None = None):
+    def __init__(self, storage=None, llm_service: LLMService | None = None):
         self.storage = storage or get_storage()
         self.scope_service = RetrievalScopeService(storage=self.storage)
         self.llm = llm_service or get_llm_service()

@@ -13,7 +13,7 @@ from loguru import logger
 
 from src.agents_v3.research_workspace.llm.service import LLMService, get_llm_service
 from src.agents_v3.research_workspace.models import PaperSection
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 # ── 按 section_type 定义提取 prompt ──────────────────────
 
@@ -268,7 +268,7 @@ class SectionExtractor:
 
     def __init__(
         self,
-        storage: JSONStorage | None = None,
+        storage=None,
         llm_service: LLMService | None = None,
     ):
         self.storage = storage or get_storage()

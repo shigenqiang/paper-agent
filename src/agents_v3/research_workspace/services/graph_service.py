@@ -17,7 +17,7 @@ from src.agents_v3.research_workspace.models import (
     KnowledgeGraph,
     NodeType,
 )
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 from src.agents_v3.research_workspace.utils import normalize_label, stable_hash
 
 
@@ -88,7 +88,7 @@ def compute_gap_confidence(
 class GraphService:
     """知识图谱构建与查询"""
 
-    def __init__(self, storage: JSONStorage | None = None):
+    def __init__(self, storage=None):
         self.storage = storage or get_storage()
 
     # ── 构建 ──────────────────────────────────────

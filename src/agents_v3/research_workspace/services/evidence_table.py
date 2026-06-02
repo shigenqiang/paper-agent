@@ -13,13 +13,13 @@ from src.agents_v3.research_workspace.models import (
     PaperStatus,
     RetrievalScope,
 )
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 
 
 class EvidenceTableService:
     """从论文卡片生成证据记录"""
 
-    def __init__(self, storage: JSONStorage | None = None):
+    def __init__(self, storage=None):
         self.storage = storage or get_storage()
 
     def _get_project_paper_ids(self, project_id: str) -> list[str]:

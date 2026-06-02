@@ -12,7 +12,7 @@ from src.agents_v3.research_workspace.models import (
     RetrievalScope,
     ScopeType,
 )
-from src.agents_v3.research_workspace.storage import JSONStorage, get_storage
+from src.agents_v3.research_workspace.storage import get_storage
 from src.agents_v3.research_workspace.utils import normalize_label
 
 
@@ -25,7 +25,7 @@ def _split_multi(text: str) -> set[str]:
 class RetrievalScopeService:
     """解析和管理 QA 检索范围"""
 
-    def __init__(self, storage: JSONStorage | None = None):
+    def __init__(self, storage=None):
         self.storage = storage or get_storage()
 
     def _get_project_paper_ids(self, project_id: str) -> list[str]:
