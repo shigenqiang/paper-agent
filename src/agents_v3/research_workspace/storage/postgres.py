@@ -23,8 +23,7 @@ TABLE_SCHEMAS = {
     "projects": """
         CREATE TABLE IF NOT EXISTS projects (
             project_id VARCHAR(64) PRIMARY KEY,
-            name VARCHAR(255),
-            dir_name VARCHAR(255),
+            name VARCHAR(255) UNIQUE,
             description TEXT,
             discipline VARCHAR(128),
             education_level VARCHAR(64),
@@ -438,12 +437,30 @@ class PostgresStorage:
             _drop_columns = [
                 ("papers", "importance_score"),
                 ("topic_scores", "importance_score"),
+                ("projects", "dir_name"),
             ]
             for table, col in _drop_columns:
                 try:
                     cur.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {col}")
                 except Exception:
                     pass
+
+            # projects.name 唯一约束（清理重名后添加）
+            try:
+                cur.execute("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint WHERE conname = 'projects_name_key'
+                        ) THEN
+                            -- 删除重名项目（保留最早创建的）
+                            DELETE FROM projects a USING projects b
+                            WHERE a.name = b.name AND a.created_at > b.created_at;
+                            ALTER TABLE projects ADD CONSTRAINT projects_name_key UNIQUE (name);
+                        END IF;
+                    END $$;
+                """)
+            except Exception:
+                pass
 
             # 创建索引
             _indexes = [

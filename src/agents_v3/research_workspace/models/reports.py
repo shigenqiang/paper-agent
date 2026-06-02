@@ -17,7 +17,6 @@ from src.agents_v3.research_workspace.models.enums import ReportType, ScopeType
 class Project(BaseModel):
     project_id: str
     name: str
-    dir_name: str = ""
     description: str = ""
     discipline: str = ""
     education_level: str = ""
