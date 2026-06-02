@@ -93,7 +93,6 @@ class SearchPapersRequest(BaseModel):
     field: str = "all"
     use_cache: bool = True
     force_refresh: bool = False
-    min_score: float = 0.3  # 最低分数阈值，低于此值的论文不入库
 
 
 # ── Scope ─────────────────────────────────────────

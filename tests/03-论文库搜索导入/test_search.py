@@ -137,7 +137,7 @@ class TestSearchDirectImport:
     def test_01_search_writes_papers_table(self, service, pg_storage):
         """search_candidates 应将论文写入 PostgreSQL papers 表"""
         query = SearchQuery(query="large language model", limit=3)
-        response = service.search_candidates(self.PROJECT_ID, query, min_score=0.3)
+        response = service.search_candidates(self.PROJECT_ID, query)
 
         stored = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
         print(f"\n[papers] 入库 {len(stored)} 篇论文")
@@ -150,7 +150,7 @@ class TestSearchDirectImport:
     def test_02_search_writes_queries_table(self, service, pg_storage):
         """search_candidates 应写入 queries 表（查询记录）"""
         query = SearchQuery(query="transformer attention", limit=3)
-        service.search_candidates(self.PROJECT_ID, query, min_score=0.3)
+        service.search_candidates(self.PROJECT_ID, query)
 
         queries = pg_storage.list_all("queries")
         matching = [q for q in queries if q.get("query_text") == "transformer attention"]
@@ -161,7 +161,7 @@ class TestSearchDirectImport:
     def test_03_search_writes_paper_queries(self, service, pg_storage):
         """search_candidates 应写入 paper_queries 关联表"""
         query = SearchQuery(query="knowledge graph embedding", limit=3)
-        service.search_candidates(self.PROJECT_ID, query, min_score=0.3)
+        service.search_candidates(self.PROJECT_ID, query)
 
         links = pg_storage.list_all("paper_queries")
         print(f"\n[paper_queries] 关联记录: {len(links)} 条")
@@ -173,7 +173,7 @@ class TestSearchDirectImport:
     def test_04_search_saves_topic_scores(self, service, pg_storage):
         """search_candidates 应保存 topic_scores（主题相关性分）"""
         query = SearchQuery(query="retrieval augmented generation", limit=3)
-        service.search_candidates(self.PROJECT_ID, query, min_score=0.3)
+        service.search_candidates(self.PROJECT_ID, query)
 
         scores = pg_storage.list_all("topic_scores")
         project_papers = {p["paper_id"] for p in pg_storage.query("papers", {"project_id": self.PROJECT_ID})}
@@ -184,33 +184,15 @@ class TestSearchDirectImport:
 
         assert len(matching) > 0, "应保存 topic_scores 记录"
 
-    def test_05_min_score_threshold(self, service, pg_storage):
-        """min_score 应过滤掉 dense_score 低于阈值的论文"""
-        query = SearchQuery(query="BERT pre-training", limit=10)
-
-        # 高阈值：只保留高相关性论文
-        response_high = service.search_candidates(self.PROJECT_ID, query, min_score=0.8)
-        stored_high = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
-
-        # 清理后用低阈值
-        for p in stored_high:
-            pg_storage.delete_item("papers", p["paper_id"])
-
-        response_low = service.search_candidates(self.PROJECT_ID, query, min_score=0.1)
-        stored_low = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
-
-        print(f"\n[min_score] 高阈值(0.8): {len(stored_high)} 篇, 低阈值(0.1): {len(stored_low)} 篇")
-        assert len(stored_low) >= len(stored_high), "低阈值应入库更多论文"
-
-    def test_06_dedup_on_reimport(self, service, pg_storage):
+    def test_05_dedup_on_reimport(self, service, pg_storage):
         """重复搜索同一查询不应创建重复论文"""
         query = SearchQuery(query="retrieval augmented generation", limit=3)
 
-        service.search_candidates(self.PROJECT_ID, query, min_score=0.3)
+        service.search_candidates(self.PROJECT_ID, query)
         papers_after_first = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
         count_first = len(papers_after_first)
 
-        service.search_candidates(self.PROJECT_ID, query, min_score=0.3)
+        service.search_candidates(self.PROJECT_ID, query)
         papers_after_second = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
         count_second = len(papers_after_second)
 
@@ -236,7 +218,7 @@ class TestSearchDirectImport:
     def test_08_search_papers_pool_populated(self, service, pg_storage):
         """search_candidates 内部应先写 papers_pool（全局论文池）"""
         query = SearchQuery(query="prompt engineering", limit=3)
-        service.search_candidates(self.PROJECT_ID, query, min_score=0.3)
+        service.search_candidates(self.PROJECT_ID, query)
 
         pool = pg_storage.list_all("papers_pool")
         print(f"\n[papers_pool] 全局论文池: {len(pool)} 条")

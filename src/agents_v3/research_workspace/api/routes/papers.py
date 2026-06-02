@@ -103,7 +103,7 @@ def search_papers(project_ref: str, req: SearchPapersRequest):
         field=req.field,
         use_cache=req.use_cache, force_refresh=req.force_refresh,
     )
-    response = svc.search_candidates(project.project_id, query, min_score=req.min_score)
+    response = svc.search_candidates(project.project_id, query)
     return ApiResponse(data={
         "query": response.query.query if hasattr(response.query, 'query') else str(response.query),
         "results": [r.model_dump(exclude_defaults=True) for r in response.results],

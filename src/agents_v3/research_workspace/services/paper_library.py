@@ -949,7 +949,6 @@ class PaperLibraryService:
         self,
         project_id: str,
         query: SearchQuery,
-        min_score: float = 0.3,
     ) -> SearchResponse:
         """搜索候选论文并直接入库（papers_pool + papers + queries + paper_queries + Qdrant）"""
         results = self.search_papers(query)
@@ -959,12 +958,7 @@ class PaperLibraryService:
 
         # 遍历结果，直接入库
         imported = []
-        skipped = 0
         for r in results:
-            if (r.dense_score or 0) < min_score:
-                skipped += 1
-                continue
-
             meta = search_result_to_meta(r)
             scores = {
                 "dense_score": r.dense_score,
@@ -986,7 +980,7 @@ class PaperLibraryService:
         if imported:
             self._index_paper_profiles(imported)
 
-        logger.info(f"Search & import: {len(imported)} papers imported, {skipped} skipped (min_score={min_score})")
+        logger.info(f"Search & import: {len(imported)} papers imported")
         return SearchResponse(
             query=query,
             results=results,
