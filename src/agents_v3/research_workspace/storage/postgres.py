@@ -695,6 +695,41 @@ class PostgresStorage:
             logger.error(f"List all failed for {table}: {e}")
             return []
 
+    def list_paginated(
+        self,
+        table: str,
+        page: int = 1,
+        page_size: int = 20,
+        filters: dict[str, Any] | None = None,
+        order_by: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """分页查询，返回 (rows, total)"""
+        page = max(1, page)
+        page_size = max(1, min(100, page_size))
+        offset = (page - 1) * page_size
+
+        conditions = []
+        values = []
+        if filters:
+            for key, value in filters.items():
+                conditions.append(f"{key} = %s")
+                values.append(value)
+        where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(f"SELECT COUNT(*) FROM {table}{where_clause}", values)
+                total = cur.fetchone()[0]
+
+                order = f" ORDER BY {order_by}" if order_by else ""
+                sql = f"SELECT * FROM {table}{where_clause}{order} LIMIT %s OFFSET %s"
+                cur.execute(sql, values + [page_size, offset])
+                rows = cur.fetchall()
+                return [self._process_row_from_db(dict(row)) for row in rows], total
+        except Exception as e:
+            logger.error(f"List paginated failed for {table}: {e}")
+            return [], 0
+
     def count(self, table: str, filters: dict[str, Any] | None = None) -> int:
         """统计记录数"""
         if filters:

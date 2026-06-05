@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from typing import Any
 
 from loguru import logger
@@ -19,6 +22,44 @@ from src.agents_v3.research_workspace.search.merger import SearchResultMerger
 from src.agents_v3.research_workspace.search.rate_limit import RateManager
 
 
+class SearchCache:
+    """内存 LRU + TTL 搜索缓存"""
+
+    def __init__(self, max_entries: int = 256, ttl: int = 3600):
+        self.max_entries = max_entries
+        self.ttl = ttl
+        self._store: OrderedDict[str, tuple[float, SearchResponse]] = OrderedDict()
+        self._lock = Lock()
+
+    @staticmethod
+    def _make_key(query: SearchQuery) -> str:
+        raw = f"{query.query}|{query.sources}|{query.limit}|{query.offset}|{query.year_from}|{query.year_to}|{query.field}"
+        return hashlib.md5(raw.encode()).hexdigest()
+
+    def get(self, query: SearchQuery) -> SearchResponse | None:
+        key = self._make_key(query)
+        with self._lock:
+            if key not in self._store:
+                return None
+            ts, resp = self._store[key]
+            if time.time() - ts > self.ttl:
+                del self._store[key]
+                return None
+            self._store.move_to_end(key)
+            cached = resp.model_copy()
+            cached.cache_hit = True
+            return cached
+
+    def put(self, query: SearchQuery, response: SearchResponse) -> None:
+        key = self._make_key(query)
+        with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+            self._store[key] = (time.time(), response)
+            while len(self._store) > self.max_entries:
+                self._store.popitem(last=False)
+
+
 class SearchOrchestrator:
     """多源搜索编排器"""
 
@@ -27,10 +68,12 @@ class SearchOrchestrator:
         adapters: dict[str, BaseSearchAdapter],
         rate_manager: RateManager | None = None,
         merger: SearchResultMerger | None = None,
+        cache: SearchCache | None = None,
     ):
         self.adapters = adapters
         self.rate_manager = rate_manager or RateManager()
         self.merger = merger or SearchResultMerger()
+        self.cache = cache
 
     def _search_single_source(
         self, source_name: str, adapter: BaseSearchAdapter, query: SearchQuery
@@ -77,6 +120,13 @@ class SearchOrchestrator:
 
     def search(self, query: SearchQuery) -> SearchResponse:
         """执行多源搜索"""
+        # 检查缓存
+        if self.cache and query.use_cache and not query.force_refresh:
+            cached = self.cache.get(query)
+            if cached:
+                logger.info(f"Search cache hit for: {query.query}")
+                return cached
+
         start = time.time()
         errors: list[SearchErrorInfo] = []
         source_stats: dict[str, dict[str, Any]] = {}
@@ -121,6 +171,10 @@ class SearchOrchestrator:
             cache_hit=False,
             elapsed_ms=total_elapsed,
         )
+
+        # 写入缓存
+        if self.cache and not errors:
+            self.cache.put(query, response)
 
         logger.info(f"Search complete: {len(merged)} results from {len(active_adapters)} sources in {total_elapsed}ms")
         return response

@@ -17,8 +17,12 @@ from src.agents_v3.research_workspace.services.report_service import ReportServi
 from src.agents_v3.research_workspace.services.review_generator import LiteratureReviewGenerator
 from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
 from src.agents_v3.research_workspace.services.scope_qa import ScopeQAService
-from src.agents_v3.research_workspace.storage import get_storage
 from src.agents_v3.research_workspace.api.tasks import TaskService
+from src.agents_v3.research_workspace.storage import get_storage as _original_get_storage
+
+# get_storage: 可被 create_app monkey-patch 的函数引用
+# 内部函数通过 global lookup 调用 get_storage，因此 patch 会生效
+get_storage = _original_get_storage
 
 
 # ── 依赖工厂 ──

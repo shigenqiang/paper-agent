@@ -7,16 +7,18 @@ import uuid
 from fastapi import APIRouter, File, UploadFile
 
 from src.agents_v3.research_workspace.api.deps import get_paper_library, get_parser_service, get_project_service
+from src.agents_v3.research_workspace.api import deps as _deps
 from src.agents_v3.research_workspace.api.errors import NotFoundError, ValidationError
 from src.agents_v3.research_workspace.api.models import (
+    ApiListResponse,
     ApiResponse,
+    PageInfo,
     PaperImportBibtexRequest,
     PaperImportDoiRequest,
     PaperUpdateRequest,
     SearchPapersRequest,
 )
 from src.agents_v3.research_workspace.search.base import SearchQuery
-from src.agents_v3.research_workspace.storage import get_storage
 
 router = APIRouter(prefix="/api/rw/projects/{project_ref}/papers", tags=["papers"])
 
@@ -30,7 +32,13 @@ def _resolve_project(project_ref: str):
 
 
 @router.get("")
-def list_papers(project_ref: str, status: str | None = None, included: bool | None = None):
+def list_papers(
+    project_ref: str,
+    status: str | None = None,
+    included: bool | None = None,
+    page: int = 1,
+    page_size: int = 20,
+):
     project = _resolve_project(project_ref)
     svc = get_paper_library(project_ref)
     filters = {}
@@ -39,7 +47,17 @@ def list_papers(project_ref: str, status: str | None = None, included: bool | No
     if included is not None:
         filters["included"] = included
     papers = svc.list_papers(project.project_id, filters or None)
-    return ApiResponse(data=[p.model_dump() for p in papers])
+    items = [p.model_dump() for p in papers]
+    total = len(items)
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))
+    start = (page - 1) * page_size
+    paged = items[start : start + page_size]
+    resp = ApiListResponse(
+        data=paged,
+        pagination=PageInfo(page=page, page_size=page_size, total=total, has_next=start + page_size < total),
+    )
+    return resp
 
 
 @router.post("/import/doi")
@@ -131,7 +149,7 @@ async def upload_pdf(
         raise ValidationError("File too large (max 50MB)")
 
     paper_id = f"paper_{uuid.uuid4().hex[:12]}"
-    storage = get_storage()
+    storage = _deps.get_storage()
 
     # 保存到项目文件目录
     from pathlib import Path
@@ -161,3 +179,69 @@ async def upload_pdf(
             result["parse_error"] = str(e)[:200]
 
     return ApiResponse(data=result)
+
+
+@router.post("/upload/batch")
+async def upload_papers_batch(
+    project_ref: str,
+    files: list[UploadFile] = File(...),
+    auto_parse: bool = False,
+):
+    """批量上传 PDF 文件"""
+    project = _resolve_project(project_ref)
+    storage = _deps.get_storage()
+    from pathlib import Path
+    data_dir = Path(getattr(storage, "data_dir", Path("data")))
+    dest_dir = data_dir / "files" / project.project_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    imported = 0
+    failed = 0
+    results = []
+    errors = []
+
+    for file in files:
+        filename = file.filename or "unknown.pdf"
+        try:
+            if not filename.lower().endswith(".pdf"):
+                raise ValidationError(f"Not a PDF: {filename}")
+
+            content = await file.read()
+            if len(content) > 50 * 1024 * 1024:
+                raise ValidationError(f"File too large (max 50MB): {filename}")
+
+            paper_id = f"paper_{uuid.uuid4().hex[:12]}"
+            dest_path = dest_dir / f"{paper_id}.pdf"
+            dest_path.write_bytes(content)
+
+            paper_data = {
+                "paper_id": paper_id,
+                "project_id": project.project_id,
+                "title": filename.replace(".pdf", ""),
+                "status": "imported",
+                "pdf_path": str(dest_path),
+                "source": "upload",
+            }
+            storage.upsert_item("papers", paper_id, paper_data)
+
+            result_item: dict = {"paper_id": paper_id, "filename": filename}
+            if auto_parse:
+                try:
+                    svc = get_parser_service(project_ref)
+                    parse_result = svc.parse_paper(paper_id)
+                    result_item["parse_result"] = parse_result
+                except Exception as e:
+                    result_item["parse_error"] = str(e)[:200]
+
+            results.append(result_item)
+            imported += 1
+        except Exception as e:
+            errors.append({"filename": filename, "error": str(e)[:200]})
+            failed += 1
+
+    return ApiResponse(data={
+        "imported": imported,
+        "failed": failed,
+        "results": results,
+        "errors": errors,
+    })

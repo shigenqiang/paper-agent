@@ -1,43 +1,63 @@
-import { useState, useEffect } from 'react'
-import { Upload, Search, Filter, SortAsc, CheckCircle, Clock, XCircle, AlertCircle } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Upload, Search, Filter, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 import PaperCard from '../components/PaperCard/PaperCard'
 import useStore from '../stores/useStore'
+import { api } from '../api/client'
 import styles from './LibraryPage.module.css'
-
-// Demo data for MVP
-const DEMO_PAPERS = [
-  { paper_id: 'p1', title: 'Attention Is All You Need', authors: ['Vaswani, A.', 'Shazeer, N.', 'Parmar, N.'], year: 2017, venue: 'NeurIPS', status: 'parsed', topic: 'Transformer' },
-  { paper_id: 'p2', title: 'BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding', authors: ['Devlin, J.', 'Chang, M.', 'Lee, K.'], year: 2019, venue: 'NAACL', status: 'parsed', topic: 'Pre-training' },
-  { paper_id: 'p3', title: 'Language Models are Few-Shot Learners', authors: ['Brown, T.', 'Mann, B.', 'Ryder, N.'], year: 2020, venue: 'NeurIPS', status: 'parsed', topic: 'Few-shot' },
-  { paper_id: 'p4', title: 'Training Language Models to Follow Instructions with Human Feedback', authors: ['Ouyang, L.', 'Wu, J.', 'Jiang, X.'], year: 2022, venue: 'NeurIPS', status: 'parsed', topic: 'RLHF' },
-  { paper_id: 'p5', title: 'Constitutional AI: Harmlessness from AI Feedback', authors: ['Bai, Y.', 'Kadavath, S.', 'Kundu, S.'], year: 2022, venue: 'arXiv', status: 'parsed', topic: 'RLHF' },
-  { paper_id: 'p6', title: 'Self-Instruct: Aligning Language Models with Self-Generated Instructions', authors: ['Wang, Y.', 'Kordi, Y.', 'Mishra, S.'], year: 2023, venue: 'ACL', status: 'parsed', topic: 'Instruction Tuning' },
-  { paper_id: 'p7', title: 'LLaMA: Open and Efficient Foundation Language Models', authors: ['Touvron, H.', 'Lavril, T.', 'Izacard, G.'], year: 2023, venue: 'arXiv', status: 'parsed', topic: 'Open LLM' },
-  { paper_id: 'p8', title: 'Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks', authors: ['Lewis, P.', 'Perez, E.', 'Piktus, A.'], year: 2020, venue: 'NeurIPS', status: 'parsed', topic: 'RAG' },
-  { paper_id: 'p9', title: 'Improving Language Models by Retrieving from Trillions of Tokens', authors: ['Borgeaud, S.', 'Mensch, A.', 'Hoffmann, J.'], year: 2022, venue: 'ICML', status: 'parsed', topic: 'RAG' },
-  { paper_id: 'p10', title: 'Deep Reinforcement Learning from Human Feedback', authors: ['Christiano, P.', 'Leike, J.', 'Brown, T.'], year: 2017, venue: 'NeurIPS', status: 'parsed', topic: 'RLHF' },
-  { paper_id: 'p11', title: 'Scaling Laws for Neural Language Models', authors: ['Kaplan, J.', 'McCandlish, S.', 'Henighan, T.'], year: 2020, venue: 'arXiv', status: 'parsed', topic: 'Scaling' },
-  { paper_id: 'p12', title: 'Chain-of-Thought Prompting Elicits Reasoning in Large Language Models', authors: ['Wei, J.', 'Wang, X.', 'Schuurmans, D.'], year: 2022, venue: 'NeurIPS', status: 'parsed', topic: 'Prompting' },
-  { paper_id: 'p13', title: 'Tree of Thoughts: Deliberate Problem Solving with Large Language Models', authors: ['Yao, S.', 'Yu, D.', 'Zhao, J.'], year: 2023, venue: 'NeurIPS', status: 'parsed', topic: 'Prompting' },
-  { paper_id: 'p14', title: 'ReAct: Synergizing Reasoning and Acting in Language Models', authors: ['Yao, S.', 'Zhao, J.', 'Yu, D.'], year: 2023, venue: 'ICLR', status: 'parsed', topic: 'Agents' },
-  { paper_id: 'p15', title: 'Toolformer: Language Models Can Teach Themselves to Use Tools', authors: ['Schick, T.', 'Dwivedi-Yu, J.', 'Dessì, R.'], year: 2023, venue: 'NeurIPS', status: 'parsed', topic: 'Agents' },
-]
 
 export default function LibraryPage() {
   const papers = useStore((s) => s.papers)
   const setPapers = useStore((s) => s.setPapers)
   const openDrawer = useStore((s) => s.openDrawer)
+  const currentProject = useStore((s) => s.currentProject)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
-  const [viewMode, setViewMode] = useState('grid')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
-    if (papers.length === 0) setPapers(DEMO_PAPERS)
-  }, [])
+    if (!currentProject) return
+    setLoading(true)
+    setError(null)
+    api.listPapers(currentProject.project_id)
+      .then((res) => {
+        const data = res.data || res
+        setPapers(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [currentProject])
+
+  const handleUpload = async (e) => {
+    const files = e.target.files
+    if (!files.length || !currentProject) return
+    const formData = new FormData()
+    for (const f of files) formData.append('files', f)
+    try {
+      await api.uploadPapersBatch(currentProject.project_id, formData)
+      const res = await api.listPapers(currentProject.project_id)
+      setPapers(res.data || res || [])
+    } catch (err) {
+      setError(err.message)
+    }
+    e.target.value = ''
+  }
+
+  const handleExclude = async (paperId) => {
+    try {
+      await api.excludePaper(paperId)
+      const res = await api.listPapers(currentProject.project_id)
+      setPapers(res.data || res || [])
+      openDrawer(null)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   const filtered = papers.filter((p) => {
     const matchSearch = !searchQuery ||
-      p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.authors?.some((a) => a.toLowerCase().includes(searchQuery.toLowerCase()))
     const matchStatus = filterStatus === 'all' || p.status === filterStatus
     return matchSearch && matchStatus
@@ -45,9 +65,9 @@ export default function LibraryPage() {
 
   const stats = {
     total: papers.length,
-    parsed: papers.filter((p) => p.status === 'parsed').length,
+    parsed: papers.filter((p) => p.status === 'parsed' || p.status === 'card_ready').length,
     excluded: papers.filter((p) => p.status === 'excluded').length,
-    pending: papers.filter((p) => p.status === 'uploaded').length,
+    pending: papers.filter((p) => p.status === 'imported' || p.status === 'uploaded').length,
   }
 
   const handleViewCard = (paper) => {
@@ -57,7 +77,7 @@ export default function LibraryPage() {
           {paper.title}
         </h3>
         <div style={{ marginBottom: '12px' }}>
-          <span className="badge badge--accent">{paper.venue}</span>
+          <span className="badge badge--accent">{paper.venue || paper.source}</span>
           <span className="badge badge--blue" style={{ marginLeft: '6px' }}>{paper.year}</span>
         </div>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
@@ -66,14 +86,25 @@ export default function LibraryPage() {
         <div style={{ background: 'var(--bg-elevated)', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
           <h4 style={{ color: 'var(--accent)', fontSize: '0.82rem', marginBottom: '8px' }}>论文卡片</h4>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-            主题: {paper.topic || '—'}<br/>
-            状态: {paper.status === 'parsed' ? '已解析，可进行QA和报告生成' : '待解析'}
+            状态: {paper.status}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn--primary btn--sm">查看PDF</button>
-          <button className="btn btn--secondary btn--sm">排除论文</button>
+          <button className="btn btn--secondary btn--sm" onClick={() => handleExclude(paper.paper_id)}>
+            排除论文
+          </button>
         </div>
+      </div>
+    )
+  }
+
+  if (!currentProject) {
+    return (
+      <div className="empty-state">
+        <Search size={48} />
+        <h3>请先选择或创建项目</h3>
+        <p>在顶部导航栏选择一个项目</p>
       </div>
     )
   }
@@ -87,10 +118,17 @@ export default function LibraryPage() {
           <span className={styles.count}>{filtered.length} 篇</span>
         </div>
         <div className={styles.headerActions}>
-          <button className="btn btn--primary">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf"
+            style={{ display: 'none' }}
+            onChange={handleUpload}
+          />
+          <button className="btn btn--primary" onClick={() => fileInputRef.current?.click()}>
             <Upload size={15} /> 上传 PDF
           </button>
-          <button className="btn btn--secondary">导入 BibTeX</button>
         </div>
       </div>
 
@@ -144,6 +182,9 @@ export default function LibraryPage() {
         </div>
       </div>
 
+      {loading && <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '32px' }}>加载中...</p>}
+      {error && <p style={{ color: 'var(--red)', textAlign: 'center', padding: '16px' }}>错误: {error}</p>}
+
       {/* Paper Grid */}
       <div className={styles.grid}>
         {filtered.map((paper, i) => (
@@ -157,11 +198,11 @@ export default function LibraryPage() {
         ))}
       </div>
 
-      {filtered.length === 0 && (
+      {filtered.length === 0 && !loading && (
         <div className="empty-state">
           <Search size={48} />
           <h3>未找到匹配的论文</h3>
-          <p>尝试修改搜索条件或筛选器</p>
+          <p>尝试修改搜索条件或上传 PDF 文件</p>
         </div>
       )}
     </div>

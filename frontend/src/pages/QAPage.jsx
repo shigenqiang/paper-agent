@@ -1,72 +1,49 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, BookOpen, Lightbulb, FileText, ExternalLink, AlertTriangle } from 'lucide-react'
 import useStore from '../stores/useStore'
+import { api } from '../api/client'
 import styles from './QAPage.module.css'
 
-const DEMO_QA = [
-  {
-    role: 'user',
-    content: '这些论文在研究方法上有什么共同的局限性？',
-  },
-  {
-    role: 'assistant',
-    content: `基于选定范围内的 5 篇论文，主要研究方法的共同局限性包括：
-
-**1. 计算资源需求过高 [1][2]**
-Transformer 架构的自注意力机制具有 O(n²) 的时间复杂度，随着序列长度增加，计算成本急剧上升。这限制了模型在长文本场景下的应用。
-
-**2. 训练数据偏差 [3][4]**
-大规模预训练数据不可避免地包含社会偏见和错误信息，模型可能学习并放大这些偏差，影响输出的公平性和可靠性。
-
-**3. 可解释性不足 [2][5]**
-深度神经网络的"黑箱"特性使得模型决策过程难以理解和解释，这在高风险应用场景（如医疗、法律）中是一个严重问题。
-
-**4. 样本效率低 [1][3]**
-当前模型需要海量数据进行训练，而人类通常只需少量示例即可学习新任务。提高样本效率是一个重要的研究方向。
-
----
-
-**范围声明**：以上分析仅基于选定的 5 篇论文，不包含项目库中其他论文的结论。
-
-**不确定性说明**：局限性 1 和 2 在论文中有明确讨论；局限性 3 和 4 部分基于推断，建议查阅原文确认。`,
-    sources: [
-      { paper: 'Attention Is All You Need', quote: 'The dominant sequence transduction models are based on complex recurrent or convolutional neural networks...', page: 1 },
-      { paper: 'BERT: Pre-training of Deep Bidirectional Transformers', quote: 'We introduce a new language representation model called BERT...', page: 1 },
-      { paper: 'Language Models are Few-Shot Learners', quote: 'Here we show that scaling up language models greatly improves task-agnostic, few-shot performance...', page: 1 },
-      { paper: 'Training Language Models to Follow Instructions', quote: 'Making language models bigger does not inherently make them better at following a user\'s intent...', page: 2 },
-      { paper: 'Constitutional AI', quote: 'We experiment with methods for training a harmless AI assistant through a process we call Constitutional AI...', page: 1 },
-    ],
-  },
-]
-
 export default function QAPage() {
-  const qaMessages = useStore((s) => s.qaMessages)
-  const addQAMessage = useStore((s) => s.addQAMessage)
-  const qaLoading = useStore((s) => s.qaLoading)
   const scope = useStore((s) => s.scope)
+  const currentProject = useStore((s) => s.currentProject)
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState(DEMO_QA)
+  const [messages, setMessages] = useState([])
   const [showSources, setShowSources] = useState(true)
+  const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const handleSend = () => {
-    if (!input.trim()) return
+  const handleSend = async () => {
+    if (!input.trim() || !currentProject) return
     const userMsg = { role: 'user', content: input }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
+    setLoading(true)
 
-    // Simulate response
-    setTimeout(() => {
+    try {
+      const res = await api.askQuestion(currentProject.project_id, {
+        question: input,
+        scope: scope || { type: 'all_project' },
+      })
+      const data = res.data || res
       setMessages((prev) => [...prev, {
         role: 'assistant',
-        content: '正在基于当前范围分析...\n\n（此为演示模式，实际功能需连接后端API）',
+        content: data.answer || data.content || JSON.stringify(data),
+        sources: data.sources || [],
+      }])
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: `请求失败: ${err.message}`,
         sources: [],
       }])
-    }, 1000)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleKeyDown = (e) => {
@@ -168,7 +145,7 @@ export default function QAPage() {
             <button
               className={styles.sendBtn}
               onClick={handleSend}
-              disabled={!input.trim() || qaLoading}
+              disabled={!input.trim() || loading || !currentProject}
             >
               <Send size={18} />
             </button>

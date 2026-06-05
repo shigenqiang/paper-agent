@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Search, BookOpen, Network, MessageSquare, FileText, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../../stores/useStore'
+import { api } from '../../api/client'
 import styles from './CommandPalette.module.css'
 
 const COMMANDS = [
@@ -49,8 +50,31 @@ export default function CommandPalette() {
     return () => window.removeEventListener('keydown', handler)
   }, [filtered, selectedIdx])
 
+  const currentProject = useStore((s) => s.currentProject)
+  const scope = useStore((s) => s.scope)
+
   const execute = (cmd) => {
-    if (cmd.path) navigate(cmd.path)
+    if (cmd.path) {
+      navigate(cmd.path)
+    } else if (cmd.action && currentProject) {
+      const pid = currentProject.project_id
+      switch (cmd.action) {
+        case 'upload':
+          navigate('/library')
+          break
+        case 'buildKg':
+          api.buildGraph(pid).catch(() => {})
+          break
+        case 'genReview':
+          api.generateLiteratureReview(pid, scope || { type: 'all_project' }).catch(() => {})
+          navigate('/reports')
+          break
+        case 'genInnovation':
+          api.generateInnovationReport(pid, scope || { type: 'all_project' }).catch(() => {})
+          navigate('/reports')
+          break
+      }
+    }
     closeCommandPalette()
   }
 

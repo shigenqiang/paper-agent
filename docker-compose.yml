@@ -1,8 +1,9 @@
 # ============================================
 # Paper Agent Docker Compose
 # ============================================
-# - Storage: JSON 文件 (data/research_workspace/)
+# - Storage: PostgreSQL + Qdrant
 # - API: FastAPI + Uvicorn
+# - Frontend: React + Nginx
 # - LLM: 可配置 (LLMService)
 # ============================================
 
@@ -69,7 +70,16 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: paper-agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
     environment:
+      # 数据库配置
+      - PAPER_AGENT_DB_DSN=postgresql://postgres:postgres@postgres:5432/paper_agent
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
       # API配置
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -82,7 +92,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PYTHONUNBUFFERED=1
     volumes:
-      # 数据持久化 (SQLite + ChromaDB)
+      # 数据持久化
       - paper-data:/app/data
       - paper-output:/app/output
       # 插件目录（可选挂载）
@@ -91,7 +101,7 @@ services:
       - "8000:8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

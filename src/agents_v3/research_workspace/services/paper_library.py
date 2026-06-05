@@ -921,17 +921,90 @@ class PaperLibraryService:
         return papers
 
     def _parse_bibtex(self, text: str) -> list[dict[str, Any]]:
+        """解析 BibTeX 文本，优先用 bibtexparser 库，降级到改进 regex"""
+        try:
+            return self._parse_bibtex_library(text)
+        except Exception:
+            return self._parse_bibtex_regex(text)
+
+    @staticmethod
+    def _parse_bibtex_library(text: str) -> list[dict[str, Any]]:
+        """使用 bibtexparser 库解析"""
+        import bibtexparser
+        bib_db = bibtexparser.loads(text)
         entries = []
-        parts = text.split("@")
-        for part in parts[1:]:
-            match = re.match(r'\w+\{([^,]+),', part)
-            if not match:
+        for entry in bib_db.entries:
+            parsed: dict[str, Any] = {"key": entry.get("ID", "")}
+            if "author" in entry:
+                parsed["authors"] = [a.strip() for a in entry["author"].split(" and ")]
+            if "year" in entry:
+                try:
+                    parsed["year"] = int(entry["year"])
+                except ValueError:
+                    pass
+            for bib_field, model_field in [
+                ("title", "title"), ("journal", "venue"), ("booktitle", "venue"),
+                ("doi", "doi"), ("url", "url"), ("abstract", "abstract"),
+            ]:
+                if bib_field in entry and entry[bib_field]:
+                    parsed[model_field] = entry[bib_field]
+            entries.append(parsed)
+        return entries
+
+    @staticmethod
+    def _parse_bibtex_regex(text: str) -> list[dict[str, Any]]:
+        """改进的 regex 解析（处理嵌套花括号、引号值、多行值）"""
+
+        def _find_balanced_brace(s: str, start: int) -> int:
+            """从 start 处的 { 找到匹配的 }，返回其索引"""
+            depth = 0
+            for i in range(start, len(s)):
+                if s[i] == '{':
+                    depth += 1
+                elif s[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        return i
+            return -1
+
+        entries = []
+        # 找到每个 @type{ 的起始位置
+        for m in re.finditer(r'@(\w+)\{', text, re.IGNORECASE):
+            entry_type = m.group(1).lower()
+            if entry_type in ("comment", "preamble", "string"):
                 continue
-            key = match.group(1).strip()
+            body_start = m.end()
+            body_end = _find_balanced_brace(text, m.end() - 1)
+            if body_end < 0:
+                continue
+            body = text[body_start:body_end]
+            # 提取 key（第一个逗号前的部分）
+            comma_idx = body.find(',')
+            if comma_idx < 0:
+                continue
+            key = body[:comma_idx].strip()
+            fields_text = body[comma_idx + 1:]
             entry: dict[str, Any] = {"key": key}
-            for field_match in re.finditer(r'(\w+)\s*=\s*\{([^}]*)\}', part):
+            # 匹配 field = {balanced} 或 field = "value"
+            for field_match in re.finditer(r'(\w+)\s*=\s*', fields_text):
                 field_name = field_match.group(1).lower()
-                field_value = field_match.group(2).strip()
+                eq_end = field_match.end()
+                if eq_end >= len(fields_text):
+                    continue
+                if fields_text[eq_end] == '{':
+                    close = _find_balanced_brace(fields_text, eq_end)
+                    if close < 0:
+                        continue
+                    field_value = fields_text[eq_end + 1:close].strip()
+                elif fields_text[eq_end] == '"':
+                    close = fields_text.find('"', eq_end + 1)
+                    if close < 0:
+                        continue
+                    field_value = fields_text[eq_end + 1:close].strip()
+                else:
+                    # 无引号值（纯数字等）
+                    end = re.search(r'[,}]', fields_text[eq_end:])
+                    field_value = fields_text[eq_end:eq_end + end.start()].strip() if end else fields_text[eq_end:].strip()
                 if field_name == "author":
                     entry["authors"] = [a.strip() for a in field_value.split(" and ")]
                 elif field_name == "year":
@@ -941,10 +1014,14 @@ class PaperLibraryService:
                         pass
                 elif field_name == "title":
                     entry["title"] = field_value
-                elif field_name == "journal":
+                elif field_name in ("journal", "booktitle"):
                     entry["venue"] = field_value
                 elif field_name == "doi":
                     entry["doi"] = field_value
+                elif field_name == "url":
+                    entry["url"] = field_value
+                elif field_name == "abstract":
+                    entry["abstract"] = field_value
             entries.append(entry)
         return entries
 

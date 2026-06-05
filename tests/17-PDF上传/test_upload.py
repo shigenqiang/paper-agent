@@ -27,7 +27,7 @@ class TestPDFUpload:
     def test_upload_pdf_success(self):
         """成功上传 PDF 文件"""
         with patch("src.agents_v3.research_workspace.api.routes.papers._resolve_project") as mock_proj, \
-             patch("src.agents_v3.research_workspace.api.routes.papers.get_storage") as mock_storage:
+             patch("src.agents_v3.research_workspace.api.deps.get_storage") as mock_storage:
             mock_proj.return_value = MagicMock(project_id="proj1")
             mock_store = MagicMock()
             mock_store.data_dir = MagicMock()
@@ -80,7 +80,7 @@ class TestPDFUpload:
     def test_upload_auto_parse(self):
         """auto_parse=true 时触发解析"""
         with patch("src.agents_v3.research_workspace.api.routes.papers._resolve_project") as mock_proj, \
-             patch("src.agents_v3.research_workspace.api.routes.papers.get_storage") as mock_storage, \
+             patch("src.agents_v3.research_workspace.api.deps.get_storage") as mock_storage, \
              patch("src.agents_v3.research_workspace.api.routes.papers.get_parser_service") as mock_parser:
             mock_proj.return_value = MagicMock(project_id="proj1")
             mock_store = MagicMock()
@@ -110,7 +110,7 @@ class TestPDFUpload:
     def test_upload_creates_paper_record(self):
         """上传后创建论文记录"""
         with patch("src.agents_v3.research_workspace.api.routes.papers._resolve_project") as mock_proj, \
-             patch("src.agents_v3.research_workspace.api.routes.papers.get_storage") as mock_storage:
+             patch("src.agents_v3.research_workspace.api.deps.get_storage") as mock_storage:
             mock_proj.return_value = MagicMock(project_id="proj1")
             mock_store = MagicMock()
             mock_store.data_dir = MagicMock()

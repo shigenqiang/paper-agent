@@ -1,134 +1,62 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, Lightbulb, Download, Clock, BookOpen, ChevronRight, Star } from 'lucide-react'
 import useStore from '../stores/useStore'
+import { api } from '../api/client'
 import styles from './ReportsPage.module.css'
-
-const DEMO_REPORTS = [
-  {
-    report_id: 'r1',
-    type: 'literature_review',
-    title: '文献综述: 大语言模型与自主学习',
-    created_at: '2026-06-01 14:30',
-    paper_count: 23,
-    evidence_count: 45,
-    version: 2,
-    content: `# 大语言模型与自主学习：文献综述
-
-## 1. 研究背景
-
-近年来，大语言模型（LLM）在自然语言处理领域取得了突破性进展。从Transformer架构的提出到GPT系列模型的发布，LLM展现出了强大的语言理解和生成能力。然而，如何让这些模型具备自主学习和持续改进的能力，仍然是一个开放性问题。
-
-## 2. 主题划分
-
-本综述将相关研究划分为以下主题：
-
-### 2.1 预训练与基础架构
-- Transformer架构 [1]
-- 自注意力机制 [1][2]
-- 位置编码方法 [1]
-
-### 2.2 指令微调与对齐
-- RLHF方法 [4][5]
-- Constitutional AI [5]
-- Self-Instruct [6]
-
-### 2.3 检索增强生成
-- RAG架构 [8][9]
-- 知识检索与融合 [9]
-
-## 3. 代表性文献和研究脉络
-
-Vaswani等人(2017)提出的Transformer架构[1]奠定了现代LLM的基础。该架构通过自注意力机制实现了高效的并行计算，在机器翻译任务上取得了当时的最优结果。
-
-Devlin等人(2019)的BERT[2]引入了双向预训练策略，显著提升了多项NLP任务的性能。这一工作证明了大规模预训练的重要性。
-
-## 4. 主要研究方法
-
-| 方法 | 代表论文 | 优势 | 局限 |
-|------|---------|------|------|
-| 自注意力 | [1] | 并行计算、长距离依赖 | O(n²)复杂度 |
-| 预训练+微调 | [2][3] | 任务无关、迁移性强 | 需要大量数据 |
-| RLHF | [4][5] | 人类偏好对齐 | 标注成本高 |
-
-## 5. 主要研究结论
-
-1. 规模定律（Scaling Laws）表明模型性能与参数量、数据量、计算量呈幂律关系[11]
-2. 涌现能力（Emergent Abilities）在模型规模超过阈值后突然出现[3]
-3. 指令微调能显著提升模型的可用性[4][6]
-
-## 6. 现有研究不足
-
-- 计算资源需求过高，限制了研究的可重复性
-- 训练数据偏差导致模型输出存在公平性问题
-- 模型可解释性不足，难以理解决策过程
-- 样本效率低，需要海量数据
-
-## 7. 未来研究趋势
-
-- 高效训练方法（如LoRA、QLoRA）
-- 多模态融合（文本+图像+音频）
-- 自主学习与持续学习
-- 安全对齐与价值对齐
-
-## 8. 参考文献
-
-[1] Vaswani et al. (2017). Attention Is All You Need. NeurIPS.
-[2] Devlin et al. (2019). BERT: Pre-training of Deep Bidirectional Transformers. NAACL.
-[3] Brown et al. (2020). Language Models are Few-Shot Learners. NeurIPS.
-[4] Ouyang et al. (2022). Training Language Models to Follow Instructions. NeurIPS.
-[5] Bai et al. (2022). Constitutional AI. arXiv.
-[6] Wang et al. (2023). Self-Instruct. ACL.
-[7] Touvron et al. (2023). LLaMA. arXiv.
-[8] Lewis et al. (2020). Retrieval-Augmented Generation. NeurIPS.
-[9] Borgeaud et al. (2022). Improving Language Models by Retrieving. ICML.
-[10] Christiano et al. (2017). Deep RL from Human Feedback. NeurIPS.
-[11] Kaplan et al. (2020). Scaling Laws for Neural Language Models. arXiv.
-[12] Wei et al. (2022). Chain-of-Thought Prompting. NeurIPS.
-[13] Yao et al. (2023). Tree of Thoughts. NeurIPS.
-[14] Yao et al. (2023). ReAct. ICLR.
-[15] Schick et al. (2023). Toolformer. NeurIPS.`,
-  },
-  {
-    report_id: 'r2',
-    type: 'innovation_report',
-    title: '创新点报告: 大语言模型研究机会',
-    created_at: '2026-06-01 15:00',
-    paper_count: 23,
-    evidence_count: 32,
-    version: 1,
-    innovations: [
-      {
-        name: '基于强化学习的自适应反馈策略',
-        description: '将强化学习引入LLM的反馈循环，使模型能够根据用户交互自动调整输出策略，而非依赖固定的RLHF奖励模型。',
-        novelty: 8, evidence: 6, feasibility: 9, risk: 4, fit: 8,
-        supportingPapers: 3, limitingPapers: 1,
-      },
-      {
-        name: '多模态知识图谱增强的RAG',
-        description: '将文本、图像、表格等多模态信息统一编码到知识图谱中，在检索时同时考虑结构化关系和语义相似度。',
-        novelty: 7, evidence: 5, feasibility: 7, risk: 5, fit: 7,
-        supportingPapers: 4, limitingPapers: 2,
-      },
-      {
-        name: '轻量级持续学习框架',
-        description: '设计一种参数高效的持续学习方法，使LLM能够在不遗忘旧知识的前提下学习新领域知识。',
-        novelty: 9, evidence: 4, feasibility: 6, risk: 6, fit: 8,
-        supportingPapers: 2, limitingPapers: 3,
-      },
-    ],
-  },
-]
 
 export default function ReportsPage() {
   const reports = useStore((s) => s.reports)
   const setReports = useStore((s) => s.setReports)
   const scope = useStore((s) => s.scope)
+  const currentProject = useStore((s) => s.currentProject)
   const [selectedReport, setSelectedReport] = useState(null)
   const [activeTab, setActiveTab] = useState('review')
+  const [generating, setGenerating] = useState(false)
 
-  useState(() => {
-    if (reports.length === 0) setReports(DEMO_REPORTS)
-  })
+  useEffect(() => {
+    if (!currentProject) return
+    api.listReports(currentProject.project_id)
+      .then((res) => {
+        const data = res.data || res
+        setReports(Array.isArray(data) ? data : [])
+      })
+      .catch(() => {})
+  }, [currentProject])
+
+  const handleGenerate = async (type) => {
+    if (!currentProject) return
+    setGenerating(true)
+    try {
+      const scopePayload = scope || { type: 'all_project' }
+      if (type === 'review') {
+        await api.generateLiteratureReview(currentProject.project_id, scopePayload)
+      } else {
+        await api.generateInnovationReport(currentProject.project_id, scopePayload)
+      }
+      const res = await api.listReports(currentProject.project_id)
+      setReports(res.data || res || [])
+    } catch (err) {
+      console.error('Generate failed:', err)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleExport = async (reportId) => {
+    try {
+      const res = await api.exportReportMarkdown(reportId)
+      const content = res.content || res.data?.content || ''
+      const blob = new Blob([content], { type: 'text/markdown' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `report_${reportId}.md`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Export failed:', err)
+    }
+  }
 
   const reviewReports = reports.filter((r) => r.type === 'literature_review')
   const innovationReports = reports.filter((r) => r.type === 'innovation_report')
@@ -142,11 +70,19 @@ export default function ReportsPage() {
       <div className={styles.header}>
         <h2 className={styles.pageTitle}>成果报告</h2>
         <div className={styles.headerActions}>
-          <button className="btn btn--primary">
-            <FileText size={15} /> 生成文献综述
+          <button
+            className="btn btn--primary"
+            disabled={generating || !currentProject}
+            onClick={() => handleGenerate('review')}
+          >
+            <FileText size={15} /> {generating ? '生成中...' : '生成文献综述'}
           </button>
-          <button className="btn btn--secondary">
-            <Lightbulb size={15} /> 生成创新点报告
+          <button
+            className="btn btn--secondary"
+            disabled={generating || !currentProject}
+            onClick={() => handleGenerate('innovation')}
+          >
+            <Lightbulb size={15} /> {generating ? '生成中...' : '生成创新点报告'}
           </button>
         </div>
       </div>
@@ -214,7 +150,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <div className={styles.previewActions}>
-                  <button className="btn btn--secondary btn--sm">
+                  <button className="btn btn--secondary btn--sm" onClick={() => handleExport(displayReport.report_id)}>
                     <Download size={14} /> 导出Markdown
                   </button>
                 </div>

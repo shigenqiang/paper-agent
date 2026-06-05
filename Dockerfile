@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY src/ ./src/
 COPY docs/ ./docs/
 COPY tests/ ./tests/
-COPY readme.md .
+COPY README.md .
 COPY config.yaml .
 COPY .env.example .env
 
@@ -65,7 +65,7 @@ EXPOSE 8000
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/api/health || exit 1
 
 # 默认启动命令 - 使用 src.service 入口
 CMD ["python", "-m", "src.service"]
@@ -105,7 +105,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY src/ ./src/
 COPY docs/ ./docs/
 COPY tests/ ./tests/
-COPY readme.md .
+COPY README.md .
 COPY config.yaml .
 COPY .env.example .env
 
@@ -124,7 +124,7 @@ EXPOSE 8000
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/api/health || exit 1
 
 # GPU启动命令 - 使用 src.service 入口
 CMD ["python", "-m", "src.service"]
@@ -149,7 +149,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip cache purge
 
 COPY src/ ./src/
-COPY readme.md .
+COPY README.md .
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1

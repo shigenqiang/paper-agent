@@ -1,55 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Network, Search, ZoomIn, ZoomOut, RotateCcw, MessageSquare, Lightbulb } from 'lucide-react'
 import useStore from '../stores/useStore'
+import { api } from '../api/client'
 import styles from './GraphPage.module.css'
-
-// Demo graph data
-const DEMO_GRAPH = {
-  nodes: [
-    { id: 'p1', label: 'Attention Is All You Need', type: 'Paper', year: 2017, connections: 8 },
-    { id: 'p2', label: 'BERT', type: 'Paper', year: 2019, connections: 6 },
-    { id: 'p3', label: 'GPT-3', type: 'Paper', year: 2020, connections: 5 },
-    { id: 'p4', label: 'InstructGPT', type: 'Paper', year: 2022, connections: 4 },
-    { id: 'p5', label: 'Constitutional AI', type: 'Paper', year: 2022, connections: 3 },
-    { id: 'm1', label: 'Transformer', type: 'Method', connections: 12 },
-    { id: 'm2', label: 'Self-Attention', type: 'Method', connections: 8 },
-    { id: 'm3', label: 'RLHF', type: 'Method', connections: 6 },
-    { id: 'm4', label: 'Fine-tuning', type: 'Method', connections: 5 },
-    { id: 't1', label: 'Language Modeling', type: 'Topic', connections: 10 },
-    { id: 't2', label: 'Pre-training', type: 'Topic', connections: 7 },
-    { id: 't3', label: 'Alignment', type: 'Topic', connections: 5 },
-    { id: 'f1', label: 'SOTA on WMT', type: 'Finding', connections: 3 },
-    { id: 'f2', label: 'Emergent Abilities', type: 'Finding', connections: 4 },
-    { id: 'g1', label: 'Hallucination', type: 'Gap', connections: 3 },
-    { id: 'g2', label: 'Sample Efficiency', type: 'Gap', connections: 2 },
-    { id: 'l1', label: 'High Compute Cost', type: 'Limitation', connections: 4 },
-    { id: 'l2', label: 'Data Bias', type: 'Limitation', connections: 3 },
-  ],
-  edges: [
-    { source: 'p1', target: 'm1', type: 'USES_METHOD' },
-    { source: 'p1', target: 'm2', type: 'USES_METHOD' },
-    { source: 'p1', target: 't1', type: 'BELONGS_TO_TOPIC' },
-    { source: 'p1', target: 'f1', type: 'REPORTS_FINDING' },
-    { source: 'p2', target: 'm1', type: 'USES_METHOD' },
-    { source: 'p2', target: 't2', type: 'BELONGS_TO_TOPIC' },
-    { source: 'p3', target: 'm1', type: 'USES_METHOD' },
-    { source: 'p3', target: 't1', type: 'BELONGS_TO_TOPIC' },
-    { source: 'p3', target: 'f2', type: 'REPORTS_FINDING' },
-    { source: 'p4', target: 'm3', type: 'USES_METHOD' },
-    { source: 'p4', target: 't3', type: 'BELONGS_TO_TOPIC' },
-    { source: 'p5', target: 'm3', type: 'USES_METHOD' },
-    { source: 'p5', target: 't3', type: 'BELONGS_TO_TOPIC' },
-    { source: 'p3', target: 'l1', type: 'HAS_LIMITATION' },
-    { source: 'p4', target: 'l2', type: 'HAS_LIMITATION' },
-    { source: 'l1', target: 'g1', type: 'SUGGESTS_GAP' },
-    { source: 'l2', target: 'g2', type: 'SUGGESTS_GAP' },
-    { source: 'p2', target: 'p1', type: 'CITES' },
-    { source: 'p3', target: 'p1', type: 'CITES' },
-    { source: 'p3', target: 'p2', type: 'CITES' },
-    { source: 'p4', target: 'p3', type: 'CITES' },
-    { source: 'p5', target: 'p4', type: 'CITES' },
-  ],
-}
 
 const NODE_COLORS = {
   Paper: '#4a9eff',
@@ -70,15 +23,23 @@ export default function GraphPage() {
   const clearNodeSelection = useStore((s) => s.clearNodeSelection)
   const openDrawer = useStore((s) => s.openDrawer)
 
+  const currentProject = useStore((s) => s.currentProject)
   const canvasRef = useRef(null)
   const svgRef = useRef(null)
   const [selectedNode, setSelectedNode] = useState(null)
   const [filterType, setFilterType] = useState('all')
   const [zoom, setZoom] = useState(1)
+  const [building, setBuilding] = useState(false)
 
   useEffect(() => {
-    if (graph.nodes.length === 0) setGraph(DEMO_GRAPH)
-  }, [])
+    if (!currentProject) return
+    api.getGraph(currentProject.project_id)
+      .then((res) => {
+        const data = res.data || res
+        if (data.nodes?.length > 0) setGraph(data)
+      })
+      .catch(() => {})
+  }, [currentProject])
 
   // D3 force simulation
   useEffect(() => {
@@ -244,8 +205,20 @@ export default function GraphPage() {
           <span className={styles.count}>{graph.nodes.length} 节点 · {graph.edges.length} 边</span>
         </div>
         <div className={styles.headerActions}>
-          <button className="btn btn--secondary btn--sm" onClick={() => {}}>
-            <Network size={14} /> 构建图谱
+          <button
+            className="btn btn--secondary btn--sm"
+            disabled={building || !currentProject}
+            onClick={() => {
+              if (!currentProject) return
+              setBuilding(true)
+              api.buildGraph(currentProject.project_id)
+                .then(() => api.getGraph(currentProject.project_id))
+                .then((res) => { const d = res.data || res; if (d.nodes) setGraph(d) })
+                .catch(() => {})
+                .finally(() => setBuilding(false))
+            }}
+          >
+            <Network size={14} /> {building ? '构建中...' : '构建图谱'}
           </button>
           {selectedNodeIds.length > 0 && (
             <button className="btn btn--primary btn--sm" onClick={() => window.location.href = '/qa'}>

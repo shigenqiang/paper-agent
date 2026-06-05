@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from src.agents_v3.research_workspace.api.deps import get_task_service
 from src.agents_v3.research_workspace.api.errors import NotFoundError
-from src.agents_v3.research_workspace.api.models import ApiResponse
+from src.agents_v3.research_workspace.api.models import ApiListResponse, ApiResponse, PageInfo
 
 router = APIRouter(prefix="/api/rw/tasks", tags=["tasks"])
 
@@ -25,9 +25,23 @@ def get_task(task_id: str):
 
 
 @router.get("")
-def list_tasks(project_ref: str | None = None, status: str | None = None):
+def list_tasks(
+    project_ref: str | None = None,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+):
     svc = get_task_service()
-    return ApiResponse(data=svc.list_tasks(project_ref, status))
+    items = svc.list_tasks(project_ref, status)
+    total = len(items)
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))
+    start = (page - 1) * page_size
+    paged = items[start : start + page_size]
+    return ApiListResponse(
+        data=paged,
+        pagination=PageInfo(page=page, page_size=page_size, total=total, has_next=start + page_size < total),
+    )
 
 
 @router.get("/{task_id}/stream")

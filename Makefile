@@ -1,7 +1,7 @@
 .PHONY: service install lint clean
 .PHONY: test test-all test-01 test-02 test-03 test-04 test-05 test-06 test-07 test-08 test-09 test-10 test-11 test-12 test-13 test-14 test-15
 .PHONY: frontend-dev frontend-build frontend-install
-.PHONY: docker-build docker-push docker-login
+.PHONY: up down docker-build docker-push docker-login
 .PHONY: ghcr-build ghcr-push ghcr-login ghcr hub
 .PHONY: help
 
@@ -119,6 +119,14 @@ test-14:
 test-15:
 	$(PYTHON) run_tests.py 15
 
+# ============ Docker Compose ============
+
+up:
+	docker-compose up -d --build
+
+down:
+	docker-compose down
+
 # ============ Docker ============
 
 docker-build:
@@ -190,6 +198,10 @@ help:
 	@echo "  make test-13        13-LLM提示词与结构化输出"
 	@echo "  make test-14        14-API任务与前端联调"
 	@echo "  make test-15        15-评估日志监控"
+	@echo ""
+	@echo "Docker Compose:"
+	@echo "  make up              启动所有服务 (docker-compose up -d --build)"
+	@echo "  make down            停止所有服务 (docker-compose down)"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build   构建镜像"

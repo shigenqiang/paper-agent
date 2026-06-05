@@ -23,6 +23,8 @@ export const api = {
   getPaper: (id) => request(`/papers/${id}`),
   uploadPaper: (projectId, formData) =>
     fetch(`${BASE}/projects/${projectId}/papers/upload`, { method: 'POST', body: formData }).then(r => r.json()),
+  uploadPapersBatch: (projectId, formData) =>
+    fetch(`${BASE}/projects/${projectId}/papers/upload/batch`, { method: 'POST', body: formData }).then(r => r.json()),
   searchPapers: (projectId, query) =>
     request(`/projects/${projectId}/papers/search`, { method: 'POST', body: JSON.stringify({ query }) }),
   excludePaper: (id) => request(`/papers/${id}/exclude`, { method: 'POST' }),
