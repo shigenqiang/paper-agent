@@ -210,12 +210,12 @@ class PaperLibraryService:
         existing = self.storage.query("papers", {"project_id": project_id})
         existing_keys = build_existing_keys(existing)
         if make_dedup_key(metadata) in existing_keys:
-            # 即使论文已存在，仍保存主题相关分数
-            if scores and topic:
+            # 即使论文已存在，仍保存查询相关分数
+            if scores and query_id:
                 dedup_key = make_dedup_key(metadata)
                 for p in existing:
                     if make_dedup_key(p) == dedup_key:
-                        self.save_topic_score(p["paper_id"], topic, scores, query_id)
+                        self.save_topic_score(p["paper_id"], scores, query_id, source)
                         break
             logger.info(f"Duplicate skipped: {metadata.get('title', '')[:50]}")
             return None
@@ -299,11 +299,6 @@ class PaperLibraryService:
         else:
             citation = CitationInfo(citation_count=metadata.get("citations"))
 
-        # 提取余弦相似度得分
-        dense_score = 0.0
-        if scores:
-            dense_score = scores.get("dense_score", 0.0)
-
         paper = Paper(
             paper_id=paper_id,
             project_id=project_id,
@@ -321,13 +316,12 @@ class PaperLibraryService:
             url=metadata.get("url", ""),
             source_platform=source if isinstance(source, str) else "",
             status=PaperStatus.IMPORTED,
-            dense_score=dense_score,
         )
         self.storage.upsert_item("papers", paper_id, paper.model_dump())
 
-        # 持久化主题相关分数到 topic_scores 集合
-        if scores and topic:
-            self.save_topic_score(paper_id, topic, scores, query_id)
+        # 持久化查询相关分数到 topic_scores 表
+        if scores and query_id:
+            self.save_topic_score(paper_id, scores, query_id, source)
 
         logger.info(f"Imported paper {paper_id}: {paper.title}")
         return paper
@@ -349,6 +343,7 @@ class PaperLibraryService:
         query: SearchQuery,
     ) -> list[SearchResult]:
         """调用已注册的搜索适配器，返回结果（去重 + HyDE 排序 + 质量过滤）"""
+        import time as _time
         from src.agents_v3.research_workspace.search.merger import SearchResultMerger
         from src.agents_v3.research_workspace.search.query_optimizer import refine_query
         from src.agents_v3.research_workspace.config import get_search_config
@@ -356,10 +351,12 @@ class PaperLibraryService:
 
         # 优化搜索词：提取核心主题，去除泛化词
         original_query = query.query
+        t0 = _time.time()
         optimized = refine_query(original_query)
         if optimized != original_query:
             logger.info(f"Query optimized: \"{original_query}\" → \"{optimized}\"")
             query = query.model_copy(update={"query": optimized})
+        logger.info(f"[timing] refine_query: {_time.time()-t0:.2f}s")
 
         all_results: list[SearchResult] = []
 
@@ -370,14 +367,18 @@ class PaperLibraryService:
                 logger.error(f"Search adapter {adapter.source_name} failed: {e}")
                 return [], e
 
+        t0 = _time.time()
         with ThreadPoolExecutor(max_workers=min(4, len(self.search_adapters))) as executor:
             futures = {executor.submit(_search_one, a): a for a in self.search_adapters}
             for future in as_completed(futures):
                 results, error = future.result()
                 all_results.extend(results)
+        logger.info(f"[timing] external_search ({len(all_results)} results): {_time.time()-t0:.2f}s")
 
         # 去重合并
+        t0 = _time.time()
         merged = merger.merge(all_results)
+        logger.info(f"[timing] merge ({len(merged)} after dedup): {_time.time()-t0:.2f}s")
 
         # 混合排序 + 质量过滤
         search_cfg = get_search_config().get("hyde", {})
@@ -394,15 +395,19 @@ class PaperLibraryService:
                     top_n=top_n,
                     quality_threshold=qual_threshold,
                 )
+                t0 = _time.time()
                 merged = hybrid_ranker.rank(merged, original_query)
+                logger.info(f"[timing] hybrid_rank ({len(merged)} results): {_time.time()-t0:.2f}s")
             except Exception as e:
                 logger.warning(f"Hybrid ranking failed, applying quality filter only: {e}")
                 merged = _apply_quality_filter(merged[:top_n], qual_threshold)
 
         # 存入论文池
+        t0 = _time.time()
         for r in merged:
             paper_id = self.add_to_pool(r)
             r.source_payload["pool_paper_id"] = paper_id
+        logger.info(f"[timing] add_to_pool ({len(merged)} papers): {_time.time()-t0:.2f}s")
 
         return merged
 
@@ -411,10 +416,10 @@ class PaperLibraryService:
         """将论文摘要向量化存入 Qdrant paper_profiles 集合"""
         try:
             from src.agents_v3.research_workspace.storage.vector import get_vector_storage
-            from src.agents_v3.research_workspace.storage.embedding import get_embedding_service
+            from src.agents_v3.research_workspace.storage.embedding_provider import get_embedding_provider
 
             vs = get_vector_storage()
-            es = get_embedding_service()
+            es = get_embedding_provider()
 
             paper_ids = []
             texts = []
@@ -528,7 +533,7 @@ class PaperLibraryService:
     ) -> list[dict[str, Any]]:
         """从项目论文库中搜索：历史查询匹配 → Qdrant hybrid 检索
 
-        Step 1: 从 paper_queries 获取历史查询关联的论文作为候选。
+        Step 1: 从 topic_scores 获取历史查询关联的论文作为候选。
         Step 2: Qdrant dense + sparse 双路交集检索，按 paper_id 聚合分数。
         """
         papers = self.list_papers(project_id)
@@ -713,7 +718,7 @@ class PaperLibraryService:
 
             new_results.append({
                 "paper_id": pool_id or r.result_id,
-                "score": round(r.final_score, 3),
+                "score": round(r.dense_score, 3),
                 "dense_score": round(r.dense_score, 3),
                 "quality_score": round(r.quality_score, 3),
                 "source": r.source,
@@ -738,7 +743,7 @@ class PaperLibraryService:
         流程：
         1. Qdrant dense-only 语义搜索 → 获取相似 query_id
         2. 从 PG queries 表确认 query 存在
-        3. 从 PG paper_queries 表获取关联的 paper_id
+        3. 从 PG topic_scores 表获取关联的 paper_id
         4. 回退：Jaccard token 相似度匹配 PG queries 表
         """
         paper_ids: set[str] = set()
@@ -752,9 +757,9 @@ class PaperLibraryService:
                 if item["score"] < similarity_threshold:
                     continue
                 query_id = item["query_id"]
-                # 从 paper_queries 获取关联论文
+                # 从 topic_scores 获取关联论文
                 if self.pg:
-                    rows = self.pg.query("paper_queries", {"query_id": query_id})
+                    rows = self.pg.query("topic_scores", {"query_id": query_id})
                     for row in rows:
                         paper_ids.add(row["paper_id"])
                     logger.info(
@@ -792,7 +797,7 @@ class PaperLibraryService:
                             best_query_id = rec["query_id"]
 
                     if best_query_id:
-                        rows = self.pg.query("paper_queries", {"query_id": best_query_id})
+                        rows = self.pg.query("topic_scores", {"query_id": best_query_id})
                         for row in rows:
                             paper_ids.add(row["paper_id"])
                         logger.info(
@@ -950,13 +955,19 @@ class PaperLibraryService:
         project_id: str,
         query: SearchQuery,
     ) -> SearchResponse:
-        """搜索候选论文并直接入库（papers_pool + papers + queries + paper_queries + Qdrant）"""
+        """搜索候选论文并直接入库（papers_pool + papers + queries + topic_scores + Qdrant）"""
+        import time as _time
+
+        t_total = _time.time()
         results = self.search_papers(query)
 
         # 写 queries 表
+        t0 = _time.time()
         query_id = self._ensure_query(query.query)
+        logger.info(f"[timing] ensure_query: {_time.time()-t0:.2f}s")
 
         # 遍历结果，直接入库
+        t0 = _time.time()
         imported = []
         for r in results:
             meta = search_result_to_meta(r)
@@ -971,16 +982,20 @@ class PaperLibraryService:
             )
             if paper:
                 imported.append(paper)
-                self._link_paper_query(paper.paper_id, query_id, r.final_score, "candidate")
+        logger.info(f"[timing] import_metadata ({len(imported)} papers): {_time.time()-t0:.2f}s")
 
         # 写 Qdrant search_queries 向量
+        t0 = _time.time()
         self._save_query_vector(query_id, query.query)
+        logger.info(f"[timing] save_query_vector: {_time.time()-t0:.2f}s")
 
         # 写 Qdrant paper_profiles 向量
         if imported:
+            t0 = _time.time()
             self._index_paper_profiles(imported)
+            logger.info(f"[timing] index_paper_profiles ({len(imported)} papers): {_time.time()-t0:.2f}s")
 
-        logger.info(f"Search & import: {len(imported)} papers imported")
+        logger.info(f"[timing] search_candidates TOTAL: {_time.time()-t_total:.2f}s, {len(imported)} papers imported")
         return SearchResponse(
             query=query,
             results=results,
@@ -1006,24 +1021,6 @@ class PaperLibraryService:
         logger.debug(f"Created query: {query_id} for \"{query_text[:50]}\"")
         return query_id
 
-    def _link_paper_query(
-        self, paper_id: str, query_id: str, score: float, source: str,
-    ) -> None:
-        """写入 paper_queries 关联记录"""
-        if not self.pg:
-            return
-
-        record = {
-            "paper_id": paper_id,
-            "query_id": query_id,
-            "score": score,
-            "source": source,
-        }
-        try:
-            self.pg.upsert_item("paper_queries", paper_id, record)
-        except Exception as e:
-            logger.warning(f"Failed to link paper_query: {e}")
-
     def _save_query_vector(self, query_id: str, query_text: str) -> None:
         """将查询文本写入 Qdrant search_queries 集合（向量化）"""
         try:
@@ -1038,35 +1035,30 @@ class PaperLibraryService:
     def save_topic_score(
         self,
         paper_id: str,
-        topic: str,
         scores: dict[str, float],
         query_id: str = "",
+        source: str = "",
     ) -> None:
-        """保存论文在特定主题下的重要性得分"""
+        """保存论文在特定查询下的相关性得分"""
+        if not self.pg:
+            return
+
         from datetime import datetime as _dt
 
-        score_record = {
+        record = {
             "paper_id": paper_id,
-            "topic": topic,
             "query_id": query_id or None,
             "dense_score": scores.get("dense_score", 0.0),
             "quality_score": scores.get("quality_score", 0.0),
+            "source": source,
             "scored_at": _dt.now().isoformat(),
         }
 
-        # 读取现有记录，按 paper_id + topic 去重更新
-        records = self.storage.load_collection("topic_scores")
-        updated = False
-        for i, rec in enumerate(records):
-            if rec.get("paper_id") == paper_id and rec.get("topic") == topic:
-                records[i] = score_record
-                updated = True
-                break
-        if not updated:
-            records.append(score_record)
-
-        self.storage.save_collection("topic_scores", records)
-        logger.debug(f"Saved topic score: {paper_id} @ {topic[:30]} = {scores.get('dense_score', 0):.3f}")
+        try:
+            self.pg.upsert_item("topic_scores", paper_id, record)
+            logger.debug(f"Saved topic score: {paper_id} @ query={query_id[:12]} dense={scores.get('dense_score', 0):.3f}")
+        except Exception as e:
+            logger.warning(f"Failed to save topic score: {e}")
 
     def get_topic_scores(
         self,
@@ -1111,6 +1103,9 @@ class PaperLibraryService:
         if not papers:
             return []
 
+        # 获取或创建 query_id
+        query_id = self._ensure_query(topic)
+
         # 将 Paper 转换为 SearchResult 用于评分
         results = []
         for p in papers:
@@ -1143,10 +1138,10 @@ class PaperLibraryService:
                 "dense_score": 0.0,
                 "quality_score": quality_scores[i],
             }
-            self.save_topic_score(r.result_id, topic, scores)
+            self.save_topic_score(r.result_id, scores, query_id, "recompute")
             scored_records.append({
                 "paper_id": r.result_id,
-                "topic": topic,
+                "query_id": query_id,
                 "dense_score": 0.0,
                 "quality_score": quality_scores[i],
             })

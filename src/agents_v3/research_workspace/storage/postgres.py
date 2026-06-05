@@ -66,8 +66,6 @@ TABLE_SCHEMAS = {
         CREATE TABLE IF NOT EXISTS papers (
             paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
             project_id VARCHAR(64) REFERENCES projects(project_id) ON DELETE CASCADE,
-            dense_score FLOAT DEFAULT 0.0,
-            quality_score FLOAT DEFAULT 0.0,
             included BOOLEAN DEFAULT TRUE,
             exclude_reason TEXT DEFAULT '',
             status VARCHAR(32) DEFAULT 'imported',
@@ -249,6 +247,7 @@ TABLE_SCHEMAS = {
             token_count INTEGER DEFAULT 0,
             claims JSONB DEFAULT '[]',
             entities JSONB DEFAULT '[]',
+            relations JSONB DEFAULT '[]',
             figures JSONB DEFAULT '[]',
             tables JSONB DEFAULT '[]',
             background_points JSONB DEFAULT '[]',
@@ -308,22 +307,12 @@ TABLE_SCHEMAS = {
     "topic_scores": """
         CREATE TABLE IF NOT EXISTS topic_scores (
             paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
-            topic VARCHAR(255),
             query_id VARCHAR(64) REFERENCES queries(query_id) ON DELETE SET NULL,
             dense_score FLOAT DEFAULT 0.0,
             quality_score FLOAT DEFAULT 0.0,
-            scored_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE (paper_id, topic)
-        )
-    """,
-    "paper_queries": """
-        CREATE TABLE IF NOT EXISTS paper_queries (
-            paper_id VARCHAR(128) REFERENCES papers_pool(paper_id) ON DELETE CASCADE,
-            query_id VARCHAR(64) REFERENCES queries(query_id) ON DELETE CASCADE,
-            score FLOAT DEFAULT 0.0,
             source VARCHAR(32) DEFAULT '',
-            created_at TIMESTAMP DEFAULT NOW(),
-            PRIMARY KEY (paper_id, query_id)
+            scored_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE (paper_id, query_id)
         )
     """,
     "search_sessions": """
@@ -362,11 +351,12 @@ TABLE_ID_FIELDS = {
     "tasks": "task_id",
     "qa_history": "qa_id",
     "paper_references": "ref_id",
+    "paper_sections": "section_id",
+    "citation_contexts": "context_id",
     "kg_nodes": "node_id",
     "kg_edges": "edge_id",
     "topic_scores": "paper_id",
     "queries": "query_id",
-    "paper_queries": "paper_id",
     "search_sessions": "session_id",
     "session_papers": "session_id",
 }
@@ -374,8 +364,7 @@ TABLE_ID_FIELDS = {
 # 复合唯一约束表（ON CONFLICT 需要列出所有列）
 TABLE_UNIQUE_CONSTRAINTS = {
     "papers": ["paper_id", "project_id"],
-    "topic_scores": ["paper_id", "topic"],
-    "paper_queries": ["paper_id", "query_id"],
+    "topic_scores": ["paper_id", "query_id"],
     "session_papers": ["session_id", "paper_id"],
 }
 
@@ -417,8 +406,6 @@ class PostgresStorage:
             _migrations = [
                 ("papers_pool", "is_pdf_downloaded", "BOOLEAN DEFAULT FALSE"),
                 ("papers_pool", "is_parsed", "BOOLEAN DEFAULT FALSE"),
-                ("papers", "dense_score", "FLOAT DEFAULT 0.0"),
-                ("papers", "quality_score", "FLOAT DEFAULT 0.0"),
                 ("paper_chunks", "parent_id", "VARCHAR(64) DEFAULT ''"),
                 ("paper_chunks", "quality_score", "FLOAT DEFAULT 0.0"),
                 ("paper_chunks", "quality_details", "JSONB DEFAULT '{}'"),
@@ -426,6 +413,7 @@ class PostgresStorage:
                 ("parse_results", "figure_count", "INTEGER DEFAULT 0"),
                 ("parse_results", "diagnostics", "JSONB DEFAULT '{}'"),
                 ("topic_scores", "query_id", "VARCHAR(64) REFERENCES queries(query_id) ON DELETE SET NULL"),
+                ("topic_scores", "source", "VARCHAR(32) DEFAULT ''"),
             ]
             for table, col, col_def in _migrations:
                 try:
@@ -436,7 +424,10 @@ class PostgresStorage:
             # 删除废弃列
             _drop_columns = [
                 ("papers", "importance_score"),
+                ("papers", "dense_score"),
+                ("papers", "quality_score"),
                 ("topic_scores", "importance_score"),
+                ("topic_scores", "topic"),
                 ("projects", "dir_name"),
             ]
             for table, col in _drop_columns:
@@ -444,6 +435,21 @@ class PostgresStorage:
                     cur.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {col}")
                 except Exception:
                     pass
+
+            # topic_scores: 旧约束 UNIQUE(paper_id, topic) → UNIQUE(paper_id, query_id)
+            try:
+                cur.execute("ALTER TABLE topic_scores DROP CONSTRAINT IF EXISTS topic_scores_paper_id_topic_key")
+                cur.execute("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint WHERE conname = 'topic_scores_paper_id_query_id_key'
+                        ) THEN
+                            ALTER TABLE topic_scores ADD CONSTRAINT topic_scores_paper_id_query_id_key UNIQUE (paper_id, query_id);
+                        END IF;
+                    END $$;
+                """)
+            except Exception:
+                pass
 
             # projects.name 唯一约束（清理重名后添加）
             try:
@@ -466,7 +472,6 @@ class PostgresStorage:
             _indexes = [
                 "CREATE INDEX IF NOT EXISTS idx_paper_refs_citing ON paper_references(citing_paper_id)",
                 "CREATE INDEX IF NOT EXISTS idx_paper_refs_cited ON paper_references(cited_paper_id)",
-                "CREATE INDEX IF NOT EXISTS idx_paper_queries_query ON paper_queries(query_id)",
                 "CREATE INDEX IF NOT EXISTS idx_topic_scores_query ON topic_scores(query_id)",
                 "CREATE INDEX IF NOT EXISTS idx_citation_ctx_citing ON citation_contexts(citing_paper_id)",
                 "CREATE INDEX IF NOT EXISTS idx_citation_ctx_cited ON citation_contexts(cited_paper_id)",

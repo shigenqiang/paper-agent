@@ -77,6 +77,8 @@ class NodeType(str, Enum):
     OTHER_SCI_TERM = "OtherSciTerm"
     VENUE = "Venue"
     INSTITUTION = "Institution"
+    COMMUNITY = "Community"
+    GHOST_PAPER = "GhostPaper"
 
 
 class EdgeType(str, Enum):
@@ -86,6 +88,7 @@ class EdgeType(str, Enum):
     REPORTS_FINDING = "REPORTS_FINDING"
     HAS_LIMITATION = "HAS_LIMITATION"
     SUGGESTS_GAP = "SUGGESTS_GAP"
+    STUDIES_TASK = "STUDIES_TASK"
     SUPPORTS_INNOVATION = "SUPPORTS_INNOVATION"
     CITES = "CITES"
     # SciERC 核心关系
@@ -106,3 +109,9 @@ class EdgeType(str, Enum):
     ACHIEVES = "ACHIEVES"           # Method → Metric
     AUTHORED_BY = "AUTHORED_BY"
     PUBLISHED_IN = "PUBLISHED_IN"
+    BELONGS_TO_COMMUNITY = "BELONGS_TO_COMMUNITY"
+    # 立场关系
+    SUPPORTS = "SUPPORTS"               # Finding → Finding（支持）
+    CONTRADICTS = "CONTRADICTS"         # Finding → Finding（反对）
+    # QA 溯源
+    RETRIEVES_FROM = "RETRIEVES_FROM"   # Answer → GraphNode（QA 引用图谱节点）

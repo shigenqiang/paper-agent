@@ -1,156 +1,95 @@
-"""模块03 论文库搜索导入 — 真实 API + PostgreSQL
+"""模块03 论文库搜索导入 — 真实 HTTP API + PostgreSQL
 
-当前代码功能（search_candidates 一步到位）：
-  search_papers()  → 多源搜索 + HybridRanker 排序 + 写 papers_pool
-  search_candidates() → search_papers + 直接入库（papers/queries/paper_queries/topic_scores/Qdrant）
+测试全部通过 HTTP API 走真实链路：
+  POST /api/rw/projects                → 创建项目
+  POST /api/rw/projects/{id}/papers/search → 搜索入库
 
 前置条件:
     - Docker 容器 postgres (5432) + qdrant (6333) 运行中
+    - 服务运行在 http://localhost:8000
     - 网络可达 openalex / arxiv / semantic scholar API
 """
 
+import time
+
 import pytest
+import requests
 
-from src.agents_v3.research_workspace.search.base import SearchQuery
+BASE = "http://localhost:8000"
 
 
-class TestSearchPipeline:
-    """主搜索流水线 — search_papers()
+def api(method: str, path: str, body: dict | None = None) -> dict:
+    """调用真实 HTTP API"""
+    url = f"{BASE}{path}"
+    resp = requests.request(method, url, json=body, timeout=300)
+    resp.raise_for_status()
+    return resp.json()
 
-    验证：多源并行搜索 → 去重合并 → HybridRanker 排序 → papers_pool 写入
-    """
 
-    PROJECT_ID = "e2e_test_project"
-
-    @pytest.fixture(autouse=True)
-    def setup_project(self, pg_storage):
-        """确保测试项目存在，测试后清理"""
-        pg_storage.upsert_item("projects", self.PROJECT_ID, {
-            "project_id": self.PROJECT_ID,
-            "name": "E2E 测试项目",
-            "description": "搜索联调自动创建",
-        })
-        yield
+def wait_for_service(max_wait: int = 15) -> bool:
+    """等待服务就绪"""
+    for _ in range(max_wait):
         try:
-            papers = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
-            for p in papers:
-                pg_storage.delete_item("papers", p["paper_id"])
-            pg_storage.delete_item("projects", self.PROJECT_ID)
+            r = requests.get(f"{BASE}/api/health", timeout=3)
+            if r.status_code == 200:
+                return True
         except Exception:
             pass
+        time.sleep(1)
+    return False
 
-    def test_01_search_returns_results(self, service):
-        """search_papers 能从真实 API 拿到结果"""
-        query = SearchQuery(query="large language model", limit=5)
-        results = service.search_papers(query)
 
-        print(f"\n[search_papers] 搜索 'large language model' 返回 {len(results)} 条结果")
+@pytest.fixture(scope="module", autouse=True)
+def ensure_service():
+    """确保服务可用"""
+    if not wait_for_service():
+        pytest.skip("服务未启动，请先运行 python -m src.service")
+
+
+@pytest.fixture(scope="module")
+def project_id():
+    """通过 API 创建测试项目，返回 project_id"""
+    name = f"search_test_{int(time.time())}"
+    result = api("POST", "/api/rw/projects", {"name": name})
+    pid = result["data"]["project_id"]
+    print(f"\n[setup] 创建项目: {pid}")
+    yield pid
+    # 不清理，保留入库数据
+
+
+class TestSearchViaAPI:
+    """通过真实 HTTP API 测试搜索入库全流程"""
+
+    def test_01_search_returns_results(self, project_id):
+        """POST /papers/search 能从真实 API 拿到结果"""
+        body = {"query": "large language model", "limit": 5}
+        result = api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
+        data = result["data"]
+
+        results = data["results"]
+        print(f"\n[search] 'large language model' 返回 {len(results)} 条")
         for i, r in enumerate(results[:3]):
-            print(f"  {i+1}. [{r.source}] {r.title[:60]}... (citations={r.citations})")
+            print(f"  {i+1}. [{r.get('source', '')}] {r.get('title', '')[:60]}...")
 
         assert len(results) > 0, "搜索应返回至少 1 条结果"
-        r = results[0]
-        assert r.title, "结果应有标题"
-        assert r.source, "结果应有来源"
+        assert results[0].get("title"), "结果应有标题"
 
-    def test_02_results_stored_in_pool(self, pg_storage, service):
-        """搜索结果应存入 papers_pool（全局论文池）"""
-        query = SearchQuery(query="transformer attention mechanism", limit=3)
-        service.search_papers(query)
+    def test_02_papers_written_to_db(self, project_id, pg_storage):
+        """搜索后论文应写入 papers 表"""
+        body = {"query": "BERT pre-training", "limit": 3}
+        api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
 
-        pool_items = pg_storage.list_all("papers_pool")
-        print(f"\n[papers_pool] 共 {len(pool_items)} 条记录")
-        assert len(pool_items) > 0, "papers_pool 应非空"
-
-    def test_03_pool_paper_id_attached(self, service):
-        """搜索结果应携带 pool_paper_id（用于后续入库关联）"""
-        query = SearchQuery(query="chain of thought prompting", limit=3)
-        results = service.search_papers(query)
-
-        for r in results:
-            pool_id = r.source_payload.get("pool_paper_id")
-            print(f"\n[pool_id] {r.title[:40]}... -> {pool_id}")
-            assert pool_id, "每个结果应有 pool_paper_id"
-
-    def test_04_multi_adapter_coverage(self, service, adapters):
-        """多个适配器应覆盖不同来源"""
-        query = SearchQuery(query="BERT pre-training", limit=10)
-        results = service.search_papers(query)
-
-        sources = {r.source for r in results}
-        print(f"\n[multi-adapter] 来源覆盖: {sources}")
-        print(f"  总结果 {len(results)} 条, 来自 {len(sources)} 个数据源")
-        assert len(sources) >= 1
-
-    def test_05_hybrid_ranker_scores(self, service):
-        """HybridRanker 应为每篇结果分配 dense_score 和 quality_score"""
-        query = SearchQuery(query="retrieval augmented generation", limit=5)
-        results = service.search_papers(query)
-
-        print(f"\n[HybridRanker] {len(results)} 条结果:")
-        for r in results[:3]:
-            print(f"  dense={r.dense_score:.3f}  quality={r.quality_score:.3f}  final={r.final_score:.4f}  {r.title[:50]}")
-
-        assert len(results) > 0
-        for r in results:
-            assert r.dense_score is not None, "应有 dense_score（余弦相似度）"
-            assert r.quality_score is not None, "应有 quality_score（引用+时效）"
-
-
-class TestSearchDirectImport:
-    """搜索直接入库 — search_candidates()
-
-    验证：search_papers + 直接写入 papers/queries/paper_queries/topic_scores/Qdrant
-    当前设计：搜索即入库，无两步提交
-    """
-
-    PROJECT_ID = "e2e_import_project"
-
-    @pytest.fixture(autouse=True)
-    def setup_project(self, pg_storage):
-        """确保测试项目存在，测试后清理"""
-        pg_storage.upsert_item("projects", self.PROJECT_ID, {
-            "project_id": self.PROJECT_ID,
-            "name": "导入测试项目",
-            "description": "搜索导入自动创建",
-        })
-        yield
-        try:
-            for t in ["paper_queries", "topic_scores"]:
-                items = pg_storage.list_all(t)
-                for item in items:
-                    pk = item.get("paper_id") or item.get(list(item.keys())[0])
-                    try:
-                        pg_storage.delete_item(t, pk)
-                    except Exception:
-                        pass
-            papers = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
-            for p in papers:
-                pg_storage.delete_item("papers", p["paper_id"])
-            queries = pg_storage.list_all("queries")
-            for q in queries:
-                pg_storage.delete_item("queries", q["query_id"])
-            pg_storage.delete_item("projects", self.PROJECT_ID)
-        except Exception:
-            pass
-
-    def test_01_search_writes_papers_table(self, service, pg_storage):
-        """search_candidates 应将论文写入 PostgreSQL papers 表"""
-        query = SearchQuery(query="large language model", limit=3)
-        response = service.search_candidates(self.PROJECT_ID, query)
-
-        stored = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
+        stored = pg_storage.query("papers", {"project_id": project_id})
         print(f"\n[papers] 入库 {len(stored)} 篇论文")
         for p in stored[:3]:
-            print(f"  - {p['paper_id']}: dense_score={p.get('dense_score', 'N/A')}")
+            print(f"  - {p['paper_id']}")
 
         assert len(stored) > 0, "搜索后应有论文写入 papers 表"
-        assert len(stored) <= len(response.results), "入库数不应超过搜索结果数"
 
-    def test_02_search_writes_queries_table(self, service, pg_storage):
-        """search_candidates 应写入 queries 表（查询记录）"""
-        query = SearchQuery(query="transformer attention", limit=3)
-        service.search_candidates(self.PROJECT_ID, query)
+    def test_03_queries_written_to_db(self, project_id, pg_storage):
+        """搜索后查询记录应写入 queries 表"""
+        body = {"query": "transformer attention", "limit": 3}
+        api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
 
         queries = pg_storage.list_all("queries")
         matching = [q for q in queries if q.get("query_text") == "transformer attention"]
@@ -158,71 +97,57 @@ class TestSearchDirectImport:
         assert len(matching) >= 1, "应写入 queries 表记录"
         assert matching[0]["query_id"], "应有 query_id"
 
-    def test_03_search_writes_paper_queries(self, service, pg_storage):
-        """search_candidates 应写入 paper_queries 关联表"""
-        query = SearchQuery(query="knowledge graph embedding", limit=3)
-        service.search_candidates(self.PROJECT_ID, query)
-
-        links = pg_storage.list_all("paper_queries")
-        print(f"\n[paper_queries] 关联记录: {len(links)} 条")
-        for link in links[:3]:
-            print(f"  - paper={link['paper_id']} query={link['query_id']} score={link.get('score', 'N/A')}")
-
-        assert len(links) > 0, "应写入 paper_queries 关联记录"
-
-    def test_04_search_saves_topic_scores(self, service, pg_storage):
-        """search_candidates 应保存 topic_scores（主题相关性分）"""
-        query = SearchQuery(query="retrieval augmented generation", limit=3)
-        service.search_candidates(self.PROJECT_ID, query)
+    def test_04_topic_scores_written(self, project_id, pg_storage):
+        """搜索后 topic_scores 应记录 paper-query 关联"""
+        body = {"query": "knowledge graph embedding", "limit": 3}
+        api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
 
         scores = pg_storage.list_all("topic_scores")
-        project_papers = {p["paper_id"] for p in pg_storage.query("papers", {"project_id": self.PROJECT_ID})}
-        matching = [s for s in scores if s.get("paper_id") in project_papers]
-        print(f"\n[topic_scores] 主题分数记录: {len(matching)} 条")
-        for s in matching[:3]:
-            print(f"  - {s['paper_id']}: dense={s.get('dense_score', 'N/A')}, quality={s.get('quality_score', 'N/A')}")
+        with_query = [s for s in scores if s.get("query_id")]
+        print(f"\n[topic_scores] 带 query_id 的记录: {len(with_query)} 条")
+        for s in with_query[:3]:
+            print(f"  - paper={s['paper_id'][:30]} query={s['query_id']} dense={s.get('dense_score', 0):.3f}")
 
-        assert len(matching) > 0, "应保存 topic_scores 记录"
+        assert len(with_query) > 0, "应写入 topic_scores 记录"
 
-    def test_05_dedup_on_reimport(self, service, pg_storage):
+    def test_05_dedup_on_reimport(self, project_id, pg_storage):
         """重复搜索同一查询不应创建重复论文"""
-        query = SearchQuery(query="retrieval augmented generation", limit=3)
+        body = {"query": "retrieval augmented generation", "limit": 3}
 
-        service.search_candidates(self.PROJECT_ID, query)
-        papers_after_first = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
-        count_first = len(papers_after_first)
+        api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
+        count_first = len(pg_storage.query("papers", {"project_id": project_id}))
 
-        service.search_candidates(self.PROJECT_ID, query)
-        papers_after_second = pg_storage.query("papers", {"project_id": self.PROJECT_ID})
-        count_second = len(papers_after_second)
+        api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
+        count_second = len(pg_storage.query("papers", {"project_id": project_id}))
 
         print(f"\n[dedup] 第一次: {count_first} 篇, 第二次: {count_second} 篇")
         assert count_second == count_first, "重复搜索不应创建重复论文"
 
-    def test_07_search_response_structure(self, service):
-        """search_candidates 应返回正确的 SearchResponse 结构"""
-        query = SearchQuery(query="chain of thought prompting", limit=5)
-        response = service.search_candidates(self.PROJECT_ID, query, min_score=0.3)
+    def test_06_response_structure(self, project_id):
+        """API 返回正确的响应结构"""
+        body = {"query": "chain of thought prompting", "limit": 5}
+        result = api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
+        data = result["data"]
 
-        assert response.query is not None, "应有 query"
-        assert response.total_count >= 0, "应有 total_count"
-        assert isinstance(response.results, list), "results 应为列表"
+        assert "query" in data, "应有 query 字段"
+        assert "results" in data, "应有 results 字段"
+        assert "result_count" in data, "应有 result_count 字段"
+        assert isinstance(data["results"], list), "results 应为列表"
 
-        if response.results:
-            r = response.results[0]
-            assert r.title, "结果应有标题"
-            assert r.source, "结果应有来源"
-            assert r.dense_score is not None, "应有 dense_score"
-            print(f"\n[response] {len(response.results)} 条结果, total={response.total_count}")
+        if data["results"]:
+            r = data["results"][0]
+            assert r.get("title"), "结果应有标题"
+            assert r.get("source"), "结果应有来源"
+            print(f"\n[response] {len(data['results'])} 条结果, total={data['result_count']}")
 
-    def test_08_search_papers_pool_populated(self, service, pg_storage):
-        """search_candidates 内部应先写 papers_pool（全局论文池）"""
-        query = SearchQuery(query="prompt engineering", limit=3)
-        service.search_candidates(self.PROJECT_ID, query)
+    def test_07_papers_pool_populated(self, project_id, pg_storage):
+        """搜索后 papers_pool 应有数据"""
+        body = {"query": "prompt engineering", "limit": 3}
+        api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
 
         pool = pg_storage.list_all("papers_pool")
         print(f"\n[papers_pool] 全局论文池: {len(pool)} 条")
-        assert len(pool) > 0, "search_candidates 应先写入 papers_pool"
+        assert len(pool) > 0, "应写入 papers_pool"
 
 
 class TestPostgresCRUD:

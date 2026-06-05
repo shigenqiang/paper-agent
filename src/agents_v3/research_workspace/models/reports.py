@@ -25,6 +25,13 @@ class Project(BaseModel):
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    def __init__(self, **data):
+        # 将 None 转换为空字符串
+        for k in ('description', 'discipline', 'education_level', 'research_goal'):
+            if data.get(k) is None:
+                data[k] = ""
+        super().__init__(**data)
+
 
 # ── 论文卡片 ──────────────────────────────────────────
 
@@ -148,15 +155,51 @@ class QAResponse(BaseModel):
     scope_summary: str = ""
     supporting_papers: list[str] = Field(default_factory=list)
     evidence_records: list[str] = Field(default_factory=list)
-    graph_paths: list[list[str]] = Field(default_factory=list)
+    source_quotes: list[dict[str, Any]] = Field(default_factory=list)
+    key_points: list[dict[str, Any]] = Field(default_factory=list)
+    graph_paths: list[Any] = Field(default_factory=list)
+    graph_node_ids: list[str] = Field(default_factory=list)
     uncertainty: str = ""
+    refusal_reason: str = ""
     suggested_actions: list[str] = Field(default_factory=list)
     validation_warnings: list[str] = Field(default_factory=list)
     retrieval_diagnostics: dict[str, Any] = Field(default_factory=dict)
     confidence: float = 0.0
 
 
+class ScoredEvidence(BaseModel):
+    """带评分的证据记录"""
+    evidence_id: str
+    paper_id: str
+    score: float = 0.0
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+    matched_fields: list[str] = Field(default_factory=list)
+    evidence_type: str = ""
+    source_quote: str = ""
+    evidence_strength: str = "medium"
+
+
+class QALLMOutput(BaseModel):
+    """LLM QA 输出 schema"""
+    answer: str = ""
+    key_points: list[dict[str, Any]] = Field(default_factory=list)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    supporting_paper_ids: list[str] = Field(default_factory=list)
+    source_quotes: list[dict[str, Any]] = Field(default_factory=list)
+    uncertainty: str = ""
+    confidence: float = 0.5
+    suggested_actions: list[str] = Field(default_factory=list)
+
+
 # ── 报告 ──────────────────────────────────────────────
+
+
+class VerifiedClaim(BaseModel):
+    """验证过的声明"""
+    claim: str = ""
+    evidence_ids: list[str] = Field(default_factory=list)
+    verification_status: str = "unverified"  # "verified" | "unverified" | "contradicted"
+    verification_note: str = ""
 
 
 class InnovationPoint(BaseModel):
@@ -172,6 +215,70 @@ class InnovationPoint(BaseModel):
     risk: str = ""
     possible_topic: str = ""
     scores: dict[str, float] = Field(default_factory=dict)
+    verification_status: str = "unverified"  # "verified" | "unverified" | "contradicted"
+    verified_claims: list[VerifiedClaim] = Field(default_factory=list)
+    counter_evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ReviewSection(BaseModel):
+    """综述章节"""
+    section_id: str
+    title: str = ""
+    content: str = ""
+    paper_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ReviewGenerationResult(BaseModel):
+    """LLM 综述生成输出 schema"""
+    sections: list[ReviewSection] = Field(default_factory=list)
+    overall_limitations: str = ""
+
+
+class ClaimVerification(BaseModel):
+    """声明验证结果"""
+    claim: str = ""
+    section_id: str = ""
+    verification_status: str = "unverified"  # "verified" | "unverified" | "contradicted"
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class ReviewVerificationResult(BaseModel):
+    """综述审查输出 schema"""
+    claim_verifications: list[ClaimVerification] = Field(default_factory=list)
+    summary: str = ""
+
+
+class InnovationPointLLMOutput(BaseModel):
+    """LLM 创新点输出 schema（单条）"""
+    name: str = ""
+    description: str = ""
+    why_innovative: str = ""
+    research_foundation: str = ""
+    feasibility: str = "medium"
+    risk: str = ""
+    possible_topic: str = ""
+
+
+class InnovationGenerationResult(BaseModel):
+    """LLM 创新点生成输出 schema"""
+    innovation_points: list[InnovationPointLLMOutput] = Field(default_factory=list)
+
+
+class InnovationClaimVerification(BaseModel):
+    """创新点声明验证结果"""
+    claim: str = ""
+    innovation_id: str = ""
+    verification_status: str = "unverified"  # "verified" | "unverified" | "contradicted"
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    counter_evidence_ids: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class InnovationVerificationResult(BaseModel):
+    """创新点验证输出 schema"""
+    verifications: list[InnovationClaimVerification] = Field(default_factory=list)
 
 
 class Report(BaseModel):

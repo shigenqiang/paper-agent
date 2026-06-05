@@ -69,8 +69,8 @@ class HybridRanker:
         top_n: int = 30,
         quality_threshold: float = 0.3,
     ):
-        from src.agents_v3.research_workspace.storage.embedding import get_embedding_service
-        self.embedding_service = get_embedding_service()
+        from src.agents_v3.research_workspace.storage.embedding_provider import get_embedding_provider
+        self.embedding_service = get_embedding_provider()
         self.rrf_k = rrf_k
         self.top_k = top_k
         self.top_n = top_n

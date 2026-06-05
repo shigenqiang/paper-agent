@@ -52,8 +52,8 @@ class HierarchicalRetriever:
         return get_vector_storage()
 
     def _get_embedding_service(self):
-        from src.agents_v3.research_workspace.storage.embedding import get_embedding_service
-        return get_embedding_service()
+        from src.agents_v3.research_workspace.storage.embedding_provider import get_embedding_provider
+        return get_embedding_provider()
 
     # ── 主入口 ──
 

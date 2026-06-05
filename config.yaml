@@ -7,9 +7,11 @@ log_level: INFO
 # LLM配置
 llm:
   provider: openai
-  model_name: minimax
+  model_name: mimo-v2.5-pro
   temperature: 0.7
   max_tokens: 4096
+  timeout: 30          # 单次请求超时（秒）
+  max_retries: 1       # 重试次数
   # api_key: 从环境变量或.env文件读取
   # base_url: 可选，自定义API端点
 
@@ -58,14 +60,26 @@ database:
     port: 6333
     # 云端模式（启用后优先使用）
     cloud:
-      enabled: false
+      enabled: true
+      url: "https://9f9e3abf-2323-4bd0-ad4c-ee7f614e78c0.sa-east-1-0.aws.cloud.qdrant.io"
+      api_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6OGUzMjFhNTQtOGVmYS00M2E4LTk1NzMtODJmZDc2ZTJiMjFjIn0.jS5cBgxCUQ60DFRrxmHaIYkAjGpMDtylz7RXnR3C4v8"
+      cloud_inference: true
     collection: paper_chunks
-    vector_size: 512
+    vector_size: 384
     distance: cosine
     # 推理模型配置
     inference:
-      dense_model: "BAAI/bge-small-zh-v1.5"
+      dense_model: "sentence-transformers/all-MiniLM-L6-v2"
       sparse_model: "Qdrant/bm25"
+
+    # Embedding 统一配置
+    # mode: "local" 使用本地 sentence-transformers，"cloud" 使用 Qdrant Cloud inference
+    embedding:
+      mode: "cloud"   # 切换为 "local" 即可使用本地模型
+      # SPECTER2 学术文本专用 embedding（用于实体消歧 L3 层）
+      specter2:
+        model_name: "allenai/specter2_base"
+        enabled: true
 
 # 存储后端选择
 # 可选值: "json", "postgres"

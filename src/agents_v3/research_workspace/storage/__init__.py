@@ -7,6 +7,13 @@ from typing import Any
 
 from src.agents_v3.research_workspace.storage.backend import StorageBackend
 from src.agents_v3.research_workspace.storage.embedding import EmbeddingService, get_embedding_service
+from src.agents_v3.research_workspace.storage.embedding_provider import (
+    CloudEmbeddingProvider,
+    EmbeddingProvider,
+    LocalEmbeddingProvider,
+    get_embedding_provider,
+    reset_embedding_provider,
+)
 from src.agents_v3.research_workspace.storage.postgres import PostgresStorage, get_postgres_storage
 from src.agents_v3.research_workspace.storage.qdrant import get_collection_info, init_qdrant
 from src.agents_v3.research_workspace.storage.vector import VectorStorage, get_vector_storage
@@ -48,8 +55,9 @@ def get_storage() -> PostgresStorage:
 
 
 __all__ = [
-    "EmbeddingService", "PostgresStorage", "StorageBackend",
-    "VectorStorage", "get_collection_info", "get_embedding_service",
-    "get_postgres_storage", "get_storage", "get_vector_storage",
-    "init_qdrant",
+    "CloudEmbeddingProvider", "EmbeddingProvider", "EmbeddingService",
+    "LocalEmbeddingProvider", "PostgresStorage", "StorageBackend",
+    "VectorStorage", "get_collection_info", "get_embedding_provider",
+    "get_embedding_service", "get_postgres_storage", "get_storage",
+    "get_vector_storage", "init_qdrant", "reset_embedding_provider",
 ]

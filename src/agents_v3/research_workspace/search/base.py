@@ -57,7 +57,6 @@ class SearchResult(BaseModel):
     dedup_key: str = ""
     dense_score: float = 0.0
     quality_score: float = 0.0
-    final_score: float = 0.0
 
 
 class SearchErrorInfo(BaseModel):

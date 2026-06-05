@@ -71,6 +71,13 @@ class LLMService:
         api_key = config.api_key or os.environ.get("OPENAI_API_KEY", "")
         base_url = config.base_url or os.environ.get("OPENAI_BASE_URL", "")
 
+        # httpx 默认传输层重试会导致 SSL 握手挂起，需要禁用
+        import httpx
+        http_client = httpx.Client(
+            transport=httpx.HTTPTransport(retries=0),
+            timeout=config.timeout,
+        )
+
         if config.provider == "openai":
             from langchain_openai import ChatOpenAI
             return ChatOpenAI(
@@ -78,6 +85,7 @@ class LLMService:
                 max_tokens=config.max_tokens, api_key=api_key,
                 base_url=base_url if base_url else None,
                 timeout=config.timeout, max_retries=config.max_retries,
+                http_client=http_client,
             )
         elif config.provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
@@ -85,6 +93,7 @@ class LLMService:
                 model=config.model_name, temperature=config.temperature,
                 max_tokens=config.max_tokens, api_key=api_key,
                 timeout=config.timeout, max_retries=config.max_retries,
+                http_client=http_client,
             )
         else:
             from langchain_openai import ChatOpenAI
@@ -93,6 +102,7 @@ class LLMService:
                 max_tokens=config.max_tokens, api_key=api_key,
                 base_url=base_url if base_url else None,
                 timeout=config.timeout, max_retries=config.max_retries,
+                http_client=http_client,
             )
 
     def invoke(self, system_prompt: str, user_prompt: str) -> str:

@@ -53,20 +53,31 @@ from src.agents_v3.research_workspace.models.knowledge_graph import (
 )
 from src.agents_v3.research_workspace.models.reports import (
     CardQualityReport,
+    ClaimVerification,
     EvidenceRecord,
     ExtractedClaim,
+    InnovationClaimVerification,
+    InnovationGenerationResult,
     InnovationPoint,
+    InnovationPointLLMOutput,
+    InnovationVerificationResult,
     PaperCard,
     PaperCardExtractionResult,
     Project,
     QARequest,
+    QALLMOutput,
     QAResponse,
     Report,
+    ReviewGenerationResult,
+    ReviewSection,
+    ReviewVerificationResult,
+    ScoredEvidence,
     ReportVersion,
     RetrievalDiagnostics,
     RetrievalResult,
     RetrievalScope,
     SourceSpan,
+    VerifiedClaim,
 )
 
 __all__ = [
@@ -86,8 +97,12 @@ __all__ = [
     "LimitationNode", "MaterialNode", "MethodNode", "MetricNode",
     "PaperNode", "TaskNode", "TopicNode", "VenueNode",
     # reports
-    "CardQualityReport", "EvidenceRecord", "ExtractedClaim", "InnovationPoint",
+    "CardQualityReport", "ClaimVerification", "EvidenceRecord", "ExtractedClaim",
+    "InnovationClaimVerification", "InnovationGenerationResult", "InnovationPoint",
+    "InnovationPointLLMOutput", "InnovationVerificationResult",
     "PaperCard", "PaperCardExtractionResult", "Project", "QARequest",
-    "QAResponse", "Report", "ReportVersion", "RetrievalDiagnostics",
-    "RetrievalResult", "RetrievalScope", "SourceSpan",
+    "QALLMOutput", "QAResponse", "Report", "ReviewGenerationResult",
+    "ReviewSection", "ReviewVerificationResult", "ReportVersion",
+    "RetrievalDiagnostics", "RetrievalResult", "RetrievalScope",
+    "ScoredEvidence", "SourceSpan", "VerifiedClaim",
 ]

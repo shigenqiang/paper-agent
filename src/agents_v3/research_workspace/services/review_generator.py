@@ -10,12 +10,14 @@ from typing import Any
 
 from loguru import logger
 
+from src.agents_v3.research_workspace.llm.prompts import get_prompt_registry
 from src.agents_v3.research_workspace.llm.service import LLMService, get_llm_service
 from src.agents_v3.research_workspace.models import (
     EvidenceRecord,
     Report,
     ReportType,
     RetrievalScope,
+    ReviewGenerationResult,
 )
 from src.agents_v3.research_workspace.services.scope import RetrievalScopeService
 from src.agents_v3.research_workspace.storage import get_storage
@@ -24,60 +26,6 @@ from src.agents_v3.research_workspace.storage import get_storage
 REVIEW_MAX_PAPERS = int(os.getenv("REVIEW_MAX_PAPERS", "40"))
 REVIEW_LOCAL_MAX = int(os.getenv("REVIEW_LOCAL_MAX", "20"))
 REVIEW_REMOTE_MAX = int(os.getenv("REVIEW_REMOTE_MAX", "20"))
-
-# ── Prompt ──────────────────────────────────────────
-
-REVIEW_SYSTEM_PROMPT = """你是一个学术文献综述写作专家。根据提供的证据矩阵和论文信息，生成结构化的文献综述。
-
-规则：
-1. 综述必须基于提供的证据，不要编造
-2. 每个主要章节必须返回使用的 evidence_ids 和 paper_ids
-3. 按主题组织内容，展示研究脉络
-4. 指出研究不足和未来趋势
-5. 证据不足时写入"本综述限制"
-6. 使用中文撰写
-
-输出格式（JSON）：
-{
-  "sections": [
-    {
-      "section_id": "background",
-      "title": "研究背景",
-      "content": "段落正文",
-      "paper_ids": ["p1"],
-      "evidence_ids": ["ev1"]
-    },
-    {
-      "section_id": "methods",
-      "title": "主要研究方法",
-      "content": "段落正文",
-      "paper_ids": ["p1", "p2"],
-      "evidence_ids": ["ev1", "ev2"]
-    },
-    {
-      "section_id": "findings",
-      "title": "主要研究发现",
-      "content": "段落正文",
-      "paper_ids": ["p1"],
-      "evidence_ids": ["ev1"]
-    },
-    {
-      "section_id": "limitations",
-      "title": "研究不足",
-      "content": "段落正文",
-      "paper_ids": ["p2"],
-      "evidence_ids": ["ev2"]
-    },
-    {
-      "section_id": "future_trends",
-      "title": "未来研究趋势",
-      "content": "段落正文",
-      "paper_ids": [],
-      "evidence_ids": []
-    }
-  ],
-  "overall_limitations": "本综述的限制说明"
-}"""
 
 # 泛化套话检测
 _GENERIC_PHRASES = [
@@ -132,6 +80,24 @@ class LiteratureReviewGenerator:
         # 7. Generate content
         sections, overall_limitations = self._generate_sections(materials, matrix, opts)
 
+        # 7a. Review step
+        verifications = self._review_sections(sections, materials.get("evidence_records", []))
+
+        # 7b. H/V ratio
+        hv_ratio = self._compute_hv_ratio(verifications)
+        logger.info(f"Review H/V ratio: {hv_ratio:.3f} (threshold: 0.1)")
+
+        # 7c. Revise if H/V > 0.1
+        if hv_ratio > 0.1:
+            logger.info(f"H/V ratio {hv_ratio:.3f} > 0.1, triggering revision")
+            sections, overall_limitations = self._revise_sections(
+                sections, verifications, materials, matrix
+            )
+            # Re-verify after revision
+            verifications = self._review_sections(sections, materials.get("evidence_records", []))
+            hv_ratio = self._compute_hv_ratio(verifications)
+            logger.info(f"Post-revision H/V ratio: {hv_ratio:.3f}")
+
         # 8. Render
         content = self._render_review(sections, materials)
 
@@ -144,7 +110,7 @@ class LiteratureReviewGenerator:
             }
 
         # 10. Validate
-        validation = self._validate_review(sections, scope, materials)
+        validation = self._validate_review(sections, scope, materials, verifications=verifications, hv_ratio=hv_ratio)
 
         # 11. Build report
         report = Report(
@@ -163,7 +129,8 @@ class LiteratureReviewGenerator:
             evidence_ids=scope.evidence_ids,
         )
 
-        self.storage.upsert_item("reports", report.report_id, report.model_dump())
+        from src.agents_v3.research_workspace.services.report_service import _report_to_db
+        self.storage.upsert_item("reports", report.report_id, _report_to_db(report))
         logger.info(
             f"Generated literature review: {report.report_id} "
             f"(papers={len(scope.paper_ids)}, evidence={len(evidence)}, "
@@ -242,6 +209,16 @@ class LiteratureReviewGenerator:
         # Graph context
         graph_context = self.scope_service.to_graph_context(scope)
 
+        # 社区检测
+        community_summaries: list[dict] = []
+        try:
+            from src.agents_v3.research_workspace.services.graph_service import GraphService
+            gs = GraphService(storage=self.storage)
+            gs.detect_communities(scope.project_id)
+            community_summaries = gs.build_community_summaries(scope.project_id)
+        except Exception as e:
+            logger.debug(f"Community detection skipped: {e}")
+
         return {
             "scope_summary": scope.summary,
             "paper_count": len(scope.paper_ids),
@@ -250,6 +227,7 @@ class LiteratureReviewGenerator:
             "paper_cards": paper_cards,
             "papers_meta": papers_meta,
             "graph_context": graph_context,
+            "community_summaries": community_summaries,
         }
 
     # ── Evidence Matrix ───────────────────────────
@@ -305,11 +283,13 @@ class LiteratureReviewGenerator:
         """生成各章节"""
         evidence = materials.get("evidence_records", [])
         cards = materials.get("paper_cards", [])
+        graph_context = materials.get("graph_context", {})
 
         # 构建 prompt 输入
         evidence_text = self._build_evidence_text(evidence)
         cards_text = self._build_cards_text(cards)
         matrix_text = self._build_matrix_text(matrix)
+        graph_text = self._build_graph_text(graph_context, materials.get("community_summaries"))
 
         user_prompt = f"""范围：{materials['scope_summary']}
 论文数量：{materials['paper_count']}
@@ -323,12 +303,30 @@ class LiteratureReviewGenerator:
 证据详情：
 {evidence_text}
 
-请生成结构化的文献综述，输出 JSON。每个章节必须标注使用的 evidence_ids。"""
+图谱关系（主题、方法、发现之间的关联）：
+{graph_text}
+
+请生成结构化的文献综述，输出 JSON。每个章节必须标注使用的 evidence_ids。
+利用图谱关系来组织章节结构和发现研究关联。
+如果有研究社区信息，优先按社区主题组织综述结构。"""
 
         try:
-            result = self.llm.invoke_json(REVIEW_SYSTEM_PROMPT, user_prompt)
-            sections = result.get("sections", [])
-            overall_limitations = result.get("overall_limitations", "")
+            registry = get_prompt_registry()
+            prompt_spec = registry.get("review_generation")
+            structured = self.llm.invoke_structured(
+                system_prompt=prompt_spec.system_prompt,
+                user_prompt=user_prompt,
+                schema=ReviewGenerationResult,
+            )
+            if structured.get("success"):
+                data = structured["data"]
+                sections = data.get("sections", [])
+                overall_limitations = data.get("overall_limitations", "")
+            else:
+                logger.warning(f"Structured review generation failed, falling back to invoke_json")
+                result = self.llm.invoke_json(prompt_spec.system_prompt, user_prompt)
+                sections = result.get("sections", [])
+                overall_limitations = result.get("overall_limitations", "")
 
             # 验证 sections 有必需章节
             section_ids = {s.get("section_id", "") for s in sections}
@@ -430,6 +428,161 @@ class LiteratureReviewGenerator:
         overall_limitations = "本综述基于规则提取生成，未经过 LLM 深度分析。"
         return sections, overall_limitations
 
+    # ── Review-Revise 循环 ──────────────────────────
+
+    def _review_sections(
+        self, sections: list[dict], evidence_records: list[EvidenceRecord]
+    ) -> list:
+        """Reviewer step: 审查每条声明的证据支撑情况"""
+        from src.agents_v3.research_workspace.models import ClaimVerification
+
+        if not sections:
+            return []
+
+        # Build evidence text
+        evidence_text = ""
+        for ev in evidence_records[:20]:
+            ev_dict = ev.model_dump() if hasattr(ev, "model_dump") else ev
+            evidence_text += f"[{ev_dict.get('evidence_id', '?')}] "
+            if ev_dict.get("finding") and ev_dict["finding"] != "unknown":
+                evidence_text += f"发现:{ev_dict['finding'][:80]} "
+            if ev_dict.get("limitation") and ev_dict["limitation"] != "unknown":
+                evidence_text += f"局限:{ev_dict['limitation'][:80]} "
+            evidence_text += "\n"
+
+        # Build sections text
+        sections_text = ""
+        for s in sections:
+            sections_text += f"\n[{s.get('section_id')}] {s.get('title')}\n{s.get('content', '')}\n"
+            sections_text += f"  cited evidence_ids: {s.get('evidence_ids', [])}\n"
+
+        registry = get_prompt_registry()
+        prompt_spec = registry.get("review_reviewer")
+
+        user_prompt = f"""请审查以下综述章节中的声明：
+
+{sections_text}
+
+可用证据：
+{evidence_text}
+
+对每条声明判断 verification_status。"""
+
+        try:
+            from src.agents_v3.research_workspace.models import ReviewVerificationResult
+            result = self.llm.invoke_structured(
+                system_prompt=prompt_spec.system_prompt,
+                user_prompt=user_prompt,
+                schema=ReviewVerificationResult,
+            )
+            if result.get("success"):
+                return [ClaimVerification(**cv) for cv in result["data"].get("claim_verifications", [])]
+        except Exception as e:
+            logger.warning(f"Structured review verification failed: {e}")
+
+        # Fallback: heuristic verification
+        return self._heuristic_verify(sections, evidence_records)
+
+    def _revise_sections(
+        self, sections: list[dict], verifications: list,
+        materials: dict, matrix: dict,
+    ) -> tuple[list[dict], str]:
+        """Revisor step: 根据审查结果修订章节"""
+        from src.agents_v3.research_workspace.models import ReviewGenerationResult
+
+        # Categorize verifications by section
+        by_section: dict[str, list] = {}
+        for cv in verifications:
+            by_section.setdefault(cv.section_id, []).append(cv)
+
+        # Build revision prompt
+        sections_text = ""
+        for s in sections:
+            sid = s.get("section_id", "")
+            sections_text += f"\n[{sid}] {s.get('title')}\n{s.get('content', '')}\n"
+            flagged = by_section.get(sid, [])
+            if flagged:
+                for cv in flagged:
+                    if cv.verification_status in ("unverified", "contradicted"):
+                        sections_text += f"  !! [{cv.verification_status}] {cv.claim[:80]}\n"
+
+        evidence_records = materials.get("evidence_records", [])
+        evidence_text = ""
+        for ev in evidence_records[:20]:
+            ev_dict = ev.model_dump() if hasattr(ev, "model_dump") else ev
+            evidence_text += f"[{ev_dict.get('evidence_id', '?')}] "
+            if ev_dict.get("finding") and ev_dict["finding"] != "unknown":
+                evidence_text += f"发现:{ev_dict['finding'][:80]} "
+            evidence_text += "\n"
+
+        registry = get_prompt_registry()
+        prompt_spec = registry.get("review_revisor")
+
+        user_prompt = f"""以下是综述章节和审查标记：
+
+{sections_text}
+
+可用证据：
+{evidence_text}
+
+请修订标记为 unverified/contradicted 的声明。移除无法修复的声明。"""
+
+        try:
+            result = self.llm.invoke_structured(
+                system_prompt=prompt_spec.system_prompt,
+                user_prompt=user_prompt,
+                schema=ReviewGenerationResult,
+            )
+            if result.get("success"):
+                revised_sections = result["data"].get("sections", [])
+                overall_limitations = result["data"].get("overall_limitations", "")
+                if revised_sections:
+                    return revised_sections, overall_limitations
+        except Exception as e:
+            logger.warning(f"Structured review revision failed: {e}")
+
+        return sections, ""
+
+    def _compute_hv_ratio(self, verifications: list) -> float:
+        """H/V ratio = failed_claims / total_claims"""
+        if not verifications:
+            return 0.0
+        failed = sum(1 for cv in verifications if cv.verification_status in ("unverified", "contradicted"))
+        return failed / len(verifications)
+
+    def _heuristic_verify(
+        self, sections: list[dict], evidence_records: list
+    ) -> list:
+        """Fallback: 基于 evidence 存在性的启发式验证"""
+        from src.agents_v3.research_workspace.models import ClaimVerification
+
+        evidence_map = {}
+        for ev in evidence_records:
+            ev_dict = ev.model_dump() if hasattr(ev, "model_dump") else ev
+            evidence_map[ev_dict.get("evidence_id", "")] = ev_dict
+
+        verifications = []
+        for s in sections:
+            cited_evidence = set(s.get("evidence_ids", []))
+            valid_evidence = [eid for eid in cited_evidence if eid in evidence_map]
+            if valid_evidence:
+                verifications.append(ClaimVerification(
+                    claim=s.get("content", "")[:100],
+                    section_id=s.get("section_id", ""),
+                    verification_status="verified",
+                    supporting_evidence_ids=valid_evidence,
+                    note="heuristic: cited evidence exists",
+                ))
+            else:
+                verifications.append(ClaimVerification(
+                    claim=s.get("content", "")[:100],
+                    section_id=s.get("section_id", ""),
+                    verification_status="unverified",
+                    note="heuristic: no valid evidence cited",
+                ))
+
+        return verifications
+
     # ── 渲染 ──────────────────────────────────────
 
     def _render_review(self, sections: list[dict], materials: dict) -> str:
@@ -484,7 +637,8 @@ class LiteratureReviewGenerator:
     # ── 校验 ──────────────────────────────────────
 
     def _validate_review(
-        self, sections: list[dict], scope: RetrievalScope, materials: dict
+        self, sections: list[dict], scope: RetrievalScope, materials: dict,
+        verifications: list | None = None, hv_ratio: float = 0.0,
     ) -> dict[str, Any]:
         """校验综述质量"""
         issues = []
@@ -531,6 +685,10 @@ class LiteratureReviewGenerator:
             "generic_text_hits": generic_hits,
             "reference_coverage": ref_coverage,
             "section_count": len(sections),
+            "hv_ratio": hv_ratio,
+            "hv_threshold": 0.1,
+            "hv_passed": hv_ratio <= 0.1,
+            "claim_verification_count": len(verifications) if verifications else 0,
         }
 
     # ── 空范围/证据不足 ──────────────────────────
@@ -617,6 +775,52 @@ class LiteratureReviewGenerator:
             findings = [e.get("finding", "")[:50] for e in ev_list if e.get("finding", "") not in ("", "unknown")]
             parts.append(f"主题:{topic} | 论文:{','.join(pids[:5])} | 发现数:{len(findings)}")
         return "\n".join(parts) if parts else "无分组信息"
+
+    def _build_graph_text(self, graph_context: dict, community_summaries: list[dict] | None = None) -> str:
+        """将图谱上下文渲染为紧凑文本"""
+        nodes = graph_context.get("nodes", [])
+        edges = graph_context.get("edges", [])
+        if not nodes and not edges and not community_summaries:
+            return "无图谱数据"
+
+        parts = []
+
+        # 社区摘要
+        if community_summaries:
+            parts.append("[研究社区]")
+            for cs in community_summaries[:5]:
+                summary = cs.get("summary", "")[:100]
+                count = cs.get("member_count", 0)
+                parts.append(f"  Community ({count} nodes): {summary}")
+
+        # node_id → label 映射
+        label_map = {}
+        for n in nodes:
+            nid = n.get("node_id", "")
+            label = n.get("label", "")
+            if nid and label:
+                label_map[nid] = label[:30]
+
+        # 非 Paper 节点按类型分组
+        non_paper = [n for n in nodes if not n.get("node_id", "").startswith("paper:")]
+        if non_paper:
+            by_type: dict[str, list] = {}
+            for n in non_paper:
+                by_type.setdefault(n.get("node_type", "?"), []).append(n)
+            for ntype, ns in by_type.items():
+                labels = [n.get("label", "?")[:30] for n in ns[:5]]
+                parts.append(f"{ntype}: {', '.join(labels)}")
+
+        # 关键关系（使用 label 替代 ID）
+        for e in edges[:15]:
+            src_id = e.get("source_id", "?")
+            tgt_id = e.get("target_id", "?")
+            src = label_map.get(src_id, src_id.split(":")[-1][:20])
+            tgt = label_map.get(tgt_id, tgt_id.split(":")[-1][:20])
+            rel = e.get("edge_type", "?")
+            parts.append(f"{src} --{rel}--> {tgt}")
+
+        return "\n".join(parts[:30])
 
     # ── 兼容旧接口 ──────────────────────────────
 

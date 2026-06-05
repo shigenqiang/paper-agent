@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from fastapi.responses import Response
 
 from src.agents_v3.research_workspace.api.deps import (
     get_innovation_generator,
@@ -70,3 +71,60 @@ def export_json(project_ref: str, report_id: str):
     if not data or data == "{}":
         raise NotFoundError("report", report_id)
     return {"content": data, "format": "json"}
+
+
+@router.get("/{report_id}/export/docx")
+def export_docx(project_ref: str, report_id: str):
+    svc = get_report_service(project_ref)
+    report = svc.get_report(report_id)
+    if not report:
+        raise NotFoundError("report", report_id)
+    data = svc.export_docx(report_id)
+    if not data:
+        return Response(status_code=500, content="DOCX export failed (python-docx not installed)")
+    filename = f"{report.title or report.type.value}_v{report.version}.docx"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── 版本管理 ──────────────────────────────────────────
+
+
+@router.get("/{report_id}/versions")
+def list_versions(project_ref: str, report_id: str):
+    svc = get_report_service(project_ref)
+    versions = svc.list_versions(report_id)
+    return ApiResponse(data=[v.model_dump() for v in versions])
+
+
+@router.post("/{report_id}/versions")
+def create_version(project_ref: str, report_id: str, reason: str = "manual"):
+    svc = get_report_service(project_ref)
+    report = svc.get_report(report_id)
+    if not report:
+        raise NotFoundError("report", report_id)
+    version = svc.create_version(report_id, report.content, reason)
+    if not version:
+        raise NotFoundError("report", report_id)
+    return ApiResponse(data=version.model_dump())
+
+
+@router.post("/{report_id}/versions/{version_id}/restore")
+def restore_version(project_ref: str, report_id: str, version_id: str):
+    svc = get_report_service(project_ref)
+    report = svc.restore_version(report_id, version_id)
+    if not report:
+        raise NotFoundError("version", version_id)
+    return ApiResponse(data=report.model_dump())
+
+
+@router.get("/{report_id}/versions/diff")
+def diff_versions(project_ref: str, report_id: str, version_a: int, version_b: int):
+    svc = get_report_service(project_ref)
+    result = svc.diff_versions(report_id, version_a, version_b)
+    if result is None:
+        raise NotFoundError("version comparison", f"v{version_a} vs v{version_b}")
+    return ApiResponse(data=result)

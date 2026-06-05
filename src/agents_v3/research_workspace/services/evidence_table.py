@@ -33,7 +33,12 @@ class EvidenceTableService:
         evidence_records = []
 
         for card_data in cards:
-            card = PaperCard(**card_data)
+            # 完整卡片数据在 extraction JSONB 字段中
+            extraction = card_data.get("extraction")
+            if extraction and isinstance(extraction, dict):
+                card = PaperCard(**extraction)
+            else:
+                card = PaperCard(**card_data)
             records = self._card_to_evidence(card)
             evidence_records.extend(records)
 
@@ -51,7 +56,12 @@ class EvidenceTableService:
         if not cards:
             return []
 
-        card = PaperCard(**cards[0])
+        card_data = cards[0]
+        extraction = card_data.get("extraction")
+        if extraction and isinstance(extraction, dict):
+            card = PaperCard(**extraction)
+        else:
+            card = PaperCard(**card_data)
         records = self._card_to_evidence(card)
 
         for record in records:
@@ -122,18 +132,8 @@ class EvidenceTableService:
             )
             records.append(record)
 
-        # If no evidence created, create a summary record
-        if not records:
-            record = EvidenceRecord(
-                evidence_id=f"ev_{uuid.uuid4().hex[:8]}",
-                paper_id=card.paper_id,
-                topic=", ".join(card.topics) if card.topics else "",
-                research_question=card.research_question,
-                method=card.method,
-                finding="No specific findings extracted",
-                evidence_strength="low",
-            )
-            records.append(record)
+        # 不再为无 findings 的卡片创建 fallback 证据记录
+        # 避免在图谱中产生 "No specific findings extracted" 的冗余 Finding 节点
 
         return records
 

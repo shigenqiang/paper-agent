@@ -67,7 +67,7 @@ def check_abstract_relevance(results: list[dict], query: str) -> tuple[int, int,
     for i, r in enumerate(results):
         title = r.get("title", "")
         abstract = r.get("abstract", "")
-        score = r.get("final_score", 0)
+        score = r.get("dense_score", 0)
 
         # 检查摘要是否包含查询词
         abstract_lower = abstract.lower() if abstract else ""
@@ -96,8 +96,8 @@ def check_score_ordering(results: list[dict]) -> list[str]:
     """检查分数是否降序排列"""
     issues = []
     for i in range(len(results) - 1):
-        s1 = results[i].get("final_score", 0)
-        s2 = results[i + 1].get("final_score", 0)
+        s1 = results[i].get("dense_score", 0)
+        s2 = results[i + 1].get("dense_score", 0)
         if s1 < s2:
             issues.append(f"  排序错误: [{i+1}] {s1:.3f} < [{i+2}] {s2:.3f}")
     return issues
@@ -109,7 +109,7 @@ def show_top_results(results: list[dict], n: int = 10) -> None:
     print("-" * 80)
     for i, r in enumerate(results[:n]):
         title = r.get("title", "?")[:60]
-        score = r.get("final_score", 0)
+        score = r.get("dense_score", 0)
         rel = r.get("relevance_score", 0)
         qual = r.get("quality_score", 0)
         abstract = r.get("abstract", "")

@@ -13,7 +13,7 @@ class EmbeddingService:
     - sparse: 关键词向量（TF-IDF，稀疏）
     """
 
-    def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5"):
+    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
         try:
             from sentence_transformers import SentenceTransformer
             self.model = SentenceTransformer(model_name)
@@ -104,7 +104,7 @@ class EmbeddingService:
 _embedding_service: EmbeddingService | None = None
 
 
-def get_embedding_service(model_name: str = "BAAI/bge-small-zh-v1.5") -> EmbeddingService:
+def get_embedding_service(model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> EmbeddingService:
     """获取全局 EmbeddingService 实例"""
     global _embedding_service
     if _embedding_service is None:

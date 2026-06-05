@@ -1,10 +1,10 @@
-# 论文知识库分析 Agent 细致开发计划
+# 论文知识库分析 Agent 统一开发计划
 
-更新日期：2026-05-29
+更新日期：2026-06-03
 
-本文档基于 `docs/research` 调研结果和当前 `src/agents_v3/research_workspace` 实现状态生成，用于指导下一阶段开发。本文只规划“开发计划中必须落地的部分”，不扩展到论文代写、润色降重、复杂协作、重型图数据库等非 MVP 能力。
+本文档是项目唯一的开发计划总控，融合了原「模块深化开发计划」和「细致开发计划」，基于当前代码实际状态编写。
 
-## 1. 产品闭环
+## 1. 产品定义
 
 目标产品：
 
@@ -16,8 +16,7 @@
 
 ```text
 研究项目
-  -> 论文库
-  -> 论文搜索 / 上传 / 导入
+  -> 论文库（论文搜索 / 上传 / 导入）
   -> PDF 解析和分块
   -> 论文卡片
   -> 证据表
@@ -31,50 +30,150 @@
 
 MVP 成功标准：
 
-- 用户能创建研究项目并构建 20 到 30 篇论文的项目论文库。
-- 系统能把论文转成可追踪的 `PaperCard`、`EvidenceRecord` 和 `KnowledgeGraph`。
-- 用户能基于论文、主题、方法、年份或图谱子图选择回答范围。
-- QA、综述、创新点报告都必须声明范围，并返回论文、证据记录或图谱节点来源。
-- 当证据不足时，系统必须明确说明不确定性，不能编造结论。
+```text
+1. 用户能创建项目并导入/搜索论文。
+2. 系统能解析论文并生成 PaperCard、EvidenceRecord、KnowledgeGraph。
+3. 用户能选择 Scope 并进行 QA。
+4. QA 返回范围声明、证据、论文来源和不确定性。
+5. 系统能基于 Scope 生成文献综述。
+6. 系统能基于 gap 和 evidence 生成创新点报告。
+7. 报告能导出 Markdown。
+8. 全流程有自动化测试和演示项目。
+9. 日志能定位失败原因。
+10. 不出现明显越界引用和无来源编造。
+11. 关键链路有 [timing] 计时日志，能快速定位慢请求瓶颈。
+12. LLM 和 Embedding 调用有延迟、token、失败率指标。
+```
 
 ## 2. 当前代码基线
 
-当前实现目录：
+### 2.1 代码规模
 
 ```text
-src/agents_v3/research_workspace/
-tests/agents_v3/research_workspace/
+src/agents_v3/research_workspace/   — 76 个 Python 文件
+tests/                              — HTTP API 集成测试（搜索 + 解析）
+config.yaml                         — 统一配置
 ```
 
-当前已有模块：
+### 2.2 模块总览
 
-| 模块 | 当前状态 | 后续重点 |
-| --- | --- | --- |
-| `models.py` | 已有核心 Pydantic 模型 | 补充任务状态、搜索源、引用、评估字段。 |
-| `storage.py` / `storage_backend.py` / `postgres_storage.py` / `vector_storage.py` | 已有 JSON、PostgreSQL 和 ChromaDB 后端雏形 | 收敛后端语义，补齐并发写保护、集合命名、健康检查和降级策略。 |
-| `project_service.py` | 已有项目 CRUD 和统计 | 补齐删除级联、项目状态、演示项目初始化。 |
-| `paper_library.py` / `search/` | 已有上传、元数据导入、BibTeX、论文池、多源搜索、缓存、限流、去重和 session | 让 API 主链路复用 SearchOrchestrator，暴露搜索诊断，补齐 DOI 元数据增强。 |
-| `parser_service.py` | 已有 pdfplumber 解析和简单分块 | 补齐章节识别、参考文献、元数据、失败重试。 |
-| `paper_card.py` | 已有 LLM + fallback 卡片生成 | 补齐 JSON schema 校验、来源片段覆盖率、质量评分。 |
-| `evidence_table.py` | 已有卡片转证据 | 补齐证据强度、过滤、排序和来源一致性检查。 |
-| `graph_service.py` | 已有轻量图谱构建和子图查询 | 补齐实体归一化、gap 检测、图谱来源追踪。 |
-| `scope.py` | 已有 Scope 解析 | 补齐越界防护、范围摘要、UI 所需过滤器。 |
-| `scope_qa.py` | 已有意图分类、上下文检索、回答生成 | 补齐混合检索、拒答逻辑、证据覆盖率评估。 |
-| `review_generator.py` | 已有综述生成和校验 | 补齐批处理、引用格式、结构完整性检查。 |
-| `innovation_generator.py` | 已有 gap 信号、候选创新点和评分 | 补齐反证、可行性约束、泛化建议过滤。 |
-| `report_service.py` | 已有保存、版本、Markdown 导出 | 补齐报告版本差异、导出元数据和来源索引。 |
-| `llm/` | 已有 LLM 调用、JSON 提取、结构化输出、错误类型、prompt registry 和 FakeLLM | 让业务模块统一使用 invoke_structured，打通 metrics、prompt version 和日志脱敏。 |
-| `api/` | 已有 FastAPI app、DTO、错误处理、依赖注入和 TaskService | 收敛路径契约、长任务边界、后端健康检查和 OpenAPI examples。 |
-| `evaluation/` | 已有 evaluator、quality gates、golden、logging_utils、metrics | 接入 smoke、报告生成和本地质量门禁。 |
+| 子包 | 文件数 | 核心类 | 代码行数（约） | 状态 |
+|------|--------|--------|--------------|------|
+| `models/` | 7 | Paper, PaperChunk, GraphNode, EvidenceRecord, Report | 1200+ | 完整 |
+| `storage/` | 7 | PostgresStorage, VectorStorage, EmbeddingProvider | 2000+ | 完整 |
+| `search/` | 14 | 4 adapters, SearchOrchestrator, HybridRanker, Merger | 2500+ | 完整 |
+| `parser/` | 5 | ParserService, 5 adapters, SectionExtractor | 2200+ | 完整 |
+| `services/` | 11 | 11 个业务 Service | 6500+ | 完整 |
+| `llm/` | 6 | LLMService, PromptRegistry, JSON repair | 800+ | 完整 |
+| `evaluation/` | 5 | 7 evaluator, quality gates, metrics | 600+ | 完整 |
+| `api/` | 14 | FastAPI app, 7 route modules, 28 endpoints | 1200+ | 完整 |
+| 根目录 | 3 | config, utils, __init__ | 300+ | 完整 |
 
-当前最大缺口：
+### 2.3 已实现的完整链路
 
 ```text
-1. 存储后端已经扩展到 PostgreSQL/ChromaDB，但 JSON/PostgreSQL 的 service 语义仍需收敛。
-2. 搜索已具备多源雏形，但 API 响应还未完整暴露 source_stats/errors/cache_hit/elapsed_ms。
-3. PDF 解析仍偏简化，章节、参考文献和来源定位不够稳定。
-4. QA 和报告生成已有雏形，但 ScopeGuard、证据约束和质量门禁还需要贯穿保存前流程。
-5. API 和前端联调尚未形成完整演示闭环，长任务进度和错误阶段需要产品化。
+ProjectService                    — 项目 CRUD + 删除级联 + 统计
+  → PaperLibraryService           — 论文池、多源搜索、DOI/BibTeX 导入、主题评分
+  → ParserService                 — 5 解析器 fallback、章节分块、参考文献、自动向量化
+  → PaperCardGenerator            — LLM 结构化抽取、来源验证、质量评分
+  → EvidenceTableService          — 证据记录构建、scope 查询
+  → GraphService                  — 类型化节点、别名归一、gap 聚合
+  → RetrievalScopeService         — 6 种 scope 类型、越界防护
+  → ScopeQAService                — 9 种意图、证据评分、LLM 回答
+  → LiteratureReviewGenerator     — 证据矩阵、LLM 分节生成、Markdown 渲染
+  → InnovationReportGenerator     — 信号收集、LLM 候选、多维评分、泛化过滤
+  → ReportService                 — 报告 CRUD、版本管理、Markdown/JSON 导出
+  → HierarchicalRetriever         — L0→L1→L2 三层渐进检索
+  → FastAPI /api/rw               — 28 个端点、7 个路由模块
+  → evaluation                    — 7 个评估函数、质量门禁、golden cases
+```
+
+### 2.4 存储架构
+
+```text
+PostgreSQL（主存储）:
+  20 张表：projects, papers_pool, papers, paper_chunks, paper_cards,
+  evidence_records, parse_results, graphs, reports, report_versions,
+  tasks, qa_history, paper_references, citation_contexts, paper_sections,
+  kg_nodes, kg_edges, queries, topic_scores, search_sessions, session_papers
+
+Qdrant（向量存储）:
+  5 个集合：paper_chunks, paper_profiles, search_queries,
+  citation_contexts, paper_sections
+  支持 dense (384维) + sparse (BM25) 混合检索
+  支持本地 sentence-transformers 和云端 inference 两种模式
+
+EmbeddingProvider（统一 embedding 接口）:
+  LocalEmbeddingProvider  — 本地 sentence-transformers
+  CloudEmbeddingProvider  — Qdrant Cloud inference API
+  通过 config.yaml embedding.mode 切换
+```
+
+### 2.5 API 端点清单（28 个）
+
+```text
+健康检查:
+  GET  /api/health
+
+项目管理（6 个）:
+  POST   /api/rw/projects
+  GET    /api/rw/projects
+  GET    /api/rw/projects/{project_ref}
+  PATCH  /api/rw/projects/{project_ref}
+  DELETE /api/rw/projects/{project_ref}
+  GET    /api/rw/projects/{project_ref}/stats
+
+论文管理（8 个）:
+  GET    /api/rw/projects/{project_ref}/papers
+  POST   /api/rw/projects/{project_ref}/papers/import/doi
+  POST   /api/rw/projects/{project_ref}/papers/import/bibtex
+  GET    /api/rw/projects/{project_ref}/papers/{paper_id}
+  PATCH  /api/rw/projects/{project_ref}/papers/{paper_id}
+  POST   /api/rw/projects/{project_ref}/papers/{paper_id}/include
+  POST   /api/rw/projects/{project_ref}/papers/{paper_id}/exclude
+  POST   /api/rw/projects/{project_ref}/papers/search
+
+解析（4 个）:
+  POST   /api/rw/projects/{project_ref}/papers/download
+  POST   /api/rw/projects/{project_ref}/papers/{paper_id}/download
+  POST   /api/rw/projects/{project_ref}/papers/{paper_id}/parse
+  POST   /api/rw/projects/{project_ref}/papers/parse
+
+知识提取（5 个）:
+  POST   /api/rw/projects/{project_ref}/cards
+  POST   /api/rw/projects/{project_ref}/evidence/build
+  POST   /api/rw/projects/{project_ref}/kg/build
+  GET    /api/rw/projects/{project_ref}/kg
+  GET    /api/rw/projects/{project_ref}/kg/stats
+  POST   /api/rw/projects/{project_ref}/kg/subgraph
+  GET    /api/rw/projects/{project_ref}/kg/gaps
+
+Scope 与 QA（3 个）:
+  POST   /api/rw/projects/{project_ref}/scope/resolve
+  GET    /api/rw/projects/{project_ref}/scope/filters
+  POST   /api/rw/projects/{project_ref}/qa
+
+报告（5 个）:
+  GET    /api/rw/projects/{project_ref}/reports
+  GET    /api/rw/projects/{project_ref}/reports/{report_id}
+  POST   /api/rw/projects/{project_ref}/reports/literature-review
+  POST   /api/rw/projects/{project_ref}/reports/innovation
+  GET    /api/rw/projects/{project_ref}/reports/{report_id}/export/markdown
+  GET    /api/rw/projects/{project_ref}/reports/{report_id}/export/json
+
+任务（2 个）:
+  GET    /api/rw/tasks/{task_id}
+  GET    /api/rw/tasks
+```
+
+### 2.6 当前最大缺口
+
+```text
+1. 测试覆盖不足：tests/ 下只有搜索和解析的 HTTP 集成测试，缺少单元测试。
+2. 搜索性能：外部 API + HybridRanker 云端 embedding 搜索耗时过长（>10 分钟）。
+3. 性能监控缺失：关键链路无系统化计时，排查慢请求只能手动加 time.time()。
+4. LLM 调用无指标：无延迟、token、失败率的结构化采集。
+5. 前端未开始：只有后端 API，无前端页面。
 ```
 
 ## 3. 开发原则
@@ -89,844 +188,465 @@ P0 必须只服务一个目标：
 
 P0 不做：
 
+```text
 - 全文论文代写。
 - 润色、降重、答辩 PPT。
 - 重型 Neo4j 或复杂 GraphRAG。
 - 多用户协作和权限系统。
 - 完整插件市场。
+```
 
 ### 3.2 技术路线
 
-| 方向 | MVP 方案 | 后续增强 |
-| --- | --- | --- |
-| Agent 协议 | 本地 service + prompt 模板 | MCP 工具边界，A2A 后置。 |
-| 学术搜索 | 多源 adapter 接口，先接 arXiv/OpenAlex/CrossRef 中 1 到 2 个 | Semantic Scholar、PubMed、镜像源和队列调度。 |
-| PDF 解析 | pdfplumber + 章节规则 + chunk | GROBID、PyMuPDF、多解析器 fallback。 |
-| 检索 | Evidence + PaperCard + 图谱上下文 | BM25 + vector + rerank。 |
-| 图谱 | JSON 轻量图谱 | Neo4j 或 GraphRAG。 |
-| 记忆 | 项目状态、报告版本、任务 checkpoint | 用户长期偏好记忆。 |
-| 前端进度 | 任务状态轮询或 SSE | AG-UI 事件流。 |
-| 评估 | 本地 golden case + 结构校验 | RAGAS、自动回归评估和仪表盘。 |
+| 方向 | 当前方案 | 后续增强 |
+|------|---------|---------|
+| 存储 | PostgreSQL + Qdrant Cloud | 分库分表、读写分离 |
+| 搜索 | 4 源并行（arXiv/OpenAlex/S2/EuropePMC） | CrossRef、PubMed、镜像源 |
+| 解析 | 5 解析器 fallback + 章节分块 | GROBID、OCR 增强 |
+| 检索 | L0→L1→L2 三层 + dense/sparse RRF | rerank、图谱增强检索 |
+| Embedding | Qdrant Cloud inference / 本地 sentence-transformers | 更大模型、多语言 |
+| 图谱 | JSON 轻量图谱（PostgreSQL 存储） | Neo4j 或 GraphRAG |
+| LLM | LangChain + JSON repair pipeline | 多模型路由、流式输出 |
+| 评估 | 7 evaluator + quality gates + golden cases | RAGAS、自动回归评估 |
+| 监控 | 计划中（@timed 装饰器 + perf_report） | Sentry、Prometheus |
 
-## 4. 阶段路线图
+## 4. Sprint 路线图
 
-| 阶段 | 名称 | 目标 | 建议周期 |
-| --- | --- | --- | --- |
-| Phase 0 | 工程稳定化 | 固化 v3 模块、测试隔离、日志规范。 | 1 到 2 天 |
-| Phase 1 | 论文入库和搜索 | 支持上传、导入、搜索、去重和论文状态管理。 | 3 到 5 天 |
-| Phase 2 | 解析、卡片和证据 | 生成可追踪的 chunks、cards、evidence。 | 4 到 6 天 |
-| Phase 3 | 图谱和 Scope | 构建轻量知识图谱，支持范围选择和越界防护。 | 3 到 5 天 |
-| Phase 4 | Scope QA | 基于范围回答问题，返回证据和不确定性。 | 4 到 6 天 |
-| Phase 5 | 综述和创新点报告 | 生成正式成果物，支持版本和 Markdown 导出。 | 4 到 6 天 |
-| Phase 6 | API 和前端闭环 | 四个主页面联调，跑通演示项目。 | 5 到 7 天 |
-| Phase 7 | 评估、监控和优化 | 建立质量门禁、日志、token 和性能控制。 | 2 到 4 天 |
+| Sprint | 名称 | 目标 | 建议周期 |
+|--------|------|------|---------|
+| A | 测试体系建设 | 补齐单元测试，建立 CI 回归基础 | 3-5 天 |
+| B | 搜索性能优化 | 解决搜索超时，优化 embedding 链路 | 2-3 天 |
+| C | 解析与证据质量硬化 | 保证材料可追溯、有质量标签 | 3-5 天 |
+| D | Scope、QA、报告可信度 | 证据不足时拒答，结果可追溯 | 3-5 天 |
+| E | 性能监控与可观测性 | 系统化计时、LLM/Embedding 指标 | 2-3 天 |
+| F | API 产品化与前端联调 | 长任务、错误诊断、前端四页 | 5-7 天 |
+| G | 评估门禁与演示闭环 | E2E smoke、质量门禁、演示项目 | 3-5 天 |
 
-## 5. Phase 0：工程稳定化
+## 5. Sprint A：测试体系建设
 
 目标：
 
 ```text
-确保 research_workspace 可以作为后续开发主线，测试不污染真实 data，服务可注入、可观测、可回归。
+补齐单元测试，建立 CI 回归基础。当前 tests/ 只有搜索和解析的 HTTP 集成测试。
 ```
 
-需要改动：
-
-| 文件 | 任务 |
-| --- | --- |
-| `storage.py` | 让 `get_storage(data_dir)` 在测试中可重置或移除全局污染。 |
-| `project_service.py` | 支持注入 `JSONStorage`，补齐删除项目时相关数据清理策略。 |
-| 所有 service | 构造函数支持 `storage: JSONStorage | None = None`，便于测试和 API 层复用。 |
-| `__init__.py` | 明确导出稳定服务和模型。 |
-| `tests/agents_v3/research_workspace` | 增加 fixture，统一临时目录和测试数据。 |
-
-具体任务：
+任务：
 
 ```text
-T0.1 为所有 service 增加 storage 注入参数。
-T0.2 增加 tests fixture：tmp_storage、sample_project、sample_paper、sample_card。
-T0.3 清理测试中对真实 data/research_workspace 的依赖。
-T0.4 增加端到端 smoke test：project -> paper -> card -> evidence -> graph -> qa -> report。
-T0.5 增加 README 或模块说明，说明 v3 是当前开发主线。
+A1. 建立 tests/agents_v3/research_workspace/ 目录结构
+A2. 为每个 service 编写单元测试（使用 FakeLLMService + 临时 PostgreSQL）
+    - test_project_service.py
+    - test_paper_library.py
+    - test_parser_service.py
+    - test_paper_card_generator.py
+    - test_evidence_table_service.py
+    - test_graph_service.py
+    - test_retrieval_scope.py
+    - test_scope_qa.py
+    - test_review_generator.py
+    - test_innovation_generator.py
+    - test_report_service.py
+A3. 为 storage 层编写测试
+    - test_postgres_storage.py
+    - test_vector_storage.py
+    - test_embedding_provider.py
+A4. 为 search 层编写测试
+    - test_merger.py
+    - test_dedup.py
+    - test_hybrid_ranker.py
+    - test_quality_filter.py
+A5. 为 evaluation 层编写测试
+    - test_evaluator.py
+    - test_quality_gates.py
+A6. 建立端到端 smoke test
+    - test_e2e_smoke.py: project → paper → parse → card → evidence → graph → qa → report
+A7. 配置 CI：pytest 自动运行所有测试
 ```
 
-验收标准：
+验收：
 
 ```text
-pytest tests/agents_v3/research_workspace 通过。
-测试不会写入真实 data/research_workspace。
-所有 service 可以在临时 storage 上运行。
-research_workspace 模块可稳定 import。
+pytest tests/ 通过（不含需要外部 API 的集成测试）。
+每个 service 至少有 3 个测试用例（正常路径、异常路径、边界条件）。
+E2E smoke test 覆盖完整闭环。
 ```
 
-## 6. Phase 1：论文入库、搜索和去重
-
-调研依据：
-
-- 学术搜索应支持多来源，至少覆盖 arXiv、OpenAlex、Semantic Scholar、CrossRef、PubMed 的可扩展接口。
-- 搜索必须有 rate limit、retry/backoff、缓存和去重。
-- 去重优先级：DOI > arXiv ID > 标准化标题 + 年份 + 作者。
-- arXiv 需要保守请求节奏、尊重 `Retry-After`、缓存结果和失败 fallback。
-
-### 6.1 模块设计
-
-新增或改造文件：
+阻塞条件：
 
 ```text
-src/agents_v3/research_workspace/search/
-  __init__.py
-  base.py
-  arxiv_client.py
-  openalex_client.py
-  crossref_client.py
-  dedup.py
-  rate_limit.py
-  cache.py
-
-src/agents_v3/research_workspace/paper_library.py
+FakeLLMService 不能覆盖所有 LLM 调用场景。
+PostgreSQL 测试环境搭建困难。
 ```
 
-核心对象：
+## 6. Sprint B：搜索性能优化
 
-```python
-class SearchQuery:
-    query: str
-    year_from: int | None
-    year_to: int | None
-    sources: list[str]
-    limit: int
-
-class SearchResult:
-    title: str
-    authors: list[str]
-    year: int | None
-    abstract: str
-    doi: str
-    arxiv_id: str
-    url: str
-    pdf_url: str
-    source: str
-```
-
-### 6.2 需要补齐的能力
-
-| 能力 | P0 任务 | P1 增强 |
-| --- | --- | --- |
-| 上传 PDF | 校验 PDF、保存路径、生成 paper 记录 | 文件 hash 去重、原文件名保留。 |
-| DOI 导入 | DOI 标准化、创建占位记录 | CrossRef 拉取元数据。 |
-| BibTeX/RIS 导入 | 稳定解析 title、author、year、doi、venue | 支持更多字段和异常报告。 |
-| 关键词搜索 | 先接 arXiv 或 OpenAlex 一个真实源 | 多源并行搜索、融合排序。 |
-| 去重 | DOI、arXiv ID、标题归一化 | 作者相似度、年份容错。 |
-| 缓存 | 以 query + source 作为缓存 key | 过期时间和手动刷新。 |
-| 速率控制 | 每个 source 独立限速 | 失败退避、Retry-After。 |
-
-### 6.3 API 计划
+目标：
 
 ```text
-POST /api/rw/projects/{project_id}/papers/upload
-POST /api/rw/projects/{project_id}/papers/import/doi
-POST /api/rw/projects/{project_id}/papers/import/bibtex
-POST /api/rw/projects/{project_id}/papers/search
-POST /api/rw/projects/{project_id}/papers/search/commit
-GET  /api/rw/projects/{project_id}/papers
-GET  /api/rw/papers/{paper_id}
-PATCH /api/rw/papers/{paper_id}
-POST /api/rw/papers/{paper_id}/include
-POST /api/rw/papers/{paper_id}/exclude
+解决搜索超时问题。当前外部 API + HybridRanker 云端 embedding 搜索耗时 >10 分钟。
 ```
 
-### 6.4 测试计划
+问题诊断：
 
 ```text
-test_paper_library.py
-test_search_dedup.py
-test_search_cache.py
-test_arxiv_client.py
-test_reference_import.py
+1. 外部 API 搜索（4 源并行）：单个源可能超时 30-60s
+2. HybridRanker 云端 embedding：每次 embed_query/embed_texts 需要 2-4s（临时集合创建/upsert/scroll/删除）
+3. HybridRanker 需要 6 次 embedding 调用：query dense, query sparse, papers dense, papers sparse × 2
+4. 总 embedding 耗时：约 20-30s
+5. 外部 API + embedding 叠加：可能超过 5 分钟
 ```
 
-验收标准：
+任务：
 
 ```text
-能上传 PDF 并保存 paper 记录。
-能导入 DOI 列表和 BibTeX。
-能调用至少一个真实搜索源或 mock 搜索 adapter。
-同一 DOI / arXiv ID / 标题不重复入库。
-搜索失败不会中断项目，返回可读错误。
+B1. 搜索链路计时（已部分实现）
+    - search_papers 方法已加 [timing] 日志
+    - 需要重启服务验证实际耗时分布
+
+B2. HybridRanker 优化
+    - 云端模式下合并 dense+sparse 为单次 hybrid 调用（减少临时集合创建次数）
+    - 考虑批量 embedding 缓存：相同文本不重复编码
+    - 考虑云端模式跳过 fit_sparse（已是 no-op）和本地 TF-IDF 逻辑
+
+B3. 外部 API 超时控制
+    - 每个 adapter 设置独立超时（默认 15s）
+    - 超时的 adapter 返回空结果 + 错误信息，不阻塞其他 adapter
+    - 搜索响应包含 source_stats 和 errors
+
+B4. 搜索结果缓存
+    - 相同 query + sources 的结果缓存 1 小时
+    - 缓存命中时跳过 HybridRanker（已有排序结果）
+
+B5. 云端 embedding 性能优化
+    - 评估是否可以用 Qdrant Cloud 的 query_points + Document 直接查询（避免临时集合）
+    - 批量 embedding 合并：多条文本放入同一个临时集合
 ```
 
-## 7. Phase 2：PDF 解析、论文卡片和证据表
-
-调研依据：
-
-- PDF 解析应抽取元数据、章节、参考文献和 chunks。
-- 不应直接把整篇 PDF 塞给模型生成综述。
-- PaperCard 是 600 到 800 token 左右的单篇论文结构化摘要。
-- EvidenceRecord 是 QA、综述和创新点的核心证据中间层。
-- 结构化 LLM 输出必须用 Pydantic 校验，字段缺失时用 `unknown`，不能编造。
-
-### 7.1 ParserService
-
-需要改造：
-
-| 文件 | 任务 |
-| --- | --- |
-| `parser_service.py` | 从简单段落分块升级为章节感知分块。 |
-| `models.py` | 可选增加 `Reference`、`ParseResult`、`TaskStatus`。 |
-| `storage.py` | 规范 chunks 集合命名，例如 `chunks_{paper_id}` 或统一 `paper_chunks`。 |
-
-P0 解析字段：
+验收：
 
 ```text
-paper_id
-title
-authors
-abstract
-sections
-references
-chunks
-page_number
-section_title
-start_char
-end_char
-token_count
+搜索 "BERT pre-training" limit=5 耗时 < 60s。
+搜索超时时返回部分结果 + 错误信息。
+HybridRanker 云端模式 embedding 调用次数减少 50%。
 ```
 
-分块规则：
+## 7. Sprint C：解析与证据质量硬化
+
+目标：
 
 ```text
-1. 优先按章节切分。
-2. 每个 chunk 控制在 500 到 900 tokens。
-3. 保留 page_number、section_title 和字符位置。
-4. 摘要、方法、实验、结果、讨论、局限章节要尽量保留标题。
-5. 解析失败时更新 paper.status=FAILED，并记录 error_message。
+保证进入 QA/综述/创新点的材料都有可追溯来源和质量标签。
 ```
 
-### 7.2 PaperCardGenerator
-
-结构化输出：
+任务：
 
 ```text
-research_question
-method
-data_or_sample
-key_findings
-limitations
-future_work
-topics
-possible_gaps
-source_spans
-confidence
+C1. ParserService 质量固化
+    - ParseResult.status 更新规则：success / failed / partial
+    - quality_flags 持久化到 parse_results 表
+    - 低质量解析（乱码率 > 阈值）标记为 failed
+
+C2. PaperCard 质量门禁
+    - quality_report 持久化到 paper_cards 表 metadata
+    - source_spans 校验：每个核心字段至少一个 source_span 或明确 unknown
+    - confidence 由字段完整度和来源覆盖率计算，不能写死
+
+C3. EvidenceRecord 增强
+    - metadata 记录 evidence_type / review_status / confidence
+    - EvidenceTableService 不接受 excluded paper 的 evidence
+    - 证据构建后输出项目级统计
+
+C4. 图谱来源追踪
+    - 每个非 Paper 节点记录 evidence_ids 和 paper_ids
+    - Gap 节点必须绑定支撑的 limitation 节点
 ```
 
-质量规则：
+验收：
 
 ```text
-1. 每个核心字段至少有一个 source_span 或明确 unknown。
-2. key_findings、limitations、future_work 必须能追溯到 chunk。
-3. LLM JSON 输出必须通过 Pydantic 校验。
-4. fallback 只作为开发和测试兜底，不作为最终质量来源。
-5. confidence 不能固定写死，应由字段完整度和来源覆盖率计算。
+解析失败的论文 status = failed，不进入后续流程。
+PaperCard 每个核心字段有来源或标记 unknown。
+EvidenceRecord 全部有 paper_id 和 project_id。
+图谱节点可追溯到 evidence。
 ```
 
-### 7.3 EvidenceTableService
+## 8. Sprint D：Scope、QA、报告可信度
 
-EvidenceRecord 生成规则：
+目标：
 
 ```text
-1. 每个 finding 生成一条 evidence。
-2. 每个 limitation 生成一条 evidence。
-3. future_work 和 possible_gaps 可以生成 gap seed evidence。
-4. evidence 必须包含 paper_id、project_id、source_chunk_id 或 source_quote。
-5. evidence_strength 默认 medium，但应允许根据来源章节和置信度调整。
+让所有生成结果都能说明"基于哪些论文/证据/图谱范围"，证据不足时明确拒答或降级。
 ```
 
-### 7.4 测试计划
+任务：
 
 ```text
-test_parser_service.py
-test_parser_sections.py
-test_paper_card_generator.py
-test_paper_card_schema.py
-test_evidence_table_service.py
-test_evidence_traceability.py
+D1. RetrievalScopeService 增强
+    - 输出 empty_reason、scope_summary、filter_diagnostics
+    - scope 为空时返回明确错误
+
+D2. ScopeGuard 贯穿
+    - QA、Review、Innovation、Report 保存前都调用 ScopeGuard
+    - scope 外论文不允许进入回答或报告
+
+D3. QA 拒答逻辑
+    - evidence 少于阈值时说明不足，不编造答案
+    - supporting_papers/evidence_records 必须在 scope 内
+
+D4. 综述来源覆盖
+    - section_sources 覆盖主体章节
+    - 每段关键观点关联 evidence_ids
+
+D5. 创新点约束
+    - 每个候选绑定 gap / supporting_papers / limiting_evidence
+    - 过滤"提高效率""优化模型"等空泛建议
+
+D6. 报告可追溯
+    - 保存时写入 scope_snapshot、source_snapshot、validation_result
+    - Markdown 导出包含 scope、paper list、evidence index、warnings
 ```
 
-验收标准：
-
-```text
-能从 PDF 生成 chunks。
-能从 chunks 生成 PaperCard。
-能从 PaperCard 生成 EvidenceRecord。
-每条 EvidenceRecord 可回到 paper_id 和 chunk 或 quote。
-字段缺失时显示 unknown，不出现伪造内容。
-```
-
-## 8. Phase 3：知识图谱和 Retrieval Scope
-
-调研依据：
-
-- MVP 图谱用 JSON 轻量实现即可。
-- 核心节点：Paper、Author、Topic、Task、Method、Dataset、Finding、Limitation、Gap、InnovationPoint。
-- 核心关系：BELONGS_TO_TOPIC、USES_METHOD、USES_DATASET、REPORTS_FINDING、HAS_LIMITATION、SUGGESTS_GAP、SUPPORTS_INNOVATION、CITES。
-- Scope 是 QA 和报告的范围控制边界。
-
-### 8.1 GraphService
-
-需要补齐：
-
-```text
-1. 实体归一化：同义 topic/method/dataset 合并。
-2. 节点来源：每个非 Paper 节点记录 evidence_ids 和 paper_ids。
-3. Gap 节点：从 limitation、future_work、possible_gaps 聚合生成。
-4. 子图查询：支持 node_ids + hops，并返回节点、边和相关 papers。
-5. 图谱统计：节点类型数量、边类型数量、孤立节点、gap 数量。
-```
-
-图谱构建规则：
-
-```text
-Paper -> BELONGS_TO_TOPIC -> Topic
-Paper -> USES_METHOD -> Method
-Paper -> USES_DATASET -> Dataset
-Paper -> REPORTS_FINDING -> Finding
-Paper -> HAS_LIMITATION -> Limitation
-Limitation -> SUGGESTS_GAP -> Gap
-Gap -> SUPPORTS_INNOVATION -> InnovationPoint
-Paper -> CITES -> Paper
-```
-
-### 8.2 RetrievalScopeService
-
-Scope 类型：
-
-```text
-all_project
-selected_papers
-topic_group
-method_group
-year_range
-graph_subgraph
-innovation_related
-```
-
-需要补齐：
-
-```text
-1. resolve 后必须得到 paper_ids、evidence_ids、graph_node_ids、summary。
-2. 所有后续 QA 和报告只能使用 resolved scope 内的数据。
-3. 如果 scope 为空，应返回明确错误或空范围说明。
-4. year_range、topic_ids、method_ids 可以组合过滤。
-5. graph_subgraph 支持 hops，但默认最多 2 跳。
-```
-
-### 8.3 API 计划
-
-```text
-POST /api/rw/projects/{project_id}/kg/build
-GET  /api/rw/projects/{project_id}/kg
-GET  /api/rw/projects/{project_id}/kg/stats
-POST /api/rw/projects/{project_id}/kg/subgraph
-POST /api/rw/projects/{project_id}/scope/resolve
-GET  /api/rw/projects/{project_id}/scope/filters
-```
-
-### 8.4 测试计划
-
-```text
-test_graph_service.py
-test_graph_entity_normalization.py
-test_graph_gap_detection.py
-test_retrieval_scope.py
-test_scope_guard.py
-```
-
-验收标准：
-
-```text
-项目 evidence 能生成图谱。
-图谱节点和边都有来源。
-Scope 能解析出论文、证据和图谱上下文。
-Scope 外论文不会进入 QA 或报告。
-```
-
-## 9. Phase 4：Scope-based QA 和 RAG
-
-调研依据：
-
-- QA 必须 scope-bound。
-- MVP 可先用 Evidence + PaperCard + Graph context 检索，再升级 BM25 + vector + rerank。
-- 回答必须包含范围声明、证据、支持论文、不确定性和建议动作。
-- 证据不足时应拒答或降级回答。
-- 评估指标包括 Context Precision、Context Recall、Faithfulness、Answer Relevance。
-
-### 9.1 ScopeQAService
-
-当前已有：
-
-```text
-classify_intent()
-retrieve_context()
-generate_answer()
-answer()
-```
-
-需要补齐：
-
-| 能力 | P0 | P1 |
-| --- | --- | --- |
-| 检索 | EvidenceRecord 关键词匹配 + topic/method 过滤 | BM25 + vector + rerank |
-| 意图 | summary、method_compare、limitation_analysis、gap_analysis、evidence_check、innovation_seed、review_material | 多轮上下文和任务计划 |
-| 范围防护 | 只加载 scope 内 paper/evidence | 自动检测越界引用 |
-| 拒答 | evidence 少于阈值时说明不足 | 给出补充检索建议 |
-| 来源 | 返回 supporting_papers、evidence_records、graph_paths | 引文定位和 quote 高亮 |
-
-### 9.2 回答结构
-
-`QAResponse` 必须包含：
-
-```text
-answer
-intent
-scope_summary
-supporting_papers
-evidence_records
-graph_paths
-uncertainty
-suggested_actions
-```
-
-回答生成规则：
-
-```text
-1. 开头说明当前回答范围。
-2. 结论只能来自 scope 内 evidence 和 card。
-3. 每个关键结论至少关联一条 evidence。
-4. 不确定性必须写明原因，例如样本少、证据冲突、缺少实验细节。
-5. suggested_actions 根据意图给出，例如生成综述、生成创新点、扩大范围、补充搜索。
-```
-
-### 9.3 测试计划
-
-```text
-test_scope_qa.py
-test_scope_qa_refusal.py
-test_scope_qa_citations.py
-test_scope_qa_intents.py
-test_rag_quality_cases.py
-```
-
-验收标准：
+验收：
 
 ```text
 选中 3 篇论文时，QA 不引用第 4 篇。
 证据为空时，QA 不编造答案。
-回答中有 scope_summary、supporting_papers、evidence_records。
-至少支持 summary、method_compare、limitation_analysis、gap_analysis 四类问题。
+综述和创新点报告有来源索引。
 ```
 
-## 10. Phase 5：文献综述和创新点报告
+## 9. Sprint E：性能监控与可观测性
 
-调研依据：
-
-- 报告不能直接从全文 PDF 生成，应使用 PaperCard、EvidenceRecord 和 selected chunks。
-- 30 篇论文可用卡片和证据生成综述；50 篇以上需要分批和检索。
-- 创新点应来自图谱稀疏关系、共同局限、future work、方法迁移空间、数据集或场景空白、争议点。
-- 每个创新点需要文献基础、研究空白、支撑证据、限制证据、可行性、风险和评分。
-
-### 10.1 LiteratureReviewGenerator
-
-默认结构：
+目标：
 
 ```text
-1. 研究背景
-2. 主题划分
-3. 代表性文献和研究脉络
-4. 主要研究方法
-5. 主要研究结论
-6. 现有研究不足
-7. 未来研究趋势
-8. 参考文献
+在单服务架构下，建立轻量级性能监控体系，能快速定位慢请求和瓶颈步骤。
 ```
 
-需要补齐：
+新增文件：
 
 ```text
-1. 按主题/方法/年份组织材料。
-2. 每段关键观点关联 evidence_ids。
-3. 生成前检查 scope 内论文数量和 evidence 数量。
-4. 论文数量超过阈值时分批总结，再合并。
-5. validate_review 检查结构完整性、来源覆盖率和空泛段落。
+src/agents_v3/research_workspace/monitoring/
+  __init__.py
+  timer.py            # @timed 装饰器 + TimingContext
+  llm_metrics.py      # LLM 调用指标采集
+  embed_metrics.py    # Embedding 调用指标采集
+  request_middleware.py  # FastAPI 请求耗时 middleware
+
+scripts/
+  perf_report.py      # 日志解析 + 统计报告
 ```
 
-### 10.2 InnovationReportGenerator
-
-创新点来源：
+任务：
 
 ```text
-图谱 gap 节点
-多篇论文共同 limitation
-future_work 聚合
-方法迁移空间
-数据集 / 场景空白
-证据冲突或争议点
-近年趋势
+E1. @timed 装饰器
+    - 自动记录函数耗时到 logger
+    - 输出格式：[timing] {module}.{function}: {elapsed}s
+    - 支持 async 和 sync 函数
+
+E2. 核心链路埋点
+    - search_papers: refine_query / external_search / merge / hybrid_rank / add_to_pool
+    - embed_paper: L0 profile / L1 sections / L2 chunks / total
+    - parse_paper: PDF下载 / 文本提取 / 分块 / 入库 / auto_embed
+    - generate_card / generate_review / generate_innovation: LLM 调用耗时
+
+E3. LLM 调用监控
+    - 记录：model、prompt_name、latency_ms、token_input、token_output、success、error_type
+    - 汇总：总调用次数、平均延迟、P95、失败率、token 消耗
+    - 写入 monitoring/llm_metrics.py
+
+E4. Embedding 调用监控
+    - 记录：mode (local/cloud)、operation、batch_size、latency_ms
+    - 云端模式额外：临时集合创建/查询/删除各阶段耗时
+    - 写入 monitoring/embed_metrics.py
+
+E5. API 请求耗时 Middleware
+    - 响应 Header 返回 X-Process-Time
+    - 慢请求（>10s）自动 warn 日志
+    - 已有 X-Request-ID 和 X-Duration-Ms middleware，需确认是否覆盖
+
+E6. 性能诊断脚本
+    - scripts/perf_report.py：读取日志 [timing] 行，生成统计表
+    - 输出：函数名 / 调用次数 / 平均耗时 / P95 / 最大值
+    - 可选：集成 py-spy 生成火焰图
+
+E7. 可选：Sentry Performance Monitoring（产品上线后）
+    - 免费版每月 5000 transaction
+    - 自动采集 FastAPI 请求 span
+    - 错误 + 性能关联
 ```
 
-每个创新点输出：
+技术选型对照：
 
 ```text
-name
-description
-why_innovative
-research_foundation
-gap
-supporting_papers
-limiting_evidence
-feasibility
-risk
-possible_topic
-scores
+| 方案                  | 适用场景                | 状态 |
+|----------------------|------------------------|------|
+| time.time() + logger | 单服务、快速定位         | ✅ 当前使用 |
+| @timed 装饰器         | 单服务、统一格式         | 📋 E1 目标 |
+| cProfile / py-spy    | 单服务、函数级火焰图     | 📋 E6 可选 |
+| Prometheus + Grafana | 需要长期图表监控         | ⏳ 上线后 |
+| Sentry Performance   | 错误+性能关联、SaaS 告警 | ⏳ E7 可选 |
+| OpenTelemetry        | 多服务、分布式追踪       | ❌ 不需要 |
 ```
 
-评分维度：
+验收：
 
 ```text
-Novelty
-Evidence
-Feasibility
-Risk
-Fit
+搜索 API 日志有 [timing] 各步骤耗时。
+解析 API 日志有 [timing] 各步骤耗时。
+LLM 调用日志包含 model、latency_ms、token_count。
+慢请求（>10s）自动 warning。
+perf_report.py 能从日志生成统计表。
 ```
 
-泛化建议过滤：
+## 10. Sprint F：API 产品化与前端联调
+
+目标：
 
 ```text
-过滤“提高效率”“优化模型”“加强研究”“扩大样本”等没有具体文献 gap 的空泛表达。
-每个创新点必须绑定至少 2 篇支撑论文或明确说明证据不足。
+前端可以只依赖 /api/rw 完成项目、搜索、解析、分析、报告四类工作流。
 ```
 
-### 10.3 ReportService
-
-需要补齐：
+任务：
 
 ```text
-1. 报告保存时记录 scope、paper_ids、evidence_ids、graph_node_ids。
-2. Markdown 导出增加元信息块：项目、范围、论文数量、证据数量、生成时间。
-3. 支持报告版本说明和版本差异摘要。
-4. 支持把 QA 回答保存为报告素材。
+F1. 长任务产品化
+    - TaskService 增加 step、progress、events、error_type、retryable、result_ref
+    - 下载/解析/卡片/报告建议 task 化
+    - 前端可通过 SSE 或轮询获取进度
+
+F2. 搜索响应增强
+    - 暴露 source_stats、errors、cache_hit、elapsed_ms
+    - 每个 adapter 的成功/失败/耗时单独返回
+
+F3. API 错误诊断
+    - error body 增加 details.error_type、details.suggested_action
+    - 不同业务异常返回不同 HTTP 状态码
+
+F4. OpenAPI 文档完善
+    - examples 覆盖项目创建、搜索、解析、scope、qa、报告
+    - 路径与实际路由一致
+
+F5. 前端四页
+    - 项目论文库：创建项目、上传/搜索/导入、论文列表、解析状态
+    - 知识图谱：节点和边、筛选、子图、来源
+    - 研究 QA：Scope 选择、提问、答案、证据来源
+    - 成果报告：生成综述/创新点、版本、导出 Markdown
+
+F6. 演示项目
+    - 主题：大语言模型与自主学习
+    - 路径：创建项目 → 搜索 20 篇 → 解析 → 卡片 → 证据 → 图谱 → QA → 综述 → 创新点 → 导出
 ```
 
-### 10.4 测试计划
+验收：
 
 ```text
-test_review_generator.py
-test_review_traceability.py
-test_innovation_generator.py
-test_innovation_generic_filter.py
-test_report_service.py
-test_report_export_markdown.py
-```
-
-验收标准：
-
-```text
-综述包含完整结构和参考来源。
-创新点报告至少输出 3 个候选创新点。
-每个创新点有支撑论文、gap、可行性和风险。
-报告可以导出 Markdown。
-报告元数据能追溯到 scope、paper_ids 和 evidence_ids。
-```
-
-## 11. Phase 6：API 和前端演示闭环
-
-### 11.1 API 聚合层
-
-建议新增：
-
-```text
-src/agents_v3/research_workspace/api.py
-```
-
-或接入项目现有 API 框架，保持路径前缀：
-
-```text
-/api/rw
-```
-
-端到端任务接口：
-
-```text
-POST /api/rw/projects/{project_id}/pipeline/ingest
-POST /api/rw/projects/{project_id}/pipeline/analyze
-POST /api/rw/projects/{project_id}/pipeline/build-graph
-POST /api/rw/projects/{project_id}/pipeline/demo
-GET  /api/rw/tasks/{task_id}
-```
-
-任务状态：
-
-```text
-queued
-running
-succeeded
-failed
-cancelled
-```
-
-任务事件：
-
-```text
-paper_uploaded
-paper_parsed
-card_generated
-evidence_generated
-graph_built
-qa_answered
-report_generated
-error
-```
-
-### 11.2 前端四页
-
-MVP 页面：
-
-| 页面 | 必备功能 |
-| --- | --- |
-| 项目论文库 | 创建项目、上传 PDF、搜索/导入、论文列表、解析状态、include/exclude。 |
-| 知识图谱 | 查看节点和边、筛选类型、选中节点/子图、查看来源。 |
-| 研究 QA | 选择 Scope、提问、查看答案、证据来源、不确定性和建议动作。 |
-| 成果报告 | 生成综述、生成创新点报告、查看版本、导出 Markdown。 |
-
-前端体验要求：
-
-```text
-1. 每个长任务必须展示进度和失败原因。
-2. 每个 QA 答案和报告段落必须能展开来源。
-3. Scope 选择必须在页面上可见，避免用户误以为是全库回答。
-4. 报告生成前展示使用论文数量和证据数量。
-```
-
-### 11.3 演示项目
-
-演示主题：
-
-```text
-大语言模型与自主学习
-```
-
-演示路径：
-
-```text
-1. 创建项目。
-2. 上传 5 到 10 篇 PDF。
-3. 搜索补充到 20 篇左右。
-4. 解析论文并生成卡片。
-5. 生成证据表。
-6. 构建知识图谱。
-7. 选择“实证研究”或某个方法子图。
-8. 提问：这些研究共同不足是什么？
-9. 基于当前 Scope 生成创新点报告。
-10. 基于全项目生成文献综述。
-11. 导出 Markdown，并检查来源追踪。
-```
-
-验收标准：
-
-```text
-演示路径可以稳定复现。
+演示路径可稳定复现。
 前端能看到每一步状态。
 QA 和报告能展开来源。
-失败任务有可读错误，不是静默失败。
+失败任务有可读错误。
 ```
 
-## 12. Phase 7：评估、监控和质量门禁
-
-调研依据：
-
-- 日志需要包含 request_id、task_id、project_id、paper_id。
-- 应记录 latency、token usage、model、retries、evidence count、scope summary。
-- 不能记录完整私有论文内容、API key 或完整 prompt。
-- 长任务需要 checkpoint 和状态字段。
-- QA/RAG 评估需要 Context Precision、Context Recall、Faithfulness、Answer Relevance。
-
-### 12.1 日志规范
-
-使用现有 Loguru，统一字段：
-
-```text
-request_id
-task_id
-project_id
-paper_id
-service
-operation
-status
-latency_ms
-model
-token_input
-token_output
-retry_count
-evidence_count
-scope_summary
-error_type
-```
-
-脱敏规则：
-
-```text
-不记录 API key。
-不记录完整 PDF 文本。
-不记录完整 prompt。
-source_quote 默认截断。
-用户上传文件路径只记录相对路径或 hash。
-```
-
-### 12.2 质量门禁
-
-P0 门禁：
-
-```text
-1. 所有 Pydantic 模型校验通过。
-2. QA 不允许引用 Scope 外论文。
-3. 报告必须有 paper_ids 和 evidence_ids。
-4. 创新点不能全部为空泛建议。
-5. LLM JSON 解析失败必须 fallback 或返回可读错误。
-6. PDF 解析失败不能中断整个项目批处理。
-```
-
-评估数据：
-
-```text
-tests/fixtures/research_workspace/
-  mini_project.json
-  sample_papers.json
-  sample_cards.json
-  sample_evidence.json
-  golden_qa_cases.json
-  golden_report_checks.json
-```
-
-评估脚本建议：
-
-```text
-scripts/evaluate_research_workspace.py
-```
-
-指标：
-
-```text
-Scope Guard Pass Rate
-Evidence Coverage
-Answer Citation Coverage
-Report Traceability Rate
-Innovation Specificity Rate
-Parse Success Rate
-Search Dedup Precision
-```
-
-## 13. 立即执行的前三个迭代
-
-### Iteration 1：稳定当前 v3 闭环
+## 11. Sprint G：评估门禁与演示闭环
 
 目标：
 
 ```text
-让现有最小闭环在测试环境稳定运行。
+把 evaluation 子包从工具推进为每次 smoke 和报告生成后的质量门禁。
 ```
 
 任务：
 
 ```text
-1. 所有 service 支持 storage 注入。
-2. 增加统一测试 fixture。
-3. 增加端到端 smoke test。
-4. 修正真实 data 目录污染。
-5. 补齐错误状态和日志字段。
+G1. 质量门禁自动化
+    - run_quality_gates 在报告保存前自动执行
+    - required gate 失败时阻止保存或标记 warning
+
+G2. 评估脚本
+    - scripts/evaluate_research_workspace.py
+    - 支持 --target qa|rag|report|innovation|logs|e2e|all
+    - 输出 JSON/Markdown summary
+
+G3. Golden cases 扩充
+    - 从 4 个扩展到至少 10 个
+    - 覆盖：QA 正常、QA 拒答、综述结构、创新点非空泛、scope 越界
+
+G4. E2E smoke test
+    - 覆盖完整闭环：project → search → parse → card → evidence → graph → scope → qa → review → innovation
+    - 输出可机器读取的 summary
+
+G5. 日志脱敏检查
+    - redaction_check 覆盖 API key、Bearer、完整 prompt、raw_response
+    - 每次 E2E smoke 自动运行 redaction_check
 ```
 
-交付：
+P0 门禁阈值：
 
 ```text
-pytest tests/agents_v3/research_workspace 通过。
-端到端 smoke test 可跑通。
+scope_guard_pass_rate == 1.0
+out_of_scope_citation_count == 0
+report_traceability_rate >= 0.80
+innovation_specificity_rate >= 0.70
+redaction_check_pass == true
+e2e_smoke_pass == true
 ```
 
-### Iteration 2：补齐真实论文入库和解析质量
-
-目标：
+验收：
 
 ```text
-让用户能把真实论文导入项目，并得到可追踪 chunks、cards、evidence。
+python scripts/evaluate_research_workspace.py --target all --output-json
+quality gates 在报告保存前自动执行
+golden cases 全部通过
 ```
 
-任务：
+## 12. 优先级与依赖
 
 ```text
-1. 接入至少一个真实搜索源或稳定 mock adapter。
-2. 实现 DOI / arXiv ID / 标题去重。
-3. 改进 PDF 章节分块。
-4. PaperCard 输出增加 schema 校验和 source coverage。
-5. EvidenceRecord 增加 traceability 校验。
+A（测试）→ B（搜索性能）→ C（质量硬化）→ D（可信度）→ E（监控）→ F（前端）→ G（门禁）
+                            ↗
+                    可并行：E 可与 C/D 并行推进
 ```
 
-交付：
+当前最高优先级：
 
 ```text
-10 篇真实或夹具论文可以批量解析。
-每篇论文至少生成 1 张卡片和多条证据。
+1. A — 测试体系建设（没有测试，后续重构无保障）
+2. B — 搜索性能优化（当前搜索超时 >10 分钟，用户体验不可用）
+3. E1-E2 — 关键链路计时（已部分实现，快速完成）
 ```
 
-### Iteration 3：Scope QA、报告和演示闭环
-
-目标：
+不建议当前做：
 
 ```text
-跑通用户可见的问答、综述、创新点报告和导出路径。
+1. Neo4j 或重型 GraphRAG
+2. 多用户权限系统
+3. 外部监控 SaaS 强依赖（Sentry 延后）
+4. 自动抓取 Google Scholar
+5. 大规模向量检索重构
 ```
 
-任务：
-
-```text
-1. 强化 Scope 越界防护。
-2. QA 增加证据不足拒答。
-3. 综述和创新点报告增加来源索引。
-4. 实现 API 聚合层。
-5. 前端四页完成最小联调。
-6. 准备演示项目数据。
-```
-
-交付：
-
-```text
-从创建项目到导出 Markdown 的演示路径可复现。
-QA、综述、创新点报告均可追溯来源。
-```
-
-## 14. 风险和应对
+## 13. 风险与应对
 
 | 风险 | 影响 | 应对 |
-| --- | --- | --- |
-| 多源搜索 API 不稳定 | 论文入库失败 | adapter 解耦、缓存、mock 数据、失败降级。 |
-| PDF 解析质量不稳定 | 卡片和证据质量下降 | 多解析器 fallback、章节规则、人工上传元数据补充。 |
-| LLM 输出 JSON 不合规 | 生成链路中断 | Pydantic 校验、repair、fallback、错误可见。 |
-| QA 越界引用 | 产品可信度下降 | Scope guard 单测、回答后校验、证据 ID 白名单。 |
-| 报告空泛 | 不能作为正式成果物 | evidence coverage、创新点 specificity 检查。 |
-| token 成本过高 | 批量综述不可用 | PaperCard + Evidence 优先，分批总结，禁止全文直塞。 |
-| 前端状态不可见 | 用户误以为卡死 | task 状态、SSE/轮询、失败原因展示。 |
+|------|------|------|
+| 多源搜索 API 不稳定 | 论文入库失败 | adapter 解耦、缓存、超时降级 |
+| PDF 解析质量不稳定 | 卡片和证据质量下降 | 5 解析器 fallback、质量标记 |
+| LLM 输出 JSON 不合规 | 生成链路中断 | Pydantic 校验、repair、fallback |
+| QA 越界引用 | 产品可信度下降 | ScopeGuard + 单测 |
+| 云端 embedding 慢 | 搜索超时 | 合并调用、缓存、本地 fallback |
+| token 成本过高 | 批量综述不可用 | PaperCard + Evidence 优先、分批总结 |
+| 前端状态不可见 | 用户误以为卡死 | TaskService + SSE/轮询 |
 
-## 15. 最终交付定义
+## 14. 模块文档同步
 
-当以下条件满足时，可以认为“论文知识库分析 Agent MVP”完成：
+后续修改代码时，同步更新以下文档：
 
-```text
-1. 用户能创建项目并导入/搜索论文。
-2. 系统能解析论文并生成 PaperCard、EvidenceRecord、KnowledgeGraph。
-3. 用户能选择 Scope 并进行 QA。
-4. QA 返回范围声明、证据、论文来源和不确定性。
-5. 系统能基于 Scope 生成文献综述。
-6. 系统能基于 gap 和 evidence 生成创新点报告。
-7. 报告能导出 Markdown。
-8. 全流程有自动化测试和演示项目。
-9. 日志能定位失败原因。
-10. 不出现明显越界引用和无来源编造。
-```
+| 改动类型 | 必须同步 |
+|----------|---------|
+| 模型字段变化 | `models/` 相关文件、受影响 service |
+| 搜索源/评分变化 | `search/` 相关文件 |
+| 存储后端变化 | `storage/` 相关文件 |
+| LLM schema 变化 | `llm/prompts.py`、调用方 service |
+| API 路径变化 | `api/routes/` 相关文件、本文档 §2.5 |
+| 质量门禁变化 | `evaluation/` 相关文件 |
+| 性能监控变化 | `monitoring/` 相关文件、本文档 §9 |

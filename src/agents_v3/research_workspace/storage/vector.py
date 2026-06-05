@@ -49,12 +49,12 @@ class VectorStorage:
         self,
         host: str = "localhost",
         port: int = 6333,
-        vector_size: int = 512,
+        vector_size: int = 384,
         distance: str = "cosine",
         cloud_url: str | None = None,
         cloud_api_key: str | None = None,
         cloud_inference: bool = False,
-        dense_model: str = "BAAI/bge-small-zh-v1.5",
+        dense_model: str = "sentence-transformers/all-MiniLM-L6-v2",
         sparse_model: str = "Qdrant/bm25",
     ):
         if not HAS_QDRANT:
@@ -791,11 +791,11 @@ class VectorStorage:
 def get_vector_storage(
     host: str = "localhost",
     port: int = 6333,
-    vector_size: int = 512,
+    vector_size: int = 384,
     cloud_url: str | None = None,
     cloud_api_key: str | None = None,
     cloud_inference: bool = False,
-    dense_model: str = "BAAI/bge-small-zh-v1.5",
+    dense_model: str = "sentence-transformers/all-MiniLM-L6-v2",
     sparse_model: str = "Qdrant/bm25",
 ) -> VectorStorage:
     """获取向量存储实例（优先使用云端配置）"""

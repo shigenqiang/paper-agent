@@ -5,6 +5,7 @@ from __future__ import annotations
 from loguru import logger
 
 from src.agents_v3.research_workspace.services.evidence_table import EvidenceTableService
+from src.agents_v3.research_workspace.services.graph_extractor import GraphExtractor
 from src.agents_v3.research_workspace.services.graph_service import GraphService
 from src.agents_v3.research_workspace.services.innovation_generator import InnovationReportGenerator
 from src.agents_v3.research_workspace.llm.service import LLMService, get_llm_service
@@ -55,6 +56,10 @@ def get_evidence_service(project_ref: str) -> EvidenceTableService:
 
 def get_graph_service(project_ref: str) -> GraphService:
     return GraphService(storage=get_storage())
+
+
+def get_graph_extractor(project_ref: str) -> GraphExtractor:
+    return GraphExtractor(storage=get_storage())
 
 
 def get_scope_service(project_ref: str) -> RetrievalScopeService:

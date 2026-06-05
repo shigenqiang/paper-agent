@@ -445,8 +445,14 @@ class RetrievalScopeService:
         """获取 scope 内的 paper cards"""
         cards = []
         for pid in scope.paper_ids[:max_cards]:
-            items = self.storage.query("paper_cards", {"paper_id": pid, "active": True})
-            cards.extend(items)
+            items = self.storage.query("paper_cards", {"paper_id": pid, "is_active": True})
+            for item in items:
+                # 完整卡片数据在 extraction JSONB 字段中
+                extraction = item.get("extraction")
+                if extraction and isinstance(extraction, dict):
+                    cards.append(extraction)
+                else:
+                    cards.append(item)
         return cards
 
     def to_graph_context(self, scope: RetrievalScope, hops: int = 1) -> dict[str, Any]:
@@ -456,13 +462,24 @@ class RetrievalScopeService:
         if scope.graph_node_ids:
             return gs.get_subgraph(scope.project_id, scope.graph_node_ids, hops=min(hops, 2))
 
-        # 非 graph scope: 返回 paper 相关节点
+        # 非 graph scope: 返回 paper 节点 + 1-hop 关联的非 Paper 节点
         graph = gs.get_graph(scope.project_id)
         paper_node_ids = {f"paper:{pid}" for pid in scope.paper_ids}
-        nodes = [n for n in graph.nodes if n.node_id in paper_node_ids]
-        edges = [e for e in graph.edges if e.source_id in paper_node_ids or e.target_id in paper_node_ids]
+
+        # 从 Paper 节点出发，收集 1-hop 内的非 Paper 节点
+        selected_ids = set(paper_node_ids)
+        for e in graph.edges:
+            if e.source_id in paper_node_ids and e.target_id not in paper_node_ids:
+                selected_ids.add(e.target_id)
+            elif e.target_id in paper_node_ids and e.source_id not in paper_node_ids:
+                selected_ids.add(e.source_id)
+
+        nodes = [n for n in graph.nodes if n.node_id in selected_ids]
+        edges = [e for e in graph.edges
+                 if e.source_id in selected_ids and e.target_id in selected_ids]
 
         return {
+            "project_id": scope.project_id,
             "nodes": [n.model_dump() for n in nodes],
             "edges": [e.model_dump() for e in edges],
             "related_paper_ids": scope.paper_ids,

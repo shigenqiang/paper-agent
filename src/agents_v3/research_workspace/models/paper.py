@@ -94,8 +94,6 @@ class Paper(BaseModel):
     error_message: str = ""
     included: bool = True
     exclude_reason: str = ""
-    dense_score: float = 0.0
-    quality_score: float = 0.0
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     metadata: dict[str, Any] = Field(default_factory=dict)

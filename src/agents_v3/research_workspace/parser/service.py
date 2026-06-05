@@ -201,6 +201,16 @@ class ParserService:
         parse_result.page_count = len(pages_text)
         parse_result.quality_flags = quality_flags
 
+        # 表格提取
+        try:
+            from src.agents_v3.research_workspace.parser.adapters import PdfPlumberAdapter
+            tbl_adapter = PdfPlumberAdapter()
+            if tbl_adapter.can_parse(paper.pdf_path):
+                extracted_tables = tbl_adapter.extract_tables(paper.pdf_path)
+                parse_result.table_count = len(extracted_tables)
+        except Exception:
+            pass
+
         if "scanned_pdf_suspected" in quality_flags:
             parse_result.quality_flags = quality_flags
             self.storage.upsert_item("parse_results", parse_result.parse_id, parse_result.model_dump())
@@ -243,10 +253,12 @@ class ParserService:
         parse_result.quality_flags = quality_flags
         parse_result.diagnostics = diagnostics
 
-        self._save_chunks(paper_id, chunks_data)
-
         sections = self._assemble_sections(paper_id, chunks_data)
+        self._save_chunks(paper_id, chunks_data)
         self._save_sections(paper_id, sections)
+
+        # 从解析文本中提取论文元数据（title/abstract/authors）
+        self._extract_and_update_metadata(paper_id, pages_text, sections)
 
         parse_result.status = "success"
         parse_result.finished_at = datetime.now().isoformat()
@@ -256,6 +268,29 @@ class ParserService:
         self._mark_pool_parsed(paper)
 
         logger.info(f"Parsed paper {paper_id}: {len(body_chunks)} body chunks, {len(ref_chunks)} refs")
+
+        # 解析成功后自动向量化（L0/L1/L2）
+        try:
+            embed_result = self.embed_paper(paper_id)
+            if embed_result.get("success"):
+                logger.info(f"Embedded paper {paper_id}: {embed_result.get('chunk_count')} chunks")
+            else:
+                logger.warning(f"Embed failed for {paper_id}: {embed_result.get('error')}")
+        except Exception as e:
+            logger.warning(f"Embed failed for {paper_id}, continuing without vectors: {e}")
+
+        # 解析成功后自动提取实体/关系（知识图谱）
+        try:
+            from src.agents_v3.research_workspace.services.graph_extractor import GraphExtractor
+            extractor = GraphExtractor(storage=self.storage)
+            extraction_result = extractor.extract_from_paper(paper_id)
+            logger.info(
+                f"Extracted from paper {paper_id}: "
+                f"{len(extraction_result.get('entities', []))} entities, "
+                f"{extraction_result.get('sections_processed', 0)} sections"
+            )
+        except Exception as e:
+            logger.warning(f"Entity extraction failed for {paper_id}, continuing: {e}")
 
         return {
             "success": True,
@@ -386,24 +421,40 @@ class ParserService:
         if vector_storage.use_inference:
             vector_storage.add_chunks(chunk_dicts, texts, sparse_embeddings=None)
         else:
-            from src.agents_v3.research_workspace.storage.embedding import get_embedding_service
-            embedding_service = get_embedding_service()
+            from src.agents_v3.research_workspace.storage.embedding_provider import get_embedding_provider
+            embedding_service = get_embedding_provider()
             embeddings = embedding_service.embed_texts(texts)
             vector_storage.add_chunks(chunk_dicts, embeddings)
 
         paper = self.storage.get_item("papers", paper_id)
+        project_id = paper.get("project_id", "") if paper else ""
+        title = ""
+        abstract = ""
         if paper:
             title = paper.get("title", "")
             abstract = paper.get("abstract", "")
-            profile_text = f"{title}. {abstract}".strip()
-            if profile_text and len(profile_text) > 10:
-                project_id = paper.get("project_id", "")
+        if not title:
+            pool_item = self.storage.get_item("papers_pool", paper_id)
+            if pool_item:
+                title = pool_item.get("title", "")
+                abstract = pool_item.get("abstract", "")
+        profile_text = f"{title}. {abstract}".strip()
+        if profile_text and len(profile_text) > 10:
+            if vector_storage.use_inference:
                 vector_storage.add_paper_profiles(
                     paper_ids=[paper_id],
                     texts=[profile_text],
                     metadatas=[{"project_id": project_id, "title": title}],
                 )
-                logger.info(f"Added paper profile for {paper_id}")
+            else:
+                profile_embedding = embedding_service.embed_query(profile_text)
+                vector_storage.add_paper_profiles(
+                    paper_ids=[paper_id],
+                    texts=[profile_text],
+                    metadatas=[{"project_id": project_id, "title": title}],
+                    embeddings=[profile_embedding],
+                )
+            logger.info(f"Added paper profile for {paper_id}")
 
         # ── L1: 嵌入 paper_sections ──
         sections_data = self.storage.query("paper_sections", {"paper_id": paper_id})
@@ -436,8 +487,8 @@ class ParserService:
                 if vector_storage.use_inference:
                     vector_storage.add_paper_sections(embeddable_sections, embeddings=None, sparse_embeddings=None)
                 else:
-                    from src.agents_v3.research_workspace.storage.embedding import get_embedding_service
-                    section_embeddings = get_embedding_service().embed_texts(section_texts)
+                    from src.agents_v3.research_workspace.storage.embedding_provider import get_embedding_provider
+                    section_embeddings = get_embedding_provider().embed_texts(section_texts)
                     vector_storage.add_paper_sections(embeddable_sections, section_embeddings)
 
                 logger.info(f"Added {len(embeddable_sections)} section vectors for {paper_id}")
@@ -453,10 +504,10 @@ class ParserService:
         return_parent: bool = True,
     ) -> list[dict[str, Any]]:
         """向量检索最相关的 chunks，支持返回父块"""
-        from src.agents_v3.research_workspace.storage.embedding import get_embedding_service
+        from src.agents_v3.research_workspace.storage.embedding_provider import get_embedding_provider
         from src.agents_v3.research_workspace.storage.vector import get_vector_storage
 
-        embedding_service = get_embedding_service()
+        embedding_service = get_embedding_provider()
         vector_storage = get_vector_storage()
 
         query_embedding = embedding_service.embed_query(query)
@@ -939,6 +990,112 @@ class ParserService:
             migrated.append(new_c)
         return migrated
 
+    def _extract_and_update_metadata(
+        self, paper_id: str, pages_text: list[tuple[int, str]], sections: list[dict]
+    ) -> None:
+        """从解析文本中提取 title/abstract/authors 并更新 papers_pool 记录"""
+        pool_item = self.storage.get_item("papers_pool", paper_id)
+        if not pool_item:
+            return
+
+        needs_update = False
+
+        # 1. 提取 title：从第一页前几行非空文本中找标题
+        if not pool_item.get("title") or pool_item["title"] == "?":
+            if pages_text:
+                first_page = pages_text[0][1] if pages_text[0] else ""
+                title = self._guess_title_from_text(first_page)
+                if title:
+                    pool_item["title"] = title
+                    needs_update = True
+
+        # 2. 提取 abstract：从 abstract section 中获取
+        if not pool_item.get("abstract"):
+            abstract_sec = [s for s in sections if s.get("section_type") == "abstract"]
+            if abstract_sec:
+                raw = abstract_sec[0].get("text", "")
+                # 取前 500 字符作为摘要
+                abstract = raw[:500].strip()
+                if abstract:
+                    pool_item["abstract"] = abstract
+                    needs_update = True
+
+        # 3. 提取 authors：从第一页文本中猜测
+        if not pool_item.get("authors") or pool_item["authors"] == []:
+            if pages_text:
+                first_page = pages_text[0][1] if pages_text[0] else ""
+                authors = self._guess_authors_from_text(first_page)
+                if authors:
+                    pool_item["authors"] = authors
+                    needs_update = True
+
+        if needs_update:
+            pool_item["is_parsed"] = True
+            self.storage.save_to_folder("papers_pool", paper_id, pool_item)
+            logger.info(f"Updated papers_pool metadata for {paper_id}: title={pool_item.get('title','?')[:50]}")
+
+    _TITLE_SKIP = re.compile(
+        r'^(?:the|a|an|proceedings|conference|journal|workshop|symposium|advances|neurips|icml|iclr|aaai|acl|emnlp|naacl|cvpr|iccv|eccv|sigir|www|kdd|ijcai|nips)\b',
+        re.IGNORECASE,
+    )
+    _AFFIL_KEYWORDS = re.compile(
+        r'(?:university|institute|laboratory|department|school|college|academy|center|centre|china|usa|uk|germany|france|japan|korea)',
+        re.IGNORECASE,
+    )
+
+    def _guess_title_from_text(self, text: str) -> str:
+        """从第一页文本中猜测论文标题（取第一个合理候选行）"""
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        for line in lines[:10]:
+            if len(line) < 10 or len(line) > 200:
+                continue
+            if self._TITLE_SKIP.match(line):
+                continue
+            # 跳过数字开头的行（通常是 affiliation: "1Dept of ..."）
+            if line[0].isdigit():
+                continue
+            if "@" in line:
+                continue
+            if self._AFFIL_KEYWORDS.search(line):
+                continue
+            # 跳过包含常见非标题模式的行
+            lower = line.lower()
+            if any(p in lower for p in ["abstract", "introduction", "copyright", "proceedings"]):
+                continue
+            # 清理并返回第一个有效候选
+            title = re.sub(r'\s+', ' ', line).strip()
+            return title
+        return ""
+
+    def _guess_authors_from_text(self, text: str) -> list[dict]:
+        """从第一页文本中猜测作者列表"""
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        for i, line in enumerate(lines[:10]):
+            if len(line) > 150 or len(line) < 5:
+                continue
+            # 跳过 affiliation 行
+            if self._AFFIL_KEYWORDS.search(line):
+                continue
+            if line[0].isdigit():
+                continue
+            # 检测作者模式：逗号分隔的名字，可能有上标数字
+            # 典型格式："Jiawei Chen1,3, Hongyu Lin1,*, Xianpei Han1,2,*, Le Sun1,2"
+            # 先去掉上标标记 (*, 数字)
+            cleaned = re.sub(r'[*†‡§¶]', '', line)
+            cleaned = re.sub(r'\d+', '', cleaned)
+            parts = [p.strip() for p in cleaned.split(',') if p.strip()]
+            # 过滤：每个部分应该是 2-4 个词的人名
+            names = []
+            for p in parts:
+                words = p.split()
+                if 1 <= len(words) <= 5 and all(2 <= len(w) <= 20 for w in words):
+                    # 排除非人名
+                    if not self._TITLE_SKIP.match(p) and not self._AFFIL_KEYWORDS.search(p):
+                        names.append(p)
+            if 2 <= len(names) <= 20:
+                return [{"name": n} for n in names]
+        return []
+
     def _update_status(self, paper_id: str, status: PaperStatus, error: str = "") -> None:
         item = self.storage.get_item("papers", paper_id)
         if item:
@@ -1038,10 +1195,49 @@ class ParserService:
     def _try_ocr_fallback(
         self, pdf_path: str
     ) -> tuple[list[tuple[int, str]], str, list[str]]:
-        """尝试 OCR fallback（当前仅检测，不自动执行 OCR）"""
+        """尝试 OCR fallback：用 pytesseract 提取扫描 PDF 文本"""
         flags: list[str] = []
-        flags.append("ocr_not_implemented")
-        return [], "none", flags
+        try:
+            import pytesseract
+        except ImportError:
+            flags.append("ocr_not_implemented")
+            logger.warning("pytesseract not installed, OCR unavailable. Install with: pip install pytesseract")
+            return [], "none", flags
+
+        try:
+            import pymupdf
+        except ImportError:
+            flags.append("ocr_no_pymupdf")
+            return [], "none", flags
+
+        try:
+            doc = pymupdf.open(pdf_path)
+            pages: list[tuple[int, str]] = []
+            for i in range(len(doc)):
+                page = doc[i]
+                # 渲染页面为图片（300 DPI）
+                pix = page.get_pixmap(dpi=300)
+                img_data = pix.tobytes("png")
+
+                # OCR
+                from io import BytesIO
+                from PIL import Image
+                img = Image.open(BytesIO(img_data))
+                text = pytesseract.image_to_string(img, lang="chi_sim+eng")
+                text = text.strip()
+                if text:
+                    pages.append((i + 1, text))
+
+            doc.close()
+            flags.append("ocr_tesseract_used")
+            flags.append(f"ocr_pages_extracted:{len(pages)}")
+            logger.info(f"OCR extracted {len(pages)} pages from {pdf_path}")
+            return pages, "ocr_tesseract", flags
+
+        except Exception as e:
+            flags.append(f"ocr_error:{type(e).__name__}")
+            logger.warning(f"OCR fallback failed: {e}")
+            return [], "none", flags
 
     def _detect_scanned_pdf(self, pdf_path: str) -> dict[str, Any]:
         """检测 PDF 是否为扫描件（基于图片数量和文本量）"""

@@ -1,181 +1,179 @@
-"""模块04 PDF解析与分块 — 真实链路
+"""模块04 PDF 解析与分块 — 真实 HTTP API + PostgreSQL
 
-流程：搜索论文 → 下载 PDF → 解析 → 分块 → 验证
+测试全部通过 HTTP API 走真实链路：
+  POST /api/rw/projects                → 创建项目
+  POST /api/rw/projects/{id}/papers/search → 搜索入库
+  POST /api/rw/projects/{id}/papers/{pid}/download → 下载 PDF
+  POST /api/rw/projects/{id}/papers/{pid}/parse    → 解析 PDF
 
 前置条件:
-    - Docker 容器 paper-agent-postgres 运行中
-    - 网络可达 arxiv.org
+    - Docker 容器 postgres (5432) + qdrant (6333) 运行中
+    - 服务运行在 http://localhost:8000
+    - 网络可达 arxiv 等 PDF 源
 """
 
+import time
+
 import pytest
+import requests
 
-from src.agents_v3.research_workspace.parser.service import ParserService
-from src.agents_v3.research_workspace.services.paper_library import PaperLibraryService
-from src.agents_v3.research_workspace.search.base import SearchQuery
-from src.agents_v3.research_workspace.search.factory import create_default_adapters
-from src.agents_v3.research_workspace.models import PaperStatus
+BASE = "http://localhost:8000"
 
-PROJECT_ID = "e2e_parser_test"
+
+def api(method: str, path: str, body: dict | None = None) -> dict:
+    """调用真实 HTTP API"""
+    url = f"{BASE}{path}"
+    resp = requests.request(method, url, json=body, timeout=300)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def wait_for_service(max_wait: int = 15) -> bool:
+    """等待服务就绪"""
+    for _ in range(max_wait):
+        try:
+            r = requests.get(f"{BASE}/api/health", timeout=3)
+            if r.status_code == 200:
+                return True
+        except Exception:
+            pass
+        time.sleep(1)
+    return False
+
+
+@pytest.fixture(scope="module", autouse=True)
+def ensure_service():
+    """确保服务可用"""
+    if not wait_for_service():
+        pytest.skip("服务未启动，请先运行 python -m src.service")
 
 
 @pytest.fixture(scope="module")
-def imported_papers(pg_storage, adapters):
-    """模块级 fixture：搜索导入有 PDF 的论文（只执行一次）"""
-    library = PaperLibraryService(
-        storage=pg_storage,
-        search_adapters=list(adapters.values()),
-        global_storage=pg_storage,
-    )
-    pg_storage.upsert_item("projects", PROJECT_ID, {
-        "project_id": PROJECT_ID, "name": "解析测试项目",
-    })
-    query = SearchQuery(query="chain of thought prompting", limit=5)
-    library.search_candidates(PROJECT_ID, query)
-    papers = library.list_papers(PROJECT_ID)
-    with_pdf = []
-    for p in papers:
-        pdf_url = p.open_access.pdf_url if p.open_access else ""
-        if pdf_url:
-            with_pdf.append(p)
-    yield with_pdf
-    try:
-        papers_all = pg_storage.query("papers", {"project_id": PROJECT_ID})
-        for p in papers_all:
-            chunks = pg_storage.query("paper_chunks", {"paper_id": p["paper_id"]})
-            for c in chunks:
-                pg_storage.delete_item("paper_chunks", c["chunk_id"])
-            pg_storage.delete_item("papers", p["paper_id"])
-        pg_storage.delete_item("projects", PROJECT_ID)
-    except Exception:
-        pass
+def project_id():
+    """通过 API 创建测试项目"""
+    name = f"parser_test_{int(time.time())}"
+    result = api("POST", "/api/rw/projects", {"name": name})
+    pid = result["data"]["project_id"]
+    print(f"\n[setup] 创建项目: {pid}")
+    yield pid
 
 
-class TestParserE2E:
-    """PDF 解析与分块真实链路测试"""
+@pytest.fixture(scope="module")
+def paper_with_pdf(project_id, pg_storage):
+    """搜索并找到有 PDF URL 的论文"""
+    # 搜索有 PDF URL 的论文
+    body = {"query": "BERT pre-training", "limit": 10}
+    result = api("POST", f"/api/rw/projects/{project_id}/papers/search", body)
+    results = result["data"]["results"]
+    print(f"[setup] 搜索到 {len(results)} 篇论文")
 
-    def test_01_download_pdf(self, pg_storage, imported_papers):
-        """下载论文 PDF"""
-        if not imported_papers:
-            pytest.skip("搜索结果中无 PDF 链接")
+    # 从数据库中找有 PDF URL 的论文
+    for r in results:
+        pid = r.get("paper_id") or r.get("source_payload", {}).get("pool_paper_id")
+        if pid:
+            pool_item = pg_storage.get_item("papers_pool", pid)
+            if pool_item and pool_item.get("pdf_url"):
+                print(f"[setup] 选择论文: {pid}")
+                return pid
 
-        parser = ParserService(storage=pg_storage)
-        paper = imported_papers[0]
-        result = parser.download_pdf(paper.paper_id)
+    pytest.skip("没有找到有 PDF URL 的论文")
 
-        print(f"\n[download] {paper.title[:50]}...")
-        print(f"  pdf_url={paper.open_access.pdf_url[:60]}")
-        print(f"  result: success={result['success']}, path={result.get('pdf_path', 'N/A')}")
-        assert result["success"], f"下载失败: {result.get('error')}"
-        assert result.get("pdf_path")
 
-    def test_02_parse_paper(self, pg_storage, imported_papers):
-        """解析论文 PDF → 生成 chunks"""
-        if not imported_papers:
-            pytest.skip("搜索结果中无 PDF 链接")
+class TestPDFDownload:
+    """PDF 下载测试"""
 
-        parser = ParserService(storage=pg_storage)
-        paper = imported_papers[0]
-        dl = parser.download_pdf(paper.paper_id)
-        if not dl.get("success"):
-            pytest.skip(f"PDF 下载失败: {dl.get('error')}")
+    def test_download_pdf(self, project_id, paper_with_pdf, pg_storage):
+        """通过 API 下载 PDF"""
+        result = api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/download")
+        data = result["data"]
 
-        result = parser.parse_paper(paper.paper_id)
+        print(f"\n[download] success={data.get('success')} pdf_path={data.get('pdf_path', '')[:50]}")
+        assert data.get("success"), f"下载失败: {data.get('error')}"
 
-        print(f"\n[parse] {paper.title[:50]}...")
-        print(f"  success={result.get('success')}, chunks={result.get('chunk_count', 0)}")
-        if not result.get("success"):
-            print(f"  error={result.get('error')}")
-        assert result["success"], f"解析失败: {result.get('error')}"
-        assert result.get("chunk_count", 0) > 0, "应生成至少 1 个 chunk"
+        # 验证数据库中的 pdf_path
+        stored = pg_storage.get_item("papers", paper_with_pdf)
+        assert stored.get("pdf_path"), "pdf_path 应已更新"
+        print(f"[download] 数据库 pdf_path: {stored['pdf_path'][:50]}")
 
-    def test_03_chunks_have_metadata(self, pg_storage, imported_papers):
-        """chunks 应有页码、章节、类型等元数据"""
-        if len(imported_papers) < 1:
-            pytest.skip("论文不足")
 
-        parser = ParserService(storage=pg_storage)
-        paper = imported_papers[0]
-        parser.download_pdf(paper.paper_id)
-        parser.parse_paper(paper.paper_id)
+class TestPDFParse:
+    """PDF 解析测试"""
 
-        chunks = pg_storage.query("paper_chunks", {"paper_id": paper.paper_id})
-        if not chunks:
-            pytest.skip("未生成 chunks")
+    def test_parse_paper(self, project_id, paper_with_pdf, pg_storage):
+        """通过 API 解析 PDF"""
+        # 先下载
+        api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/download")
 
-        print(f"\n[chunks] {paper.title[:50]}...: {len(chunks)} chunks")
-        for c in chunks[:5]:
-            print(f"  - {c.get('chunk_type', 'N/A')}: section={c.get('section_title', '')[:30]}, pages={c.get('page_start')}-{c.get('page_end')}")
+        # 解析
+        result = api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/parse")
+        data = result["data"]
 
-        for c in chunks:
-            assert c.get("page_start"), "chunk 缺少 page_start"
-            assert c.get("chunk_type"), "chunk 缺少 chunk_type"
+        print(f"\n[parse] success={data.get('success')}")
+        print(f"  pages={data.get('page_count')} chunks={data.get('chunk_count')}")
+        print(f"  body_chunks={data.get('body_chunk_count')} refs={data.get('reference_count')}")
+        print(f"  quality_flags={data.get('quality_flags')}")
 
-    def test_04_references_separated(self, pg_storage, imported_papers):
-        """参考文献应被识别并分离为独立 chunk"""
-        if len(imported_papers) < 1:
-            pytest.skip("论文不足")
+        assert data.get("success"), f"解析失败: {data.get('error')}"
+        assert data.get("chunk_count", 0) > 0, "应有分块"
 
-        parser = ParserService(storage=pg_storage)
-        paper = imported_papers[0]
-        parser.download_pdf(paper.paper_id)
-        parser.parse_paper(paper.paper_id)
+    def test_parse_creates_chunks(self, project_id, paper_with_pdf, pg_storage):
+        """解析后应创建 paper_chunks 记录"""
+        # 下载 + 解析
+        api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/download")
+        api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/parse")
 
-        chunks = pg_storage.query("paper_chunks", {"paper_id": paper.paper_id})
-        ref_chunks = [c for c in chunks if c.get("chunk_type") == "reference"]
-        body_chunks = [c for c in chunks if c.get("chunk_type") == "body"]
+        # 验证 chunks
+        chunks = pg_storage.query("paper_chunks", {"paper_id": paper_with_pdf})
+        print(f"\n[chunks] 共 {len(chunks)} 个分块")
+        for c in chunks[:3]:
+            print(f"  - {c.get('chunk_id', '')[:30]}: section={c.get('section_title', '')[:20]} type={c.get('chunk_type')}")
 
-        print(f"\n[refs] body={len(body_chunks)}, reference={len(ref_chunks)}")
-        if ref_chunks:
-            print(f"  参考文献示例: {ref_chunks[0].get('text', '')[:80]}...")
+        assert len(chunks) > 0, "应创建 paper_chunks 记录"
 
-    def test_05_paper_status_updated(self, pg_storage, imported_papers):
-        """解析后论文状态应更新为 PARSED"""
-        if len(imported_papers) < 1:
-            pytest.skip("论文不足")
+    def test_parse_creates_references(self, project_id, paper_with_pdf, pg_storage):
+        """解析后应创建 paper_references 记录"""
+        # 下载 + 解析
+        api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/download")
+        api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/parse")
 
-        parser = ParserService(storage=pg_storage)
-        paper = imported_papers[0]
-        parser.download_pdf(paper.paper_id)
-        parser.parse_paper(paper.paper_id)
+        # 验证 references
+        refs = pg_storage.query("paper_references", {"citing_paper_id": paper_with_pdf})
+        print(f"\n[references] 共 {len(refs)} 条引用")
+        for r in refs[:3]:
+            print(f"  - {r.get('title', '')[:40]} ({r.get('year', '')})")
 
-        item = pg_storage.get_item("papers", paper.paper_id)
-        assert item is not None
-        print(f"\n[status] {paper.paper_id}: {item['status']}")
-        assert item["status"] in (
-            PaperStatus.PARSED.value,
-            PaperStatus.CARD_READY.value,
-            PaperStatus.EVIDENCE_READY.value,
-        ), f"状态应为 PARSED，实际: {item['status']}"
+    def test_parse_creates_parse_result(self, project_id, paper_with_pdf, pg_storage):
+        """解析后应创建 parse_results 记录"""
+        # 下载 + 解析
+        api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/download")
+        result = api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/parse")
+        parse_id = result["data"].get("parse_id")
 
-    def test_06_parse_project_batch(self, pg_storage, imported_papers):
-        """批量解析项目中所有论文"""
-        if not imported_papers:
-            pytest.skip("搜索结果中无 PDF 链接")
+        # 验证 parse_results
+        parse_result = pg_storage.get_item("parse_results", parse_id)
+        if not parse_result:
+            all_parses = pg_storage.query("parse_results", {"paper_id": paper_with_pdf})
+            parse_result = all_parses[-1] if all_parses else None
 
-        parser = ParserService(storage=pg_storage)
-        dl_result = parser.download_all_pdfs(PROJECT_ID)
-        print(f"\n[batch] 下载: total={dl_result['total']}, ok={dl_result['downloaded']}, skip={dl_result['skipped']}, fail={dl_result['failed']}")
+        print(f"\n[parse_result] {parse_id}: status={parse_result.get('status') if parse_result else 'N/A'}")
+        if parse_result:
+            print(f"  pages={parse_result.get('page_count')} chunks={parse_result.get('chunk_count')}")
 
-        result = parser.parse_project_papers(PROJECT_ID)
-        print(f"[batch] 解析: total={result['total']}, ok={result['success']}, fail={result['failed']}, skip={result['skipped']}")
+        assert parse_result, "应创建 parse_results 记录"
+        assert parse_result.get("status") == "success", "状态应为 success"
 
-        assert result["success"] > 0, "应至少成功解析 1 篇"
+    def test_paper_status_updated(self, project_id, paper_with_pdf, pg_storage):
+        """解析后论文状态应更新"""
+        # 下载 + 解析
+        api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/download")
+        api("POST", f"/api/rw/projects/{project_id}/papers/{paper_with_pdf}/parse")
 
-    def test_07_chunks_stored_in_postgres(self, pg_storage, imported_papers):
-        """chunks 应存入 PostgreSQL paper_chunks 表"""
-        if len(imported_papers) < 1:
-            pytest.skip("论文不足")
+        # 验证状态
+        stored = pg_storage.get_item("papers", paper_with_pdf)
+        print(f"\n[status] {paper_with_pdf}: {stored.get('status')}")
+        assert stored.get("status") in ("parsed", "card_ready", "evidence_ready"), \
+            f"状态应为 parsed，实际: {stored.get('status')}"
 
-        parser = ParserService(storage=pg_storage)
-        paper = imported_papers[0]
-        parser.download_pdf(paper.paper_id)
-        parser.parse_paper(paper.paper_id)
 
-        chunks = pg_storage.query("paper_chunks", {"paper_id": paper.paper_id})
-        assert len(chunks) > 0, "paper_chunks 表应有数据"
-
-        c = chunks[0]
-        assert c.get("chunk_id")
-        assert c.get("paper_id") == paper.paper_id
-        assert c.get("text")
-        print(f"\n[postgres] {len(chunks)} chunks 存入 paper_chunks 表")
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-s"])

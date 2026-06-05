@@ -51,6 +51,31 @@ class PdfPlumberAdapter:
             flags.append("parser_exception")
             return [], flags
 
+    def extract_tables(self, pdf_path: str) -> list[dict]:
+        """提取 PDF 中的表格，返回每页的表格数据"""
+        try:
+            import pdfplumber
+        except ImportError:
+            return []
+
+        tables: list[dict] = []
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                for i, page in enumerate(pdf.pages):
+                    page_tables = page.extract_tables()
+                    for tbl in page_tables:
+                        if tbl and len(tbl) > 1:
+                            tables.append({
+                                "page": i + 1,
+                                "headers": tbl[0],
+                                "rows": tbl[1:],
+                                "row_count": len(tbl) - 1,
+                                "col_count": len(tbl[0]) if tbl[0] else 0,
+                            })
+        except Exception as e:
+            logger.debug(f"Table extraction failed: {e}")
+        return tables
+
 
 class PyMuPDFAdapter:
     """PyMuPDF 解析器适配器（fallback，支持双栏重排）"""

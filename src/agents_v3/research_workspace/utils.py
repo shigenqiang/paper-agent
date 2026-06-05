@@ -9,15 +9,25 @@ import re
 # ── 文本归一化 ──────────────────────────────────────
 
 def normalize_label(text: str) -> str:
-    """文本归一化：小写、去标点、压缩空格、去复数"""
-    t = text.strip().lower()
-    t = re.sub(r"[　]", " ", t)  # 全角空格
+    """文本归一化：NFKC、小写、CJK标点、去标点、压缩空格、去复数、同义词"""
+    import unicodedata
+    # NFKC 归一化（全角→半角，兼容分解）
+    t = unicodedata.normalize("NFKC", text.strip().lower())
+    # CJK 标点替换
+    t = re.sub(r"[，。；：！？、（）【】「」『』]", " ", t)
+    # 全角空格 + 下划线/连字符
+    t = re.sub(r"[　]+", " ", t)
     t = re.sub(r"[_\-]+", " ", t)
-    t = re.sub(r"\s+", " ", t)
+    # 压缩空格
+    t = re.sub(r"\s+", " ", t).strip()
+    # 去尾部标点
     t = t.rstrip(".,;:;")
     # 简单去复数
     if t.endswith("s") and not t.endswith("ss") and len(t) > 3:
         t = t[:-1]
+    # 同义词解析（延迟导入避免循环依赖）
+    from src.agents_v3.research_workspace.services.graph_utils import resolve_alias
+    t = resolve_alias(t)
     return t
 
 

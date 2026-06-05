@@ -188,8 +188,15 @@ class PaperCardGenerator:
         if regenerate:
             self._deactivate_old_cards(paper_id)
 
-        # 保存
-        self.storage.upsert_item("paper_cards", card.card_id, card.model_dump())
+        # 保存 — 将完整卡片数据放入 extraction JSONB 字段
+        card_dict = card.model_dump()
+        save_record = {
+            "card_id": card.card_id,
+            "paper_id": card.paper_id,
+            "is_active": card.active,
+            "extraction": card_dict,
+        }
+        self.storage.upsert_item("paper_cards", card.card_id, save_record)
 
         paper_data["status"] = PaperStatus.CARD_READY.value
         self.storage.upsert_item("papers", paper_id, paper_data)
@@ -246,9 +253,14 @@ class PaperCardGenerator:
     # ── 内部方法 ──────────────────────────────────────
 
     def _get_active_card(self, paper_id: str) -> PaperCard | None:
-        cards = self.storage.query("paper_cards", {"paper_id": paper_id, "active": True})
+        cards = self.storage.query("paper_cards", {"paper_id": paper_id, "is_active": True})
         if cards:
-            return PaperCard(**cards[0])
+            row = cards[0]
+            # 完整卡片数据在 extraction JSONB 字段中
+            extraction = row.get("extraction")
+            if extraction and isinstance(extraction, dict):
+                return PaperCard(**extraction)
+            return PaperCard(**row)
         return None
 
     def _deactivate_old_cards(self, paper_id: str) -> None:

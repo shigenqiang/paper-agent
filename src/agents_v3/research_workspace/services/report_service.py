@@ -13,6 +13,72 @@ from src.agents_v3.research_workspace.models import Report, ReportVersion
 from src.agents_v3.research_workspace.storage import get_storage
 
 
+class VersionConflictError(Exception):
+    """乐观锁版本冲突"""
+
+    def __init__(self, report_id: str, expected: int, actual: int):
+        self.report_id = report_id
+        self.expected = expected
+        self.actual = actual
+        super().__init__(f"Report {report_id} version conflict: expected v{expected}, got v{actual}")
+
+
+def _report_to_db(report: Report) -> dict[str, Any]:
+    """Report model → DB row (report_type + metadata JSONB)"""
+    rtype = report.type
+    rtype_str = rtype.value if hasattr(rtype, "value") else str(rtype)
+    return {
+        "report_id": report.report_id,
+        "project_id": report.project_id,
+        "report_type": rtype_str,
+        "title": report.title,
+        "content": report.content,
+        "metadata": {
+            "status": report.status,
+            "scope": report.scope,
+            "paper_ids": report.paper_ids,
+            "evidence_ids": report.evidence_ids,
+            "graph_node_ids": report.graph_node_ids,
+            "section_sources": report.section_sources,
+            "validation_result": report.validation_result,
+            "exported_formats": report.exported_formats,
+            "version": report.version,
+        },
+        "created_at": report.created_at,
+        "updated_at": report.updated_at,
+    }
+
+
+def _db_to_report(item: dict[str, Any]) -> Report:
+    """DB row → Report model"""
+    meta = item.get("metadata", {}) or {}
+    from src.agents_v3.research_workspace.models.enums import ReportType
+    raw_type = item.get("report_type", "")
+    try:
+        rtype = ReportType(raw_type) if raw_type else ReportType.LITERATURE_REVIEW
+    except ValueError:
+        rtype = ReportType.LITERATURE_REVIEW
+    return Report(
+        report_id=item["report_id"],
+        project_id=item.get("project_id", ""),
+        type=rtype,
+        title=item.get("title", ""),
+        content=item.get("content", ""),
+        scope=meta.get("scope", {}),
+        paper_ids=meta.get("paper_ids", []),
+        evidence_ids=meta.get("evidence_ids", []),
+        graph_node_ids=meta.get("graph_node_ids", []),
+        status=meta.get("status", "draft"),
+        section_sources=meta.get("section_sources", {}),
+        validation_result=meta.get("validation_result", {}),
+        exported_formats=meta.get("exported_formats", []),
+        metadata=item.get("metadata", {}),
+        created_at=item.get("created_at", ""),
+        updated_at=item.get("updated_at", ""),
+        version=meta.get("version", 1),
+    )
+
+
 class ReportService:
     """报告 CRUD、版本管理、来源索引、校验和导出"""
 
@@ -21,15 +87,26 @@ class ReportService:
 
     # ── 保存与查询 ──────────────────────────────
 
-    def save_report(self, report: Report) -> Report:
-        """保存报告（自动设置 section_sources 和 validation_result）"""
+    def save_report(self, report: Report, expected_version: int | None = None) -> Report:
+        """保存报告（自动设置 section_sources 和 validation_result）
+
+        Args:
+            expected_version: 乐观锁 — 若指定，检查当前版本是否匹配，不匹配则抛 VersionConflictError
+        """
+        if expected_version is not None:
+            existing = self.get_report(report.report_id)
+            if existing and existing.version != expected_version:
+                raise VersionConflictError(
+                    report.report_id, expected_version, existing.version,
+                )
+
         if not report.section_sources and report.scope.get("section_sources"):
             report.section_sources = report.scope["section_sources"]
         if not report.validation_result and report.scope.get("validation_result"):
             report.validation_result = report.scope["validation_result"]
 
         report.updated_at = datetime.now().isoformat()
-        self.storage.upsert_item("reports", report.report_id, report.model_dump())
+        self.storage.upsert_item("reports", report.report_id, _report_to_db(report))
         logger.info(f"Saved report: {report.report_id} (v{report.version}, status={report.status})")
         return report
 
@@ -39,9 +116,9 @@ class ReportService:
     ) -> list[Report]:
         query: dict[str, Any] = {"project_id": project_id}
         if report_type:
-            query["type"] = report_type
+            query["report_type"] = report_type
         items = self.storage.query("reports", query)
-        reports = [Report(**i) for i in items]
+        reports = [_db_to_report(i) for i in items]
         if status:
             reports = [r for r in reports if r.status == status]
         return reports
@@ -49,7 +126,7 @@ class ReportService:
     def get_report(self, report_id: str) -> Report | None:
         item = self.storage.get_item("reports", report_id)
         if item:
-            return Report(**item)
+            return _db_to_report(item)
         return None
 
     def update_report_status(self, report_id: str, status: str) -> Report | None:
@@ -58,7 +135,7 @@ class ReportService:
             return None
         report.status = status
         report.updated_at = datetime.now().isoformat()
-        self.storage.upsert_item("reports", report_id, report.model_dump())
+        self.storage.upsert_item("reports", report_id, _report_to_db(report))
         logger.info(f"Report {report_id} status -> {status}")
         return report
 
@@ -112,7 +189,7 @@ class ReportService:
         report.content = content
         report.version += 1
         report.updated_at = datetime.now().isoformat()
-        self.storage.upsert_item("reports", report_id, report.model_dump())
+        self.storage.upsert_item("reports", report_id, _report_to_db(report))
 
         logger.info(f"Created version {version.version_number} for report {report_id}")
         return version
@@ -147,10 +224,105 @@ class ReportService:
         report.evidence_ids = version.evidence_ids
         report.section_sources = version.source_snapshot.get("section_sources", {})
         report.updated_at = datetime.now().isoformat()
-        self.storage.upsert_item("reports", report_id, report.model_dump())
+        self.storage.upsert_item("reports", report_id, _report_to_db(report))
 
         logger.info(f"Restored report {report_id} to version {version.version_number}")
         return report
+
+    def diff_versions(
+        self, report_id: str, version_a: int, version_b: int
+    ) -> dict[str, Any] | None:
+        """比较两个版本的差异（段落级别）
+
+        Args:
+            report_id: 报告 ID
+            version_a: 旧版本号
+            version_b: 新版本号
+
+        Returns:
+            diff 结果字段：unified_diff, stats, paragraph_diffs
+        """
+        import difflib
+
+        versions = self.list_versions(report_id)
+        ver_map = {v.version_number: v for v in versions}
+
+        # 也支持当前版本（未快照的最新内容）
+        report = self.get_report(report_id)
+        current_ver = report.version - 1 if report else 0
+        if report and current_ver > 0 and current_ver not in ver_map:
+            ver_map[current_ver] = ReportVersion(
+                version_id="current",
+                report_id=report_id,
+                version_number=current_ver,
+                content=report.content,
+                reason="当前版本（未快照）",
+            )
+
+        va = ver_map.get(version_a)
+        vb = ver_map.get(version_b)
+        if not va or not vb:
+            return None
+
+        paras_a = va.content.split("\n\n")
+        paras_b = vb.content.split("\n\n")
+
+        # Unified diff
+        unified = list(difflib.unified_diff(
+            paras_a, paras_b,
+            fromfile=f"v{version_a}",
+            tofile=f"v{version_b}",
+            lineterm="",
+        ))
+
+        # 段落级变更统计
+        sm = difflib.SequenceMatcher(None, paras_a, paras_b)
+        added = 0
+        removed = 0
+        changed = 0
+        paragraph_diffs: list[dict] = []
+
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            if tag == "insert":
+                added += i2 - i1 if False else j2 - j1
+                for j in range(j1, j2):
+                    paragraph_diffs.append({
+                        "type": "added",
+                        "paragraph": paras_b[j][:200],
+                        "position": j,
+                    })
+            elif tag == "delete":
+                removed += i2 - i1
+                for i in range(i1, i2):
+                    paragraph_diffs.append({
+                        "type": "removed",
+                        "paragraph": paras_a[i][:200],
+                        "position": i,
+                    })
+            elif tag == "replace":
+                changed += max(i2 - i1, j2 - j1)
+                for i in range(i1, i2):
+                    paragraph_diffs.append({
+                        "type": "changed",
+                        "old": paras_a[i][:200],
+                        "new": paras_b[j1 + (i - i1)][:200] if j1 + (i - i1) < j2 else "",
+                        "position": i,
+                    })
+
+        return {
+            "report_id": report_id,
+            "version_a": version_a,
+            "version_b": version_b,
+            "unified_diff": "\n".join(unified),
+            "stats": {
+                "added": added,
+                "removed": removed,
+                "changed": changed,
+                "total_paragraphs_a": len(paras_a),
+                "total_paragraphs_b": len(paras_b),
+            },
+            "paragraph_diffs": paragraph_diffs[:50],  # 上限 50 条
+        }
 
     # ── 来源索引 ──────────────────────────────────
 
@@ -175,16 +347,22 @@ class ReportService:
                 source = p.get("source", {})
                 authors_raw = p.get("authors", [])
                 author_names = [a.get("name", "") if isinstance(a, dict) else str(a) for a in authors_raw]
-                paper_sources.append({
+                paper_meta = {
                     "paper_id": pid,
                     "title": p.get("title", ""),
                     "authors": author_names,
                     "year": dates.get("year"),
                     "venue": source.get("venue", ""),
                     "doi": identifiers.get("doi", ""),
+                }
+                from src.agents_v3.research_workspace.services.citation_formatter import CitationFormatter
+                citations = {style: CitationFormatter.format(paper_meta, style) for style in ("simple", "apa", "gbt7714", "bibtex")}
+                paper_sources.append({
+                    **paper_meta,
                     "url": p.get("url", ""),
                     "citation_key": pid,
                     "used_in_sections": used_in,
+                    "citations": citations,
                 })
 
         # Evidence sources
@@ -348,7 +526,7 @@ class ReportService:
         # Track export
         if "markdown" not in report.exported_formats:
             report.exported_formats.append("markdown")
-            self.storage.upsert_item("reports", report_id, report.model_dump())
+            self.storage.upsert_item("reports", report_id, _report_to_db(report))
 
         return result
 
@@ -382,6 +560,114 @@ class ReportService:
 
         if "json" not in report.exported_formats:
             report.exported_formats.append("json")
-            self.storage.upsert_item("reports", report_id, report.model_dump())
+            self.storage.upsert_item("reports", report_id, _report_to_db(report))
 
         return json.dumps(export_data, ensure_ascii=False, indent=2)
+
+    def export_docx(self, report_id: str, include_source_index: bool = True) -> bytes | None:
+        """导出报告为 DOCX 格式
+
+        使用 python-docx 将 Markdown 内容转换为结构化 Word 文档。
+        保留标题层级、段落、列表和简单表格。
+        """
+        report = self.get_report(report_id)
+        if not report:
+            return None
+
+        try:
+            from docx import Document
+            from docx.shared import Pt, Inches
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+        except ImportError:
+            logger.warning("python-docx not installed, DOCX export unavailable")
+            return None
+
+        doc = Document()
+
+        # 标题
+        doc.add_heading(report.title or report.type.value, level=0)
+        doc.add_paragraph(f"项目: {report.project_id} | 版本: {report.version} | 状态: {report.status}")
+
+        # 内容：逐行解析 Markdown
+        lines = report.content.split("\n")
+        i = 0
+        while i < len(lines):
+            line = lines[i].rstrip()
+
+            if line.startswith("### "):
+                doc.add_heading(line[4:], level=3)
+            elif line.startswith("## "):
+                doc.add_heading(line[3:], level=2)
+            elif line.startswith("# "):
+                doc.add_heading(line[2:], level=1)
+            elif line.startswith("- ") or line.startswith("* "):
+                doc.add_paragraph(line[2:], style="List Bullet")
+            elif line.startswith("  - ") or line.startswith("  * "):
+                doc.add_paragraph(line[4:], style="List Bullet 2")
+            elif line.startswith("|") and "|" in line[1:]:
+                # 简单表格检测：收集连续的 | 行
+                table_lines = []
+                while i < len(lines) and lines[i].strip().startswith("|"):
+                    table_lines.append(lines[i].strip())
+                    i += 1
+                i -= 1  # 回退一行，外层循环会 +1
+                if len(table_lines) >= 2:
+                    # 解析表头和数据行
+                    header = [c.strip() for c in table_lines[0].split("|")[1:-1]]
+                    # 跳过分隔行 (|---|---|)
+                    data_rows = []
+                    for tl in table_lines[2:]:
+                        cells = [c.strip() for c in tl.split("|")[1:-1]]
+                        if cells:
+                            data_rows.append(cells)
+                    if header and data_rows:
+                        table = doc.add_table(rows=1 + len(data_rows), cols=len(header))
+                        table.style = "Table Grid"
+                        for j, h in enumerate(header):
+                            table.rows[0].cells[j].text = h
+                        for ri, row in enumerate(data_rows):
+                            for ci, cell in enumerate(row):
+                                if ci < len(header):
+                                    table.rows[ri + 1].cells[ci].text = cell
+            elif line.startswith("---"):
+                doc.add_paragraph("─" * 40)
+            elif line.strip():
+                doc.add_paragraph(line)
+
+            i += 1
+
+        # 来源索引
+        if include_source_index:
+            source_index = self.build_source_index(report_id)
+            if source_index.get("paper_sources"):
+                doc.add_heading("来源索引", level=1)
+                doc.add_heading("使用论文", level=2)
+                for p in source_index["paper_sources"]:
+                    authors = ", ".join(p.get("authors", [])[:3])
+                    year = p.get("year", "")
+                    title = p.get("title", "N/A")
+                    doi = p.get("doi", "")
+                    ref = f"[{p['paper_id']}] {authors} ({year}). {title}."
+                    if doi:
+                        ref += f" DOI: {doi}"
+                    doc.add_paragraph(ref, style="List Bullet")
+
+                if source_index.get("evidence_sources"):
+                    doc.add_heading("使用证据", level=2)
+                    for e in source_index["evidence_sources"]:
+                        line = f"[{e['evidence_id']}] 论文 {e['paper_id']}"
+                        if e.get("finding"):
+                            line += f" | 发现: {e['finding'][:60]}"
+                        doc.add_paragraph(line, style="List Bullet")
+
+        # 写入内存
+        from io import BytesIO
+        buf = BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+
+        if "docx" not in report.exported_formats:
+            report.exported_formats.append("docx")
+            self.storage.upsert_item("reports", report_id, _report_to_db(report))
+
+        return buf.getvalue()

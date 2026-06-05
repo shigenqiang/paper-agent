@@ -8,9 +8,11 @@ from typing import Any
 
 from loguru import logger
 
+from src.agents_v3.research_workspace.llm.prompts import get_prompt_registry
 from src.agents_v3.research_workspace.llm.service import LLMService, get_llm_service
 from src.agents_v3.research_workspace.models import (
     EvidenceRecord,
+    InnovationGenerationResult,
     InnovationPoint,
     Report,
     ReportType,
@@ -37,40 +39,6 @@ _GAP_KEYWORDS = [
     "future work", "should", "explore", "need",
     "未来", "建议", "需要", "可以",
 ]
-
-# ── Prompt ──────────────────────────────────────────
-
-INNOVATION_SYSTEM_PROMPT = """你是一个学术研究创新分析专家。根据提供的研究信号和证据，分析可行的创新方向。
-
-规则：
-1. 创新点必须有具体证据支撑，不能是泛化表述
-2. 不得引用输入中不存在的 paper_id 或 evidence_id
-3. 每个创新点必须说明来源信号和支撑证据
-4. 评估可行性和风险时要考虑具体约束
-5. possible_topic 必须具体到对象、方法、场景
-6. 使用中文撰写
-
-你将收到预先构建的创新信号骨架。你的职责是：
-- 将骨架改写为自然语言描述
-- 补全 why_innovative、research_foundation、feasibility、risk
-- 生成 possible_topic
-- 不要自造 paper_id 或 evidence_id
-
-输出格式（JSON）：
-{
-  "innovation_points": [
-    {
-      "name": "创新点名称",
-      "description": "详细描述",
-      "why_innovative": "为什么是创新",
-      "research_foundation": "现有研究基础",
-      "feasibility": "可行性评估",
-      "risk": "风险评估",
-      "possible_topic": "可能的论文题目"
-    }
-  ]
-}"""
-
 
 class InnovationReportGenerator:
     """基于 Scope 生成创新点报告"""
@@ -113,11 +81,20 @@ class InnovationReportGenerator:
         # 7. Score
         scored = self._score_candidates(candidates, signals)
 
+        # 7a. Counter-evidence detection
+        scored = self._detect_counter_evidence(scored, signals)
+
+        # 7b. Chain of Verification
+        scored = self._verify_innovations(scored, signals)
+
+        # 7c. Re-score with verification penalties
+        scored = self._score_candidates(scored, signals)
+
         # 8. Filter generic
         filtered = [c for c in scored if not self._is_generic(c.get("description", ""))]
 
-        # 9. Validate
-        validation = self._validate_candidates(filtered, scope, signals)
+        # 9. Validate (now returns filtered list + validation dict)
+        filtered, validation = self._validate_candidates(filtered, scope, signals)
 
         # 10. Render
         content = self._render_report(filtered, signals, validation)
@@ -152,7 +129,8 @@ class InnovationReportGenerator:
             evidence_ids=sorted(used_evidence),
         )
 
-        self.storage.upsert_item("reports", report.report_id, report.model_dump())
+        from src.agents_v3.research_workspace.services.report_service import _report_to_db
+        self.storage.upsert_item("reports", report.report_id, _report_to_db(report))
         logger.info(
             f"Generated innovation report: {report.report_id} "
             f"(candidates={len(filtered)}, signals={len(skeletons)})"
@@ -170,6 +148,7 @@ class InnovationReportGenerator:
         future_work_clusters = self._aggregate_future_works(evidence)
         graph_gaps = self._detect_graph_gaps(graph_context)
         explicit_gaps = self._detect_explicit_gaps(evidence)
+        tree_signals = self._explore_innovation_tree(graph_context)
 
         return {
             "evidence_records": evidence,
@@ -178,6 +157,7 @@ class InnovationReportGenerator:
             "future_work_clusters": future_work_clusters,
             "graph_gaps": graph_gaps,
             "explicit_gaps": explicit_gaps,
+            "tree_signals": tree_signals,
             "paper_ids": scope.paper_ids,
             "scope_summary": scope.summary,
             "graph_context": graph_context,
@@ -243,10 +223,9 @@ class InnovationReportGenerator:
         return sorted(result, key=lambda x: -x["count"])
 
     def _detect_graph_gaps(self, graph_context: dict) -> list[dict]:
-        """从图谱检测 gap"""
+        """从图谱检测 gap（增强版：Gap 节点 + sparse matrix + sparse regions）"""
         gaps = []
         nodes = graph_context.get("nodes", [])
-        edges = graph_context.get("edges", [])
 
         # Gap 节点
         for n in nodes:
@@ -262,27 +241,99 @@ class InnovationReportGenerator:
                         "graph_node_id": n.get("node_id", ""),
                     })
 
-        # Topic-Method 覆盖矩阵
-        topic_methods: dict[str, set[str]] = {}
-        for e in edges:
-            if e.get("edge_type") == "USES_METHOD":
-                paper_id = e.get("source_id", "")
-                method_id = e.get("target_id", "")
-                for e2 in edges:
-                    if e2.get("source_id") == paper_id and e2.get("edge_type") == "BELONGS_TO_TOPIC":
-                        topic = e2.get("target_id", "")
-                        topic_methods.setdefault(topic, set()).add(method_id)
+        # 增强：调用 GraphService 获取 sparse matrix 和 sparse regions
+        project_id = graph_context.get("project_id", "")
+        if project_id:
+            try:
+                from src.agents_v3.research_workspace.services.graph_service import GraphService
+                gs = GraphService(storage=self.scope_service.storage)
+                enhanced = gs.find_research_gaps_enhanced(project_id)
 
-        for topic, methods in topic_methods.items():
-            if len(methods) < 2:
-                gaps.append({
-                    "type": "method_gap",
-                    "description": f"主题 {topic.split(':')[-1]} 仅有 {len(methods)} 种方法覆盖",
-                    "topic": topic,
-                    "confidence": 0.4,
-                })
+                # Method-Dataset sparse pairs
+                for pair in enhanced.get("method_dataset_matrix", {}).get("sparse_pairs", [])[:5]:
+                    gaps.append({
+                        "type": "method_dataset_gap",
+                        "description": f"方法 {pair['method']} 未在数据集 {pair['dataset']} 上验证",
+                        "method": pair["method"],
+                        "dataset": pair["dataset"],
+                        "confidence": 0.5,
+                    })
+
+                # Sparse regions
+                for region in enhanced.get("sparse_regions", {}).get("nodes", [])[:5]:
+                    gaps.append({
+                        "type": "sparse_region",
+                        "description": f"{region['node_type']} {region['label']} 连接度低（degree={region['degree']}）",
+                        "node_id": region["node_id"],
+                        "confidence": 0.3,
+                    })
+
+                # Temporal gaps
+                for gap in enhanced.get("temporal_gaps", [])[:5]:
+                    gaps.append({
+                        "type": gap["type"],
+                        "description": gap["description"],
+                        "confidence": gap.get("confidence", 0.5),
+                    })
+            except Exception as e:
+                logger.debug(f"Enhanced gap detection skipped: {e}")
 
         return gaps
+
+    def _explore_innovation_tree(self, graph_context: dict, max_depth: int = 2) -> list[dict]:
+        """递归图谱探索：从 Gap 节点出发，多跳发现复合创新信号"""
+        nodes = graph_context.get("nodes", [])
+        edges = graph_context.get("edges", [])
+        if not nodes:
+            return []
+
+        node_map = {n["node_id"]: n for n in nodes}
+        adjacency: dict[str, list[str]] = {}
+        for e in edges:
+            src, tgt = e.get("source_id", ""), e.get("target_id", "")
+            adjacency.setdefault(src, []).append(tgt)
+            adjacency.setdefault(tgt, []).append(src)
+
+        gap_nodes = [n for n in nodes if n.get("node_type") == "Gap"]
+        findings: list[dict] = []
+
+        for gap in gap_nodes:
+            visited: set[str] = {gap["node_id"]}
+            # path_ids: 路径上的节点 ID 列表，用于精确查找 node_type
+            frontier: list[tuple[str, int, list[str]]] = [(gap["node_id"], 0, [gap["node_id"]])]
+
+            while frontier:
+                nid, depth, path_ids = frontier.pop(0)
+                if depth >= max_depth:
+                    continue
+
+                for neighbor_id in adjacency.get(nid, []):
+                    if neighbor_id in visited:
+                        continue
+                    visited.add(neighbor_id)
+                    neighbor = node_map.get(neighbor_id)
+                    if not neighbor:
+                        continue
+
+                    new_path_ids = path_ids + [neighbor_id]
+                    ntype = neighbor.get("node_type", "")
+
+                    if ntype in ("Method", "Topic", "Dataset", "Finding"):
+                        # 用当前路径的节点类型（而非整个 visited 集合）判断跨类型链路
+                        chain_types = {node_map[pid].get("node_type", "") for pid in new_path_ids if pid in node_map}
+                        if len(chain_types) >= 3:
+                            path_labels = [node_map[pid].get("label", "?")[:30] for pid in new_path_ids if pid in node_map]
+                            findings.append({
+                                "type": "cross_entity_chain",
+                                "description": " → ".join(path_labels),
+                                "gap_label": gap.get("label", "?"),
+                                "chain_types": list(chain_types),
+                                "confidence": 0.4,
+                            })
+
+                    frontier.append((neighbor_id, depth + 1, new_path_ids))
+
+        return findings[:10]
 
     def _detect_explicit_gaps(self, evidence: list[EvidenceRecord]) -> list[dict]:
         """从 limitation/future_work 中检测显式 gap 表述"""
@@ -425,7 +476,18 @@ class InnovationReportGenerator:
 
 请将以上骨架改写为完整的创新点分析。每个创新点必须引用骨架中提供的 evidence_ids，不要自造新的 ID。"""
 
-        result = self.llm.invoke_json(INNOVATION_SYSTEM_PROMPT, user_prompt)
+        registry = get_prompt_registry()
+        prompt_spec = registry.get("innovation_generation")
+        structured = self.llm.invoke_structured(
+            system_prompt=prompt_spec.system_prompt,
+            user_prompt=user_prompt,
+            schema=InnovationGenerationResult,
+        )
+        if structured.get("success"):
+            result = structured["data"]
+        else:
+            logger.warning(f"Structured innovation generation failed, falling back to invoke_json")
+            result = self.llm.invoke_json(prompt_spec.system_prompt, user_prompt)
 
         candidates = []
         for i, ip_data in enumerate(result.get("innovation_points", [])):
@@ -474,6 +536,155 @@ class InnovationReportGenerator:
                 "scores": {},
             })
         return candidates
+
+    # ── Chain of Verification + 反面证据 ──────────────
+
+    def _detect_counter_evidence(
+        self, candidates: list[dict], signals: dict
+    ) -> list[dict]:
+        """启发式反面证据检测（基于 limitation 关键词重叠）"""
+        evidence_records = signals.get("evidence_records", [])
+
+        for c in candidates:
+            counter_ids = set(c.get("counter_evidence_ids", []))
+            innovation_text = normalize_label(c.get("description", ""))[:80]
+
+            for ev in evidence_records:
+                ev_dict = ev.model_dump() if hasattr(ev, "model_dump") else ev
+                finding = (ev_dict.get("finding") or "").strip()
+                if not finding or finding.lower() in ("unknown", ""):
+                    continue
+
+                # Heuristic: if a finding mentions negation keywords and overlaps with innovation topic
+                negation_keywords = [
+                    "not effective", "fails to", "cannot", "insufficient",
+                    "无效", "失败", "不能", "不足", "未能",
+                ]
+                if any(kw in finding.lower() for kw in negation_keywords):
+                    finding_norm = normalize_label(finding)[:80]
+                    innovation_words = set(innovation_text.split())
+                    finding_words = set(finding_norm.split())
+                    overlap = innovation_words & finding_words
+                    if len(overlap) >= 2:
+                        counter_ids.add(ev_dict.get("evidence_id", ""))
+
+            c["counter_evidence_ids"] = list(counter_ids)
+            c["limiting_evidence_ids"] = list(counter_ids)
+
+        return candidates
+
+    def _verify_innovations(
+        self, candidates: list[dict], signals: dict
+    ) -> list[dict]:
+        """Chain of Verification: 提取声明 → 验证 → 标记状态"""
+        from src.agents_v3.research_workspace.models import InnovationVerificationResult
+
+        evidence_records = signals.get("evidence_records", [])
+
+        # Build evidence text
+        evidence_text = ""
+        for ev in evidence_records[:20]:
+            ev_dict = ev.model_dump() if hasattr(ev, "model_dump") else ev
+            evidence_text += f"[{ev_dict.get('evidence_id', '?')}] "
+            if ev_dict.get("finding") and ev_dict["finding"] != "unknown":
+                evidence_text += f"发现:{ev_dict['finding'][:80]} "
+            if ev_dict.get("limitation") and ev_dict["limitation"] != "unknown":
+                evidence_text += f"局限:{ev_dict['limitation'][:80]} "
+            evidence_text += "\n"
+
+        # Build candidates text
+        candidates_text = ""
+        for c in candidates:
+            candidates_text += f"\n[{c.get('innovation_id')}] {c.get('name')}\n"
+            candidates_text += f"  描述: {c.get('description', '')}\n"
+            candidates_text += f"  支撑: {', '.join(c.get('supporting_evidence_ids', []))}\n"
+
+        registry = get_prompt_registry()
+        prompt_spec = registry.get("innovation_verification")
+
+        user_prompt = f"""请验证以下创新点的声明：
+
+{candidates_text}
+
+可用证据：
+{evidence_text}
+
+对每条声明判断 verification_status，并识别 counter_evidence_ids。"""
+
+        try:
+            result = self.llm.invoke_structured(
+                system_prompt=prompt_spec.system_prompt,
+                user_prompt=user_prompt,
+                schema=InnovationVerificationResult,
+            )
+            if result.get("success"):
+                verifications = result["data"].get("verifications", [])
+            else:
+                verifications = self._heuristic_verify_innovations(candidates, evidence_records)
+        except Exception as e:
+            logger.warning(f"Structured innovation verification failed: {e}")
+            verifications = self._heuristic_verify_innovations(candidates, evidence_records)
+
+        return self._apply_verification(candidates, verifications)
+
+    def _apply_verification(
+        self, candidates: list[dict], verifications: list[dict]
+    ) -> list[dict]:
+        """将验证结果写回候选"""
+        by_innovation: dict[str, list] = {}
+        for v in verifications:
+            iid = v.get("innovation_id", "")
+            by_innovation.setdefault(iid, []).append(v)
+
+        for c in candidates:
+            iid = c.get("innovation_id", "")
+            innov_verifications = by_innovation.get(iid, [])
+
+            if not innov_verifications:
+                c["verification_status"] = "unverified"
+                continue
+
+            statuses = [v.get("verification_status", "unverified") for v in innov_verifications]
+            if "contradicted" in statuses:
+                c["verification_status"] = "contradicted"
+            elif all(s == "verified" for s in statuses):
+                c["verification_status"] = "verified"
+            else:
+                c["verification_status"] = "unverified"
+
+            # Collect counter-evidence
+            counter_ids = set(c.get("counter_evidence_ids", []))
+            for v in innov_verifications:
+                counter_ids.update(v.get("counter_evidence_ids", []))
+            c["counter_evidence_ids"] = list(counter_ids)
+            c["limiting_evidence_ids"] = list(counter_ids)
+
+        return candidates
+
+    def _heuristic_verify_innovations(
+        self, candidates: list[dict], evidence_records: list
+    ) -> list[dict]:
+        """Fallback: 基于 evidence 存在性的启发式验证"""
+        evidence_map = {}
+        for ev in evidence_records:
+            ev_dict = ev.model_dump() if hasattr(ev, "model_dump") else ev
+            evidence_map[ev_dict.get("evidence_id", "")] = ev_dict
+
+        verifications = []
+        for c in candidates:
+            supporting = c.get("supporting_evidence_ids", [])
+            valid_supporting = [eid for eid in supporting if eid in evidence_map]
+            status = "verified" if valid_supporting else "unverified"
+            verifications.append({
+                "claim": c.get("description", "")[:100],
+                "innovation_id": c.get("innovation_id", ""),
+                "verification_status": status,
+                "supporting_evidence_ids": valid_supporting,
+                "counter_evidence_ids": [],
+                "note": "heuristic: based on evidence existence",
+            })
+
+        return verifications
 
     # ── 评分 ──────────────────────────────────────
 
@@ -536,6 +747,20 @@ class InnovationReportGenerator:
                 + 0.2 * scores["specificity"]
             )
 
+            # Counter-evidence penalty
+            counter_count = len(c.get("counter_evidence_ids", []))
+            if counter_count > 0:
+                penalty = min(0.3, 0.1 * counter_count)
+                scores["total"] = max(0.0, scores["total"] - penalty)
+                scores["counter_evidence_penalty"] = penalty
+
+            # Verification bonus/penalty
+            verification_status = c.get("verification_status", "unverified")
+            if verification_status == "verified":
+                scores["total"] = min(1.0, scores["total"] + 0.05)
+            elif verification_status == "contradicted":
+                scores["total"] = max(0.0, scores["total"] - 0.15)
+
             c["scores"] = scores
             c["confidence"] = max(c.get("confidence", 0.4), scores["total"])
 
@@ -545,30 +770,48 @@ class InnovationReportGenerator:
 
     def _validate_candidates(
         self, candidates: list[dict], scope: RetrievalScope, signals: dict
-    ) -> dict:
+    ) -> tuple[list[dict], dict]:
+        """验证并移除越界候选。返回 (filtered_candidates, validation_dict)"""
         allowed_papers = set(scope.paper_ids)
         allowed_evidence = set(scope.evidence_ids)
 
-        scope_violations = 0
+        filtered = []
+        removed_count = 0
         missing_evidence = 0
         generic_count = 0
 
         for c in candidates:
+            # Check scope violations
+            has_violation = False
             for pid in c.get("supporting_papers", []):
                 if pid and pid not in allowed_papers:
-                    scope_violations += 1
+                    has_violation = True
+                    break
+            if not has_violation:
+                for eid in c.get("supporting_evidence_ids", []):
+                    if eid and eid not in allowed_evidence:
+                        has_violation = True
+                        break
+
+            if has_violation:
+                removed_count += 1
+                logger.info(f"Removed scope-violating candidate: {c.get('innovation_id')}")
+                continue
+
+            # Check missing evidence
             for eid in c.get("supporting_evidence_ids", []):
-                if eid and eid not in allowed_evidence:
-                    scope_violations += 1
-                elif eid and eid not in {ev.evidence_id for ev in signals.get("evidence_records", [])}:
+                if eid and eid not in {ev.evidence_id for ev in signals.get("evidence_records", [])}:
                     missing_evidence += 1
             if self._is_generic(c.get("description", "")):
                 generic_count += 1
 
-        return {
-            "passed": scope_violations == 0,
+            filtered.append(c)
+
+        return filtered, {
+            "passed": removed_count == 0,
             "candidate_count": len(candidates),
-            "scope_violation_count": scope_violations,
+            "removed_count": removed_count,
+            "scope_violation_count": removed_count,
             "missing_evidence_count": missing_evidence,
             "generic_candidate_count": generic_count,
         }
@@ -612,6 +855,16 @@ class InnovationReportGenerator:
                 parts.append(f"**支撑论文**: {', '.join(sp[:5])}")
             if se:
                 parts.append(f"**支撑证据**: {', '.join(se[:5])}")
+
+            # 验证状态
+            verification_status = c.get("verification_status", "unverified")
+            status_mark = {"verified": "✓", "contradicted": "✗", "unverified": "?"}.get(verification_status, "?")
+            parts.append(f"**验证状态**: {status_mark} {verification_status}")
+
+            # 反面证据
+            counter = c.get("counter_evidence_ids", [])
+            if counter:
+                parts.append(f"**反面证据**: {', '.join(counter[:3])}")
 
             # 评分
             scores = c.get("scores", {})
