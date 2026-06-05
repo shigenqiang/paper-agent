@@ -31,7 +31,7 @@ class TestRetrievalScopeE2E:
         if not pid:
             pytest.skip("数据库中无论文")
 
-        scope = self.service.resolve(pid, ScopeType.ALL_PROJECT)
+        scope = self.service.resolve(pid, {"type": ScopeType.ALL_PROJECT})
         assert scope is not None
         assert len(scope.paper_ids) > 0
         print(f"\n[scope] 全项目: {len(scope.paper_ids)} 篇论文")
@@ -53,7 +53,7 @@ class TestRetrievalScopeE2E:
             pytest.skip("论文无主题标签")
 
         topic = list(topics)[0]
-        scope = self.service.resolve(pid, ScopeType.TOPIC_GROUP, topic_ids=[topic])
+        scope = self.service.resolve(pid, {"type": ScopeType.TOPIC_GROUP, "selected_topic_ids": [topic]})
         assert scope is not None
         print(f"\n[scope] 主题 '{topic}': {len(scope.paper_ids)} 篇论文")
 
@@ -63,6 +63,6 @@ class TestRetrievalScopeE2E:
         if not pid:
             pytest.skip("数据库中无论文")
 
-        scope = self.service.resolve(pid, ScopeType.YEAR_RANGE, time_range=["2023", "2025"])
+        scope = self.service.resolve(pid, {"type": ScopeType.YEAR_RANGE, "time_range": ["2023", "2025"]})
         assert scope is not None
         print(f"\n[scope] 年份 2023-2025: {len(scope.paper_ids)} 篇论文")

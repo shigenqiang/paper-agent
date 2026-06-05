@@ -45,6 +45,21 @@ class TestSSEEventFormat:
 # ── SSE Streaming Endpoint ───────────────────────────
 
 
+def _make_mock_storage():
+    """创建一个能实际存取数据的 mock storage"""
+    from unittest.mock import MagicMock
+    _store: dict = {}
+    mock = MagicMock()
+    mock.upsert_item.side_effect = lambda table, item_id, data: _store.update({item_id: dict(data)})
+    mock.get_item.side_effect = lambda table, item_id: _store.get(item_id)
+    mock.load_collection.side_effect = lambda table: list(_store.values())
+    mock.query.side_effect = lambda table, filters: [
+        v for v in _store.values()
+        if all(v.get(k) == val for k, val in filters.items())
+    ]
+    return mock
+
+
 class TestSSEStreaming:
     """SSE 端点集成测试"""
 
@@ -52,7 +67,7 @@ class TestSSEStreaming:
     def setup(self):
         from src.agents_v3.research_workspace.api.app import create_app
         from fastapi.testclient import TestClient
-        self.app = create_app()
+        self.app = create_app(storage=_make_mock_storage())
         self.client = TestClient(self.app)
 
     def test_stream_task_not_found(self):
@@ -62,57 +77,62 @@ class TestSSEStreaming:
 
     def test_stream_completed_task(self):
         """已完成的任务立即返回 done 事件"""
-        from src.agents_v3.research_workspace.api.deps import get_task_service
-        svc = get_task_service()
+        from src.agents_v3.research_workspace.api.tasks import TaskService
+        svc = TaskService(storage=_make_mock_storage())
         task = svc.create_task("test", "proj1")
         svc.update_task(task["task_id"], status="completed", progress=1.0, result={"ok": True})
 
-        resp = self.client.get(f"/api/rw/tasks/{task['task_id']}/stream")
-        assert resp.status_code == 200
-        assert "text/event-stream" in resp.headers.get("content-type", "")
+        with patch("src.agents_v3.research_workspace.api.routes.tasks.get_task_service", return_value=svc):
+            resp = self.client.get(f"/api/rw/tasks/{task['task_id']}/stream")
+            assert resp.status_code == 200
+            assert "text/event-stream" in resp.headers.get("content-type", "")
 
-        body = resp.text
-        assert "event: progress" in body
-        assert "event: done" in body
-        assert '"status": "completed"' in body
+            body = resp.text
+            assert "event: progress" in body
+            assert "event: done" in body
+            assert '"status": "completed"' in body
 
     def test_stream_failed_task(self):
         """失败的任务返回 error 信息"""
-        from src.agents_v3.research_workspace.api.deps import get_task_service
-        svc = get_task_service()
+        from src.agents_v3.research_workspace.api.tasks import TaskService
+        svc = TaskService(storage=_make_mock_storage())
         task = svc.create_task("test", "proj1")
         svc.update_task(task["task_id"], status="failed", error="something broke")
 
-        resp = self.client.get(f"/api/rw/tasks/{task['task_id']}/stream")
-        body = resp.text
-        assert "event: done" in body
-        assert "something broke" in body
+        with patch("src.agents_v3.research_workspace.api.routes.tasks.get_task_service", return_value=svc):
+            resp = self.client.get(f"/api/rw/tasks/{task['task_id']}/stream")
+            body = resp.text
+            assert "event: done" in body
+            assert "something broke" in body
 
     def test_stream_with_events(self):
         """任务事件通过 SSE 推送"""
-        from src.agents_v3.research_workspace.api.deps import get_task_service
-        svc = get_task_service()
+        from src.agents_v3.research_workspace.api.tasks import TaskService
+        svc = TaskService(storage=_make_mock_storage())
         task = svc.create_task("test", "proj1")
-        svc.add_event(task["task_id"], "log", {"message": "step 1"})
-        svc.add_event(task["task_id"], "log", {"message": "step 2"})
-        svc.update_task(task["task_id"], status="completed", progress=1.0)
 
-        resp = self.client.get(f"/api/rw/tasks/{task['task_id']}/stream")
-        body = resp.text
-        assert "step 1" in body
-        assert "step 2" in body
+        with patch("src.agents_v3.research_workspace.api.routes.tasks.get_task_service", return_value=svc):
+            svc.add_event(task["task_id"], "log", {"message": "step 1"})
+            svc.add_event(task["task_id"], "log", {"message": "step 2"})
+            svc.update_task(task["task_id"], status="completed", progress=1.0)
+
+            resp = self.client.get(f"/api/rw/tasks/{task['task_id']}/stream")
+            body = resp.text
+            assert "step 1" in body
+            assert "step 2" in body
 
     def test_stream_progress_event(self):
         """进度变化通过 SSE 推送"""
-        from src.agents_v3.research_workspace.api.deps import get_task_service
-        svc = get_task_service()
+        from src.agents_v3.research_workspace.api.tasks import TaskService
+        svc = TaskService(storage=_make_mock_storage())
         task = svc.create_task("test", "proj1")
         svc.update_task(task["task_id"], status="completed", progress=0.75)
 
-        resp = self.client.get(f"/api/rw/tasks/{task['task_id']}/stream")
-        body = resp.text
-        assert "event: progress" in body
-        assert "0.75" in body
+        with patch("src.agents_v3.research_workspace.api.routes.tasks.get_task_service", return_value=svc):
+            resp = self.client.get(f"/api/rw/tasks/{task['task_id']}/stream")
+            body = resp.text
+            assert "event: progress" in body
+            assert "0.75" in body
 
 
 # ── TaskService Unit Tests ────────────────────────────

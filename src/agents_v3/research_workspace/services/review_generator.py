@@ -52,6 +52,16 @@ class LiteratureReviewGenerator:
         scope_payload: dict[str, Any],
         options: dict[str, Any] | None = None,
     ) -> Report:
+        from src.agents_v3.research_workspace.evaluation.logging_utils import log_operation
+        with log_operation("review.generate", project_id=project_id):
+            return self._generate_impl(project_id, scope_payload, options)
+
+    def _generate_impl(
+        self,
+        project_id: str,
+        scope_payload: dict[str, Any],
+        options: dict[str, Any] | None = None,
+    ) -> Report:
         opts = options or {}
 
         # 1. Resolve scope

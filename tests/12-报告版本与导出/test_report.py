@@ -19,7 +19,12 @@ class TestReportServiceE2E:
 
     def test_list_reports(self, pg_storage):
         """列出报告"""
-        reports = self.service.list_reports()
+        # 需要一个 project_id；如果没有项目则跳过
+        projects = pg_storage.list_all("projects")
+        if not projects:
+            pytest.skip("数据库中无项目")
+        pid = projects[0]["project_id"]
+        reports = self.service.list_reports(project_id=pid)
         print(f"\n[report] 共 {len(reports)} 份报告")
         # 不要求必须有报告，只验证不报错
 

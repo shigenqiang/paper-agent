@@ -2,6 +2,7 @@
 
 from src.agents_v3.research_workspace.evaluation.evaluator import (
     EvaluationResult,
+    Evaluator,
     citation_coverage_check,
     e2e_smoke_check,
     generic_text_check,
@@ -41,7 +42,7 @@ from src.agents_v3.research_workspace.evaluation.metrics import (
 )
 
 __all__ = [
-    "DEFAULT_GOLDEN_CASES", "EvaluationResult", "GoldenCase", "MetricRecord",
+    "DEFAULT_GOLDEN_CASES", "EvaluationResult", "Evaluator", "GoldenCase", "MetricRecord",
     "MetricsCollector", "QualityGateResult", "QualityGateSummary",
     "bind_context", "check_gate", "citation_coverage_check", "clear_context",
     "e2e_smoke_check", "generic_text_check", "get_context", "get_metrics_collector",

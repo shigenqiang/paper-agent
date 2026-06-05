@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 
 from src.agents_v3.research_workspace.api.deps import (
     get_card_generator,
@@ -10,6 +13,7 @@ from src.agents_v3.research_workspace.api.deps import (
     get_graph_extractor,
     get_graph_service,
     get_project_service,
+    get_task_service,
 )
 from src.agents_v3.research_workspace.api.errors import NotFoundError
 from src.agents_v3.research_workspace.api.models import ApiResponse
@@ -40,9 +44,25 @@ def generate_cards(project_ref: str, only_missing: bool = True):
 @router.post("/evidence/build")
 def build_evidence(project_ref: str):
     project = _resolve_project(project_ref)
-    svc = get_evidence_service(project_ref)
-    records = svc.build_for_project(project.project_id)
-    return ApiResponse(data=[e.model_dump() for e in records])
+    task_svc = get_task_service()
+    task = task_svc.create_task("evidence_build", project.project_id)
+
+    def _bg():
+        try:
+            task_svc.update_task(task["task_id"], status="running", progress=0.3)
+            svc = get_evidence_service(project_ref)
+            records = svc.build_for_project(project.project_id)
+            task_svc.update_task(
+                task["task_id"], status="completed", progress=1.0,
+                result={"count": len(records)},
+            )
+        except Exception as e:
+            task_svc.update_task(task["task_id"], status="failed", error=str(e)[:500])
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return JSONResponse(status_code=202, content={
+        "data": {"task_id": task["task_id"], "status": "queued"},
+    })
 
 
 # ── 知识图谱 ──
@@ -50,18 +70,52 @@ def build_evidence(project_ref: str):
 @router.post("/kg/build")
 def build_graph(project_ref: str, force: bool = False):
     project = _resolve_project(project_ref)
-    svc = get_graph_service(project_ref)
-    graph = svc.build_project_graph(project.project_id, force=force)
-    return ApiResponse(data={"node_count": len(graph.nodes), "edge_count": len(graph.edges)})
+    task_svc = get_task_service()
+    task = task_svc.create_task("graph_build", project.project_id, {"force": force})
+
+    def _bg():
+        try:
+            task_svc.update_task(task["task_id"], status="running", progress=0.1)
+            task_svc.add_event(task["task_id"], "stage", {"name": "building_graph"})
+            svc = get_graph_service(project_ref)
+            graph = svc.build_project_graph(project.project_id, force=force)
+            task_svc.update_task(
+                task["task_id"], status="completed", progress=1.0,
+                result={"node_count": len(graph.nodes), "edge_count": len(graph.edges)},
+            )
+        except Exception as e:
+            task_svc.update_task(task["task_id"], status="failed", error=str(e)[:500])
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return JSONResponse(status_code=202, content={
+        "data": {"task_id": task["task_id"], "status": "queued"},
+    })
 
 
 @router.post("/kg/rebuild")
 def rebuild_graph(project_ref: str):
     """强制全量重建图谱"""
     project = _resolve_project(project_ref)
-    svc = get_graph_service(project_ref)
-    graph = svc.build_project_graph(project.project_id, force=True)
-    return ApiResponse(data={"node_count": len(graph.nodes), "edge_count": len(graph.edges)})
+    task_svc = get_task_service()
+    task = task_svc.create_task("graph_rebuild", project.project_id)
+
+    def _bg():
+        try:
+            task_svc.update_task(task["task_id"], status="running", progress=0.1)
+            task_svc.add_event(task["task_id"], "stage", {"name": "rebuilding_graph"})
+            svc = get_graph_service(project_ref)
+            graph = svc.build_project_graph(project.project_id, force=True)
+            task_svc.update_task(
+                task["task_id"], status="completed", progress=1.0,
+                result={"node_count": len(graph.nodes), "edge_count": len(graph.edges)},
+            )
+        except Exception as e:
+            task_svc.update_task(task["task_id"], status="failed", error=str(e)[:500])
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return JSONResponse(status_code=202, content={
+        "data": {"task_id": task["task_id"], "status": "queued"},
+    })
 
 
 @router.post("/kg/incremental-update")
@@ -77,9 +131,27 @@ def incremental_update(project_ref: str, paper_ids: list[str]):
 def extract_entities(project_ref: str, only_missing: bool = True):
     """从所有已解析论文的 sections 中用 LLM 提取实体/关系"""
     project = _resolve_project(project_ref)
-    extractor = get_graph_extractor(project_ref)
-    results = extractor.extract_from_project(project.project_id, only_missing=only_missing)
-    return ApiResponse(data=results)
+    task_svc = get_task_service()
+    task = task_svc.create_task("entity_extraction", project.project_id, {
+        "only_missing": only_missing,
+    })
+
+    def _bg():
+        try:
+            task_svc.update_task(task["task_id"], status="running", progress=0.1)
+            extractor = get_graph_extractor(project_ref)
+            results = extractor.extract_from_project(project.project_id, only_missing=only_missing)
+            task_svc.update_task(
+                task["task_id"], status="completed", progress=1.0,
+                result=results,
+            )
+        except Exception as e:
+            task_svc.update_task(task["task_id"], status="failed", error=str(e)[:500])
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return JSONResponse(status_code=202, content={
+        "data": {"task_id": task["task_id"], "status": "queued"},
+    })
 
 
 @router.get("/kg")
@@ -243,8 +315,24 @@ def detect_communities(project_ref: str, resolution: float = 1.0):
 def build_community_summaries(project_ref: str, token_budget: int = 500):
     """为社区生成 LLM 摘要"""
     project = _resolve_project(project_ref)
-    svc = get_graph_service(project_ref)
-    return ApiResponse(data=svc.build_community_summaries(project.project_id, token_budget=token_budget))
+    task_svc = get_task_service()
+    task = task_svc.create_task("community_summaries", project.project_id, {
+        "token_budget": token_budget,
+    })
+
+    def _bg():
+        try:
+            task_svc.update_task(task["task_id"], status="running", progress=0.1)
+            svc = get_graph_service(project_ref)
+            result = svc.build_community_summaries(project.project_id, token_budget=token_budget)
+            task_svc.update_task(task["task_id"], status="completed", progress=1.0, result=result)
+        except Exception as e:
+            task_svc.update_task(task["task_id"], status="failed", error=str(e)[:500])
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return JSONResponse(status_code=202, content={
+        "data": {"task_id": task["task_id"], "status": "queued"},
+    })
 
 
 # ── 增强 Gap 检测 ──

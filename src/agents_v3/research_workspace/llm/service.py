@@ -152,6 +152,14 @@ class LLMService:
                 log_llm_call(prompt_name=prompt_name, prompt_version=prompt_version,
                     model=self.config.model_name, success=True, latency_ms=latency_ms,
                     prompt_hash=hash_text(system_prompt + user_prompt), response_hash=hash_text(response))
+                try:
+                    from src.agents_v3.research_workspace.evaluation.metrics import get_metrics_collector
+                    get_metrics_collector().record(
+                        "llm_latency_ms", latency_ms, unit="ms", service="llm",
+                        operation=prompt_name, tags={"model": self.config.model_name},
+                    )
+                except Exception:
+                    pass
                 return {"success": True, "data": validated.model_dump() if hasattr(validated, "model_dump") else validated,
                         "raw_response": response, "request_id": request_id, "latency_ms": latency_ms}
             except Exception as validation_error:

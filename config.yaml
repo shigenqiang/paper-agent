@@ -48,9 +48,10 @@ database:
     port: 5432
     database: paper_agent
     user: postgres
-    password: "postgres"
+    password: ""  # 从环境变量 PAPER_AGENT_DB_PASSWORD 读取
     # 或者使用 DSN:
     # dsn: "postgresql://user:password@localhost:5432/paper_agent"
+    # DSN 也可通过环境变量 PAPER_AGENT_DB_DSN 覆盖
 
   # Qdrant 向量数据库配置
   qdrant:
@@ -60,9 +61,9 @@ database:
     port: 6333
     # 云端模式（启用后优先使用）
     cloud:
-      enabled: true
-      url: "https://9f9e3abf-2323-4bd0-ad4c-ee7f614e78c0.sa-east-1-0.aws.cloud.qdrant.io"
-      api_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6OGUzMjFhNTQtOGVmYS00M2E4LTk1NzMtODJmZDc2ZTJiMjFjIn0.jS5cBgxCUQ60DFRrxmHaIYkAjGpMDtylz7RXnR3C4v8"
+      enabled: false
+      url: ""      # 从环境变量 QDRANT_CLOUD_URL 读取
+      api_key: ""  # 从环境变量 QDRANT_CLOUD_API_KEY 读取
       cloud_inference: true
     collection: paper_chunks
     vector_size: 384

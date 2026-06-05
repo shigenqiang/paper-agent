@@ -23,14 +23,24 @@ _pg_instance: PostgresStorage | None = None
 
 
 def _load_pg_config() -> dict[str, Any]:
-    """从 config.yaml 读取 PostgreSQL 配置"""
+    """从 config.yaml 读取 PostgreSQL 配置，环境变量可覆盖"""
+    import os
     import yaml
     config_path = Path("config.yaml")
+    config: dict[str, Any] = {}
     if config_path.exists():
         with open(config_path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
-        return cfg.get("database", {}).get("postgres", {})
-    return {}
+        config = cfg.get("database", {}).get("postgres", {})
+
+    # 环境变量覆盖
+    dsn = os.environ.get("PAPER_AGENT_DB_DSN")
+    if dsn:
+        config["dsn"] = dsn
+    password = os.environ.get("PAPER_AGENT_DB_PASSWORD")
+    if password:
+        config["password"] = password
+    return config
 
 
 def get_storage() -> PostgresStorage:

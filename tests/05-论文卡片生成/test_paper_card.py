@@ -40,8 +40,8 @@ class TestPaperCardE2E:
         card = self.service.generate(paper_with_chunks["paper_id"])
         assert card is not None
         assert card.paper_id == paper_with_chunks["paper_id"]
-        assert card.title
-        print(f"\n[card] 生成卡片: {card.title[:60]}...")
+        assert card.research_question
+        print(f"\n[card] 生成卡片: {card.research_question[:60]}...")
 
     def test_card_has_sections(self, pg_storage):
         """卡片应包含结构化章节"""
@@ -57,4 +57,4 @@ class TestPaperCardE2E:
             pytest.skip("数据库中无已解析论文")
 
         card = self.service.generate(paper_with_chunks["paper_id"])
-        assert card.method_summary or card.findings_summary
+        assert card.method or card.key_findings

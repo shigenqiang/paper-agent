@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from src.agents_v3.research_workspace.api.deps import (
     get_innovation_generator,
     get_project_service,
     get_report_service,
     get_review_generator,
+    get_task_service,
 )
 from src.agents_v3.research_workspace.api.errors import NotFoundError
 from src.agents_v3.research_workspace.api.models import ApiResponse, ReportGenerateRequest
@@ -44,15 +47,55 @@ def get_report(project_ref: str, report_id: str):
 @router.post("/literature-review")
 def generate_review(project_ref: str, req: ReportGenerateRequest):
     project = _resolve_project(project_ref)
-    svc = get_review_generator(project_ref)
-    return ApiResponse(data=svc.generate(project.project_id, req.scope.model_dump(), req.options).model_dump())
+    task_svc = get_task_service()
+    task = task_svc.create_task("report_literature_review", project.project_id, {
+        "scope": req.scope.model_dump(), "options": req.options,
+    })
+
+    def _bg():
+        try:
+            task_svc.update_task(task["task_id"], status="running", progress=0.1)
+            task_svc.add_event(task["task_id"], "stage", {"name": "generating"})
+            svc = get_review_generator(project_ref)
+            result = svc.generate(project.project_id, req.scope.model_dump(), req.options)
+            task_svc.update_task(
+                task["task_id"], status="completed", progress=1.0,
+                result=result.model_dump(),
+            )
+        except Exception as e:
+            task_svc.update_task(task["task_id"], status="failed", error=str(e)[:500])
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return JSONResponse(status_code=202, content={
+        "data": {"task_id": task["task_id"], "status": "queued"},
+    })
 
 
 @router.post("/innovation")
 def generate_innovation(project_ref: str, req: ReportGenerateRequest):
     project = _resolve_project(project_ref)
-    svc = get_innovation_generator(project_ref)
-    return ApiResponse(data=svc.generate(project.project_id, req.scope.model_dump(), req.options).model_dump())
+    task_svc = get_task_service()
+    task = task_svc.create_task("report_innovation", project.project_id, {
+        "scope": req.scope.model_dump(), "options": req.options,
+    })
+
+    def _bg():
+        try:
+            task_svc.update_task(task["task_id"], status="running", progress=0.1)
+            task_svc.add_event(task["task_id"], "stage", {"name": "generating"})
+            svc = get_innovation_generator(project_ref)
+            result = svc.generate(project.project_id, req.scope.model_dump(), req.options)
+            task_svc.update_task(
+                task["task_id"], status="completed", progress=1.0,
+                result=result.model_dump(),
+            )
+        except Exception as e:
+            task_svc.update_task(task["task_id"], status="failed", error=str(e)[:500])
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return JSONResponse(status_code=202, content={
+        "data": {"task_id": task["task_id"], "status": "queued"},
+    })
 
 
 @router.get("/{report_id}/export/markdown")

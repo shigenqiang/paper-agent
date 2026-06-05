@@ -32,12 +32,12 @@ class TestPostgresStorage:
     def test_query_by_field(self, pg_storage):
         """query 按字段过滤"""
         pg_storage.upsert_item("projects", "q_test_1", {
-            "project_id": "q_test_1", "name": "query_test", "description": "a",
+            "project_id": "q_test_1", "name": "query_test_a", "description": "dup_desc",
         })
         pg_storage.upsert_item("projects", "q_test_2", {
-            "project_id": "q_test_2", "name": "query_test", "description": "b",
+            "project_id": "q_test_2", "name": "query_test_b", "description": "dup_desc",
         })
-        results = pg_storage.query("projects", {"name": "query_test"})
+        results = pg_storage.query("projects", {"description": "dup_desc"})
         assert len(results) >= 2
         pg_storage.delete_item("projects", "q_test_1")
         pg_storage.delete_item("projects", "q_test_2")

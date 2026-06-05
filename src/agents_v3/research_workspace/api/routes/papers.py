@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import uuid
 
-from src.agents_v3.research_workspace.api.deps import get_paper_library, get_project_service
-from src.agents_v3.research_workspace.api.errors import NotFoundError
+from fastapi import APIRouter, File, UploadFile
+
+from src.agents_v3.research_workspace.api.deps import get_paper_library, get_parser_service, get_project_service
+from src.agents_v3.research_workspace.api.errors import NotFoundError, ValidationError
 from src.agents_v3.research_workspace.api.models import (
     ApiResponse,
     PaperImportBibtexRequest,
@@ -14,6 +16,7 @@ from src.agents_v3.research_workspace.api.models import (
     SearchPapersRequest,
 )
 from src.agents_v3.research_workspace.search.base import SearchQuery
+from src.agents_v3.research_workspace.storage import get_storage
 
 router = APIRouter(prefix="/api/rw/projects/{project_ref}/papers", tags=["papers"])
 
@@ -109,3 +112,52 @@ def search_papers(project_ref: str, req: SearchPapersRequest):
         "results": [r.model_dump(exclude_defaults=True) for r in response.results],
         "result_count": response.total_count,
     })
+
+
+@router.post("/upload")
+async def upload_pdf(
+    project_ref: str,
+    file: UploadFile = File(...),
+    auto_parse: bool = False,
+):
+    """上传本地 PDF 文件到项目"""
+    project = _resolve_project(project_ref)
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise ValidationError("Only PDF files are accepted")
+
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise ValidationError("File too large (max 50MB)")
+
+    paper_id = f"paper_{uuid.uuid4().hex[:12]}"
+    storage = get_storage()
+
+    # 保存到项目文件目录
+    from pathlib import Path
+    data_dir = Path(getattr(storage, "data_dir", Path("data")))
+    dest_dir = data_dir / "files" / project.project_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / f"{paper_id}.pdf"
+    dest_path.write_bytes(content)
+
+    paper_data = {
+        "paper_id": paper_id,
+        "project_id": project.project_id,
+        "title": (file.filename or "uploaded").replace(".pdf", ""),
+        "status": "imported",
+        "pdf_path": str(dest_path),
+        "source": "upload",
+    }
+    storage.upsert_item("papers", paper_id, paper_data)
+
+    result: dict = {"paper": paper_data}
+    if auto_parse:
+        try:
+            svc = get_parser_service(project_ref)
+            parse_result = svc.parse_paper(paper_id)
+            result["parse_result"] = parse_result
+        except Exception as e:
+            result["parse_error"] = str(e)[:200]
+
+    return ApiResponse(data=result)

@@ -114,14 +114,55 @@ def create_app(storage=None) -> FastAPI:
     app.add_exception_handler(Exception, generic_error_handler)
 
     @app.middleware("http")
+    async def check_api_key(request: Request, call_next):
+        import os
+        from fastapi.responses import JSONResponse
+        # 跳过健康检查和文档端点
+        skip_paths = {"/api/health", "/docs", "/openapi.json", "/redoc"}
+        if request.url.path in skip_paths:
+            return await call_next(request)
+        api_key = os.environ.get("PAPER_AGENT_API_KEY", "")
+        if not api_key:
+            return await call_next(request)
+        provided = request.headers.get("X-API-Key", "")
+        if provided != api_key:
+            return JSONResponse(status_code=401, content={
+                "error": {"code": "unauthorized", "message": "Invalid or missing API key"},
+            })
+        return await call_next(request)
+
+    @app.middleware("http")
     async def add_request_id(request: Request, call_next):
+        from src.agents_v3.research_workspace.evaluation.logging_utils import (
+            bind_context,
+            clear_context,
+            log_event,
+        )
         request_id = f"req_{uuid.uuid4().hex[:8]}"
         request.state.request_id = request_id
+        bind_context(request_id=request_id)
+
+        # 从 URL 提取 project_ref
+        path_parts = request.url.path.split("/")
+        if "projects" in path_parts:
+            idx = path_parts.index("projects")
+            if idx + 1 < len(path_parts):
+                bind_context(project_id=path_parts[idx + 1])
+
         start = time.time()
         response = await call_next(request)
         duration = int((time.time() - start) * 1000)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Duration-Ms"] = str(duration)
+
+        log_event(
+            "http.request",
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            duration_ms=duration,
+        )
+        clear_context()
         return response
 
     @app.get("/api/health")

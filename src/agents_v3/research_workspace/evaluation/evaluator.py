@@ -315,3 +315,64 @@ def refusal_correctness_check(
         failures=failures,
         details={"total": len(cases), "correct": correct},
     )
+
+
+# ── Evaluator 类 ────────────────────────────────────
+
+
+class Evaluator:
+    """评估编排器：对报告运行评估检查并产出质量门结果"""
+
+    def __init__(self, storage=None):
+        from src.agents_v3.research_workspace.storage import get_storage
+        self.storage = storage or get_storage()
+
+    def evaluate_report(self, report_id: str) -> dict[str, Any]:
+        """评估单份报告，返回评估结果"""
+        report_data = self.storage.get_item("reports", report_id)
+        if not report_data:
+            return {"error": "report_not_found", "report_id": report_id}
+
+        metadata = report_data.get("metadata") or {}
+        if isinstance(metadata, str):
+            import json
+            try:
+                metadata = json.loads(metadata)
+            except Exception:
+                metadata = {}
+
+        paper_ids = metadata.get("paper_ids", [])
+        evidence_ids = metadata.get("evidence_ids", [])
+        section_sources = metadata.get("section_sources", {})
+
+        evaluations = []
+
+        # 可追溯性检查
+        evaluations.append(report_traceability_check(
+            paper_ids, evidence_ids, set(paper_ids), set(evidence_ids), section_sources,
+        ))
+
+        # 泛化文本检查
+        content = report_data.get("content", "")
+        evaluations.append(generic_text_check(content))
+
+        return {
+            "report_id": report_id,
+            "evaluations": [e.model_dump() for e in evaluations],
+            "summary": {
+                "total": len(evaluations),
+                "passed": sum(1 for e in evaluations if e.passed),
+                "failed": sum(1 for e in evaluations if not e.passed),
+            },
+        }
+
+    def check_quality_gate(self, report_id: str) -> dict[str, Any]:
+        """对报告运行质量门"""
+        from src.agents_v3.research_workspace.evaluation.gates import run_quality_gates
+
+        eval_result = self.evaluate_report(report_id)
+        if "error" in eval_result:
+            return eval_result
+        evaluations = [EvaluationResult(**e) for e in eval_result["evaluations"]]
+        gate_summary = run_quality_gates(evaluations)
+        return gate_summary.model_dump()

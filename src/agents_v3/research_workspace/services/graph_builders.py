@@ -28,6 +28,12 @@ class GraphBuilderMixin:
 
     def build_project_graph(self, project_id: str, force: bool = False) -> KnowledgeGraph:
         """全量构建项目知识图谱"""
+        from src.agents_v3.research_workspace.evaluation.logging_utils import log_operation
+        with log_operation("graph.build", project_id=project_id, force=force):
+            return self._build_project_graph_impl(project_id, force)
+
+    def _build_project_graph_impl(self, project_id: str, force: bool = False) -> KnowledgeGraph:
+        """全量构建项目知识图谱（实际实现）"""
         papers_data = self.storage.query("papers", {"project_id": project_id})
         included_paper_ids = {p["paper_id"] for p in papers_data if p.get("included", True)}
         paper_ids = list(included_paper_ids)
