@@ -69,6 +69,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
     container_name: paper-agent
     depends_on:
       postgres:

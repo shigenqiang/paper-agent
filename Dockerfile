@@ -4,10 +4,14 @@
 # ============================================
 
 # ---- 阶段1: Builder ----
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # 设置工作目录
 WORKDIR /app
+
+# 使用国内镜像加速 apt
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 
 # 安装构建依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,12 +29,16 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ---- 阶段2: Runtime ----
-FROM python:3.11-slim as runtime
+FROM python:3.11-slim AS runtime
 
 # 安全: 创建非root用户
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
 WORKDIR /app
+
+# 使用国内镜像加速 apt
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 
 # 从builder复制虚拟环境
 COPY --from=builder /opt/venv /opt/venv
@@ -76,7 +84,7 @@ CMD ["python", "-m", "src.service"]
 # 使用: docker build -f Dockerfile --target runtime-gpu -t paper-agent:latest .
 # ============================================
 # ---- 阶段2: GPU Runtime ----
-FROM nvidia/cuda:11.8-cudnn8-runtime-ubuntu22.04 as runtime-gpu
+FROM nvidia/cuda:11.8-cudnn8-runtime-ubuntu22.04 AS runtime-gpu
 
 # 设置工作目录
 WORKDIR /app
@@ -135,7 +143,7 @@ CMD ["python", "-m", "src.service"]
 # 使用: docker build -f Dockerfile --target runtime-light -t paper-agent:light .
 # ============================================
 # ---- 阶段2: Light Runtime ----
-FROM python:3.11-alpine as runtime-light
+FROM python:3.11-alpine AS runtime-light
 
 WORKDIR /app
 
